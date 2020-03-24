@@ -271,6 +271,18 @@ GLColor32F ReadColor32F(GLint x, GLint y)
     EXPECT_GL_NO_ERROR();
     return actual;
 }
+
+void LoadEntryPointsWithUtilLoader()
+{
+#if defined(ANGLE_USE_UTIL_LOADER)
+    PFNEGLGETPROCADDRESSPROC getProcAddress;
+    ANGLETestEnvironment::GetEGLLibrary()->getAs("eglGetProcAddress", &getProcAddress);
+    ASSERT_NE(nullptr, getProcAddress);
+
+    LoadEGL(getProcAddress);
+    LoadGLES(getProcAddress);
+#endif  // defined(ANGLE_USE_UTIL_LOADER)
+}
 }  // namespace angle
 
 using namespace angle;
@@ -512,14 +524,7 @@ void ANGLETestBase::ANGLETestSetUp()
 
     if (mCurrentParams->noFixture)
     {
-#if defined(ANGLE_USE_UTIL_LOADER)
-        PFNEGLGETPROCADDRESSPROC getProcAddress;
-        ANGLETestEnvironment::GetEGLLibrary()->getAs("eglGetProcAddress", &getProcAddress);
-        ASSERT_NE(nullptr, getProcAddress);
-
-        LoadEGL(getProcAddress);
-        LoadGLES(getProcAddress);
-#endif  // defined(ANGLE_USE_UTIL_LOADER)
+        LoadEntryPointsWithUtilLoader();
         return;
     }
 
@@ -1304,7 +1309,7 @@ void ANGLEProcessTestArgs(int *argc, char *argv[])
     {
         if (strncmp(argv[argIndex], kUseConfig, strlen(kUseConfig)) == 0)
         {
-            gSelectedConfig = std::string(argv[argIndex] + strlen(kUseConfig));
+            SetSelectedConfig(argv[argIndex] + strlen(kUseConfig));
         }
         if (strncmp(argv[argIndex], kSeparateProcessPerConfig, strlen(kSeparateProcessPerConfig)) ==
             0)
@@ -1315,7 +1320,7 @@ void ANGLEProcessTestArgs(int *argc, char *argv[])
 
     if (gSeparateProcessPerConfig)
     {
-        if (!gSelectedConfig.empty())
+        if (IsConfigSelected())
         {
             std::cout << "Cannot use both a single test config and separate processes.\n";
             exit(1);

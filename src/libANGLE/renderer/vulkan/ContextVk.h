@@ -249,6 +249,9 @@ class RenderPassCommandBuffer final : public CommandBufferHelper
     bool mRebindTransformFeedbackBuffers;
 };
 
+static constexpr uint32_t kMaxGpuEventNameLen = 32;
+using EventName                               = std::array<char, kMaxGpuEventNameLen>;
+
 class ContextVk : public ContextImpl, public vk::Context
 {
   public:
@@ -568,7 +571,7 @@ class ContextVk : public ContextImpl, public vk::Context
     // are TRACE_EVENT_PHASE_*
     ANGLE_INLINE angle::Result traceGpuEvent(vk::PrimaryCommandBuffer *commandBuffer,
                                              char phase,
-                                             const char *name)
+                                             const EventName &name)
     {
         if (mGpuEventsEnabled)
             return traceGpuEventImpl(commandBuffer, phase, name);
@@ -637,9 +640,12 @@ class ContextVk : public ContextImpl, public vk::Context
 
     angle::Result flushAndGetPrimaryCommandBuffer(vk::PrimaryCommandBuffer **primaryCommands)
     {
-        mOutsideRenderPassCommands.flushToPrimary(this, &mPrimaryCommands);
+        flushOutsideRenderPassCommands();
         ANGLE_TRY(endRenderPass());
         *primaryCommands = &mPrimaryCommands;
+
+        // We assume any calling code is going to record primary commands.
+        mHasPrimaryCommands = true;
         return angle::Result::Continue;
     }
 
@@ -649,6 +655,10 @@ class ContextVk : public ContextImpl, public vk::Context
     angle::Result syncExternalMemory();
 
     void addCommandBufferDiagnostics(const std::string &commandBufferDiagnostics);
+
+    VkIndexType getVkIndexType(gl::DrawElementsType glIndexType) const;
+    size_t getVkIndexTypeSize(gl::DrawElementsType glIndexType) const;
+    bool shouldConvertUint8VkIndexType(gl::DrawElementsType glIndexType) const;
 
   private:
     // Dirty bits.
@@ -709,13 +719,9 @@ class ContextVk : public ContextImpl, public vk::Context
     //   submitted, the query is not checked to avoid incuring a flush.
     struct GpuEventQuery final
     {
-        const char *name;
+        EventName name;
         char phase;
-
-        uint32_t queryIndex;
-        size_t queryPoolIndex;
-
-        Serial serial;
+        vk::QueryHelper queryHelper;
     };
 
     // Once a query result is available, the timestamp is read and a GpuEvent object is kept until
@@ -724,7 +730,7 @@ class ContextVk : public ContextImpl, public vk::Context
     struct GpuEvent final
     {
         uint64_t gpuTimestampCycles;
-        const char *name;
+        std::array<char, kMaxGpuEventNameLen> name;
         char phase;
     };
 
@@ -802,7 +808,6 @@ class ContextVk : public ContextImpl, public vk::Context
 
     angle::Result updateActiveTextures(const gl::Context *context);
     angle::Result updateActiveImages(const gl::Context *context,
-                                     vk::Resource *recorder,
                                      CommandBufferHelper *commandBufferHelper);
     angle::Result updateDefaultAttribute(size_t attribIndex);
 
@@ -863,11 +868,9 @@ class ContextVk : public ContextImpl, public vk::Context
     // Common parts of the common dirty bit handlers.
     angle::Result handleDirtyTexturesImpl(const gl::Context *context,
                                           vk::CommandBuffer *commandBuffer,
-                                          vk::Resource *recorder,
                                           CommandBufferHelper *commandBufferHelper);
     angle::Result handleDirtyShaderResourcesImpl(const gl::Context *context,
                                                  vk::CommandBuffer *commandBuffer,
-                                                 vk::Resource *recorder,
                                                  CommandBufferHelper *commandBufferHelper);
     void handleDirtyDriverUniformsBindingImpl(vk::CommandBuffer *commandBuffer,
                                               VkPipelineBindPoint bindPoint,
@@ -888,13 +891,12 @@ class ContextVk : public ContextImpl, public vk::Context
 
     angle::Result submitFrame(const VkSubmitInfo &submitInfo,
                               vk::PrimaryCommandBuffer &&commandBuffer);
-    angle::Result flushCommandGraph(vk::PrimaryCommandBuffer *commandBatch);
     angle::Result memoryBarrierImpl(GLbitfield barriers, VkPipelineStageFlags stageMask);
 
     angle::Result synchronizeCpuGpuTime();
     angle::Result traceGpuEventImpl(vk::PrimaryCommandBuffer *commandBuffer,
                                     char phase,
-                                    const char *name);
+                                    const EventName &name);
     angle::Result checkCompletedGpuEvents();
     void flushGpuEvents(double nextSyncGpuTimestampS, double nextSyncCpuTimestampS);
     void handleDeviceLost();
@@ -906,8 +908,11 @@ class ContextVk : public ContextImpl, public vk::Context
     angle::Result startPrimaryCommandBuffer();
     bool hasRecordedCommands();
     void dumpCommandStreamDiagnostics();
+    void flushOutsideRenderPassCommands();
 
     ANGLE_INLINE void onRenderPassFinished() { mRenderPassCommandBuffer = nullptr; }
+
+    void initIndexTypeMap();
 
     std::array<DirtyBitHandler, DIRTY_BIT_MAX> mGraphicsDirtyBitHandlers;
     std::array<DirtyBitHandler, DIRTY_BIT_MAX> mComputeDirtyBitHandlers;
@@ -955,6 +960,7 @@ class ContextVk : public ContextImpl, public vk::Context
     // The offset we had the last time we bound the index buffer.
     const GLvoid *mLastIndexBufferOffset;
     gl::DrawElementsType mCurrentDrawElementsType;
+    angle::PackedEnumMap<gl::DrawElementsType, VkIndexType> mIndexTypeMap;
 
     // Cache the current draw call's firstVertex to be passed to
     // TransformFeedbackVk::getBufferOffsets.  Unfortunately, gl_BaseVertex support in Vulkan is
@@ -1025,6 +1031,7 @@ class ContextVk : public ContextImpl, public vk::Context
     OutsideRenderPassCommandBuffer mOutsideRenderPassCommands;
     RenderPassCommandBuffer mRenderPassCommands;
     vk::PrimaryCommandBuffer mPrimaryCommands;
+    bool mHasPrimaryCommands;
 
     // Internal shader library.
     vk::ShaderLibrary mShaderLibrary;
@@ -1049,6 +1056,10 @@ class ContextVk : public ContextImpl, public vk::Context
     // have a value close to zero, to avoid losing 12 bits when converting these 64 bit values to
     // double.
     uint64_t mGpuEventTimestampOrigin;
+
+    // Used to count events for tracing.
+    uint32_t mPrimaryBufferCounter;
+    uint32_t mRenderPassCounter;
 
     // Generators for texture & framebuffer serials.
     SerialFactory mTextureSerialFactory;

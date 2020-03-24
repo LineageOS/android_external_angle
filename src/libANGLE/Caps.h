@@ -300,6 +300,15 @@ struct Extensions
     // GL_EXT_draw_buffers
     bool drawBuffers = false;
 
+    // GL_EXT_draw_buffers_indexed
+    bool drawBuffersIndexedEXT = false;
+
+    // GL_OES_draw_buffers_indexed
+    bool drawBuffersIndexedOES = false;
+
+    // Any version of the draw_buffers_indexed
+    bool drawBuffersIndexedAny() const { return (drawBuffersIndexedEXT || drawBuffersIndexedOES); }
+
     // GL_EXT_texture_filter_anisotropic
     bool textureFilterAnisotropic = false;
     GLfloat maxTextureAnisotropy  = 0.0f;
@@ -382,6 +391,9 @@ struct Extensions
 
     // GL_OES_EGL_image_external_essl3
     bool eglImageExternalEssl3OES = false;
+
+    // GL_EXT_EGL_image_external_wrap_modes
+    bool eglImageExternalWrapModesEXT = false;
 
     // GL_OES_EGL_sync
     bool eglSyncOES = false;
@@ -1107,6 +1119,9 @@ struct ClientExtensions
 
     // EGL_ANGLE_platform_angle_device_type_swiftshader
     bool platformANGLEDeviceTypeSwiftShader = false;
+
+    // EGL_ANGLE_platform_angle_device_type_egl_angle
+    bool platformANGLEDeviceTypeEGLANGLE = false;
 };
 
 }  // namespace egl
