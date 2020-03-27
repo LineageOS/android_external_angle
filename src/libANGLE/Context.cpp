@@ -3424,6 +3424,8 @@ Extensions Context::generateSupportedExtensions() const
         supportedExtensions.maxViews                 = 1u;
         supportedExtensions.copyTexture3d            = false;
         supportedExtensions.textureMultisample       = false;
+        supportedExtensions.drawBuffersIndexedEXT    = false;
+        supportedExtensions.drawBuffersIndexedOES    = false;
 
         // Requires glCompressedTexImage3D
         supportedExtensions.textureCompressionASTCOES = false;
@@ -4936,7 +4938,7 @@ void Context::blendEquation(GLenum mode)
 
 void Context::blendEquationi(GLuint buf, GLenum mode)
 {
-    UNIMPLEMENTED();
+    mState.setBlendEquationIndexed(mode, mode, buf);
 }
 
 void Context::blendEquationSeparate(GLenum modeRGB, GLenum modeAlpha)
@@ -4946,7 +4948,7 @@ void Context::blendEquationSeparate(GLenum modeRGB, GLenum modeAlpha)
 
 void Context::blendEquationSeparatei(GLuint buf, GLenum modeRGB, GLenum modeAlpha)
 {
-    UNIMPLEMENTED();
+    mState.setBlendEquationIndexed(modeRGB, modeAlpha, buf);
 }
 
 void Context::blendFunc(GLenum sfactor, GLenum dfactor)
@@ -4956,7 +4958,12 @@ void Context::blendFunc(GLenum sfactor, GLenum dfactor)
 
 void Context::blendFunci(GLuint buf, GLenum src, GLenum dst)
 {
-    UNIMPLEMENTED();
+    mState.setBlendFactorsIndexed(src, dst, src, dst, buf);
+
+    if (mState.noSimultaneousConstantColorAndAlphaBlendFunc())
+    {
+        mStateCache.onBlendFuncIndexedChange(this);
+    }
 }
 
 void Context::blendFuncSeparate(GLenum srcRGB, GLenum dstRGB, GLenum srcAlpha, GLenum dstAlpha)
@@ -4970,7 +4977,12 @@ void Context::blendFuncSeparatei(GLuint buf,
                                  GLenum srcAlpha,
                                  GLenum dstAlpha)
 {
-    UNIMPLEMENTED();
+    mState.setBlendFactorsIndexed(srcRGB, dstRGB, srcAlpha, dstAlpha, buf);
+
+    if (mState.noSimultaneousConstantColorAndAlphaBlendFunc())
+    {
+        mStateCache.onBlendFuncIndexedChange(this);
+    }
 }
 
 void Context::clearColor(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha)
@@ -4997,7 +5009,9 @@ void Context::colorMask(GLboolean red, GLboolean green, GLboolean blue, GLboolea
 
 void Context::colorMaski(GLuint index, GLboolean r, GLboolean g, GLboolean b, GLboolean a)
 {
-    UNIMPLEMENTED();
+    mState.setColorMaskIndexed(ConvertToBool(r), ConvertToBool(g), ConvertToBool(b),
+                               ConvertToBool(a), index);
+    mStateCache.onColorMaskChange(this);
 }
 
 void Context::cullFace(CullFaceMode mode)
@@ -5028,7 +5042,8 @@ void Context::disable(GLenum cap)
 
 void Context::disablei(GLenum target, GLuint index)
 {
-    UNIMPLEMENTED();
+    mState.setEnableFeatureIndexed(target, false, index);
+    mStateCache.onContextCapChange(this);
 }
 
 void Context::disableVertexAttribArray(GLuint index)
@@ -5045,7 +5060,8 @@ void Context::enable(GLenum cap)
 
 void Context::enablei(GLenum target, GLuint index)
 {
-    UNIMPLEMENTED();
+    mState.setEnableFeatureIndexed(target, true, index);
+    mStateCache.onContextCapChange(this);
 }
 
 void Context::enableVertexAttribArray(GLuint index)
@@ -6481,14 +6497,13 @@ void Context::getIntegervRobust(GLenum pname, GLsizei bufSize, GLsizei *length, 
 
 void Context::getProgramiv(ShaderProgramID program, GLenum pname, GLint *params)
 {
-    Program *programObject = nullptr;
-    if (!isContextLost())
+    // Don't resolve link if checking the link completion status.
+    Program *programObject = getProgramNoResolveLink(program);
+    if (!isContextLost() && pname != GL_COMPLETION_STATUS_KHR)
     {
-        // Don't resolve link if checking the link completion status.
-        programObject = (pname == GL_COMPLETION_STATUS_KHR ? getProgramNoResolveLink(program)
-                                                           : getProgramResolveLink(program));
-        ASSERT(programObject);
+        programObject = getProgramResolveLink(program);
     }
+    ASSERT(programObject);
     QueryProgramiv(this, programObject, pname, params);
 }
 
@@ -6703,8 +6718,7 @@ GLboolean Context::isEnabled(GLenum cap) const
 
 GLboolean Context::isEnabledi(GLenum target, GLuint index) const
 {
-    UNIMPLEMENTED();
-    return false;
+    return mState.getEnableFeatureIndexed(target, index);
 }
 
 GLboolean Context::isFramebuffer(FramebufferID framebuffer) const
@@ -8307,6 +8321,30 @@ bool Context::getIndexedQueryParameterInfo(GLenum target,
         }
     }
 
+    if (mSupportedExtensions.drawBuffersIndexedAny())
+    {
+        switch (target)
+        {
+            case GL_BLEND_SRC_RGB:
+            case GL_BLEND_SRC_ALPHA:
+            case GL_BLEND_DST_RGB:
+            case GL_BLEND_DST_ALPHA:
+            case GL_BLEND_EQUATION_RGB:
+            case GL_BLEND_EQUATION_ALPHA:
+            {
+                *type      = GL_INT;
+                *numParams = 1;
+                return true;
+            }
+            case GL_COLOR_WRITEMASK:
+            {
+                *type      = GL_BOOL;
+                *numParams = 4;
+                return true;
+            }
+        }
+    }
+
     if (getClientVersion() < Version(3, 1))
     {
         return false;
@@ -8455,7 +8493,8 @@ void Context::onSubjectStateChange(angle::SubjectIndex index, angle::SubjectMess
         default:
             if (index < kTextureMaxSubjectIndex)
             {
-                if (message != angle::SubjectMessage::ContentsChanged)
+                if (message != angle::SubjectMessage::ContentsChanged &&
+                    message != angle::SubjectMessage::BindingChanged)
                 {
                     mState.onActiveTextureStateChange(this, index);
                     mStateCache.onActiveTextureChange(this);
@@ -8885,6 +8924,11 @@ void StateCache::onUniformBufferStateChange(Context *context)
 }
 
 void StateCache::onColorMaskChange(Context *context)
+{
+    updateBasicDrawStatesError();
+}
+
+void StateCache::onBlendFuncIndexedChange(Context *context)
 {
     updateBasicDrawStatesError();
 }

@@ -127,6 +127,7 @@ class FramebufferState final : angle::NonCopyable
     const FramebufferAttachment *getWebGLDepthStencilAttachment() const;
     const FramebufferAttachment *getWebGLDepthAttachment() const;
     const FramebufferAttachment *getWebGLStencilAttachment() const;
+    bool updateAttachmentFeedbackLoop(size_t dirtyBit);
 
     friend class Framebuffer;
 
@@ -154,6 +155,11 @@ class FramebufferState final : angle::NonCopyable
     FramebufferAttachment mWebGLDepthAttachment;
     FramebufferAttachment mWebGLStencilAttachment;
     bool mWebGLDepthStencilConsistent;
+
+    // Tracks rendering feedback loops.
+    DrawBufferMask mDrawBufferFeedbackLoops;
+    bool mDepthBufferFeedbackLoop;
+    bool mStencilBufferFeedbackLoop;
 
     // Tracks if we need to initialize the resources for each attachment.
     angle::BitSet<IMPLEMENTATION_MAX_FRAMEBUFFER_ATTACHMENTS + 2> mResourceNeedsInit;
@@ -363,9 +369,9 @@ class Framebuffer final : public angle::ObserverInterface,
     using DirtyBits = angle::BitSet<DIRTY_BIT_MAX>;
     bool hasAnyDirtyBit() const { return mDirtyBits.any(); }
 
-    bool hasActiveFloat32ColorAttachment() const
+    DrawBufferMask getActiveFloat32ColorAttachmentDrawBufferMask() const
     {
-        return (mFloat32ColorAttachmentBits & getDrawBufferMask()).any();
+        return mFloat32ColorAttachmentBits & getDrawBufferMask();
     }
 
     bool hasResourceThatNeedsInit() const { return mState.mResourceNeedsInit.any(); }
@@ -470,7 +476,6 @@ class Framebuffer final : public angle::ObserverInterface,
 
     mutable DirtyBits mDirtyBits;
     DrawBufferMask mFloat32ColorAttachmentBits;
-    DrawBufferMask mColorAttachmentBits;
 
     // The dirty bits guard is checked when we get a dependent state change message. We verify that
     // we don't set a dirty bit that isn't already set, when inside the dirty bits syncState.

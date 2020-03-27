@@ -226,6 +226,8 @@ class TextureVk : public TextureImpl
                               GLenum type,
                               void *pixels) override;
 
+    ANGLE_INLINE bool isBoundAsImageTexture() const { return mState.isBoundAsImageTexture(); }
+
   private:
     // Transform an image index from the frontend into one that can be used on the backing
     // ImageHelper, taking into account mipmap or cube face offsets
@@ -270,7 +272,7 @@ class TextureVk : public TextureImpl
     angle::Result copyImageDataToBufferAndGetData(ContextVk *contextVk,
                                                   size_t sourceLevel,
                                                   uint32_t layerCount,
-                                                  const gl::Rectangle &sourceArea,
+                                                  const gl::Box &sourceArea,
                                                   uint8_t **outDataPtr);
 
     angle::Result copyBufferDataToImage(ContextVk *contextVk,
@@ -288,9 +290,11 @@ class TextureVk : public TextureImpl
                                               GLuint layer,
                                               GLuint firstMipLevel,
                                               GLuint maxMipLevel,
-                                              size_t sourceWidth,
-                                              size_t sourceHeight,
-                                              size_t sourceRowPitch,
+                                              const size_t sourceWidth,
+                                              const size_t sourceHeight,
+                                              const size_t sourceDepth,
+                                              const size_t sourceRowPitch,
+                                              const size_t sourceDepthPitch,
                                               uint8_t *sourceData);
 
     angle::Result copySubImageImpl(const gl::Context *context,

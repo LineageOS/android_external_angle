@@ -116,10 +116,7 @@ void UpdateTraceEventDuration(angle::PlatformMethods *platform,
 
 double MonotonicallyIncreasingTime(angle::PlatformMethods *platform)
 {
-    // Move the time origin to the first call to this function, to avoid generating unnecessarily
-    // large timestamps.
-    static double origin = angle::GetCurrentTime();
-    return angle::GetCurrentTime() - origin;
+    return GetHostTimeSeconds();
 }
 
 void DumpTraceEventsToJSONFile(const std::vector<TraceEvent> &traceEvents,
@@ -141,8 +138,8 @@ void DumpTraceEventsToJSONFile(const std::vector<TraceEvent> &traceEvents,
         value["cat"]  = traceEvent.categoryName;
         value["ph"]   = phaseName.str();
         value["ts"]   = microseconds;
-        value["pid"]  = "ANGLE";
-        value["tid"]  = strcmp(traceEvent.categoryName, "gpu.angle.gpu") == 0 ? "GPU" : "CPU";
+        value["pid"]  = strcmp(traceEvent.categoryName, "gpu.angle.gpu") == 0 ? "GPU" : "ANGLE";
+        value["tid"]  = 1;
 
         eventsValue.append(value);
     }
@@ -174,6 +171,16 @@ ANGLE_MAYBE_UNUSED void KHRONOS_APIENTRY DebugMessageCallback(GLenum source,
 }
 }  // anonymous namespace
 
+TraceEvent::TraceEvent(char phaseIn,
+                       const char *categoryNameIn,
+                       const char *nameIn,
+                       double timestampIn)
+    : phase(phaseIn), categoryName(categoryNameIn), name{}, timestamp(timestampIn), tid(1)
+{
+    ASSERT(strlen(nameIn) < kMaxNameLen);
+    strcpy(name, nameIn);
+}
+
 ANGLEPerfTest::ANGLEPerfTest(const std::string &name,
                              const std::string &backend,
                              const std::string &story,
@@ -182,6 +189,7 @@ ANGLEPerfTest::ANGLEPerfTest(const std::string &name,
       mBackend(backend),
       mStory(story),
       mGPUTimeNs(0),
+      mIgnoreErrors(false),
       mSkipTest(false),
       mStepsToRun(std::numeric_limits<unsigned int>::max()),
       mNumStepsPerformed(0),
@@ -212,13 +220,13 @@ void ANGLEPerfTest::run()
     }
 
     // Calibrate to a fixed number of steps during an initial set time.
-    if (!gStepsToRunOverride.valid())
+    if (gStepsToRunOverride <= 0)
     {
         doRunLoop(kCalibrationRunTimeSeconds);
 
         // Scale steps down according to the time that exeeded one second.
         double scale = kCalibrationRunTimeSeconds / mTimer.getElapsedTime();
-        mStepsToRun  = static_cast<size_t>(static_cast<double>(mNumStepsPerformed) * scale);
+        mStepsToRun  = static_cast<unsigned int>(static_cast<double>(mNumStepsPerformed) * scale);
 
         // Calibration allows the perf test runner script to save some time.
         if (gCalibration)
@@ -229,7 +237,7 @@ void ANGLEPerfTest::run()
     }
     else
     {
-        mStepsToRun = gStepsToRunOverride.value();
+        mStepsToRun = gStepsToRunOverride;
     }
 
     // Do another warmup run. Seems to consistently improve results.
@@ -394,9 +402,9 @@ ANGLERenderTest::ANGLERenderTest(const std::string &name, const RenderTestParams
                     testParams.story(),
                     OneFrame() ? 1 : testParams.iterationsPerStep),
       mTestParams(testParams),
+      mIsTimestampQueryAvailable(false),
       mGLWindow(nullptr),
-      mOSWindow(nullptr),
-      mIsTimestampQueryAvailable(false)
+      mOSWindow(nullptr)
 {
     // Force fast tests to make sure our slowest bots don't time out.
     if (OneFrame())
@@ -592,6 +600,24 @@ void ANGLERenderTest::endInternalTraceEvent(const char *name)
     }
 }
 
+void ANGLERenderTest::beginGLTraceEvent(const char *name, double hostTimeSec)
+{
+    if (gEnableTrace)
+    {
+        mTraceEventBuffer.emplace_back(TRACE_EVENT_PHASE_BEGIN, gTraceCategories[1].name, name,
+                                       hostTimeSec);
+    }
+}
+
+void ANGLERenderTest::endGLTraceEvent(const char *name, double hostTimeSec)
+{
+    if (gEnableTrace)
+    {
+        mTraceEventBuffer.emplace_back(TRACE_EVENT_PHASE_END, gTraceCategories[1].name, name,
+                                       hostTimeSec);
+    }
+}
+
 void ANGLERenderTest::step()
 {
     beginInternalTraceEvent("step");
@@ -623,7 +649,11 @@ void ANGLERenderTest::step()
         mOSWindow->messageLoop();
 
 #if defined(ANGLE_ENABLE_ASSERTS)
-        EXPECT_EQ(static_cast<GLenum>(GL_NO_ERROR), glGetError());
+        // Some gfxbench tests have expected errors that don't affect replay
+        if (!mIgnoreErrors)
+        {
+            EXPECT_EQ(static_cast<GLenum>(GL_NO_ERROR), glGetError());
+        }
 #endif  // defined(ANGLE_ENABLE_ASSERTS)
     }
 
@@ -714,3 +744,14 @@ std::vector<TraceEvent> &ANGLERenderTest::getTraceEventBuffer()
 {
     return mTraceEventBuffer;
 }
+
+namespace angle
+{
+double GetHostTimeSeconds()
+{
+    // Move the time origin to the first call to this function, to avoid generating unnecessarily
+    // large timestamps.
+    static double origin = angle::GetCurrentTime();
+    return angle::GetCurrentTime() - origin;
+}
+}  // namespace angle
