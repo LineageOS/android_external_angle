@@ -608,7 +608,7 @@ static bool DetermineDepthTextureANGLESupport(const TextureCapsMap &textureCaps)
         GL_DEPTH24_STENCIL8_OES,
     };
 
-    return GetFormatSupport(textureCaps, requiredFormats, true, true, true, true, false);
+    return GetFormatSupport(textureCaps, requiredFormats, true, true, true, false, false);
 }
 
 // Check for GL_OES_depth_texture support
@@ -899,6 +899,8 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_EXT_texture_storage"] = enableableExtension(&Extensions::textureStorage);
         map["GL_OES_texture_npot"] = enableableExtension(&Extensions::textureNPOTOES);
         map["GL_EXT_draw_buffers"] = enableableExtension(&Extensions::drawBuffers);
+        map["GL_EXT_draw_buffers_indexed"] = enableableExtension(&Extensions::drawBuffersIndexedEXT);
+        map["GL_OES_draw_buffers_indexed"] = enableableExtension(&Extensions::drawBuffersIndexedOES);
         map["GL_EXT_texture_filter_anisotropic"] = enableableExtension(&Extensions::textureFilterAnisotropic);
         map["GL_EXT_occlusion_query_boolean"] = enableableExtension(&Extensions::occlusionQueryBoolean);
         map["GL_NV_fence"] = esOnlyExtension(&Extensions::fenceNV);
@@ -925,6 +927,7 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_OES_EGL_image"] = enableableExtension(&Extensions::eglImageOES);
         map["GL_OES_EGL_image_external"] = enableableExtension(&Extensions::eglImageExternalOES);
         map["GL_OES_EGL_image_external_essl3"] = enableableExtension(&Extensions::eglImageExternalEssl3OES);
+        map["GL_EXT_EGL_image_external_wrap_modes"] = enableableExtension(&Extensions::eglImageExternalWrapModesEXT);
         map["GL_OES_EGL_sync"] = esOnlyExtension(&Extensions::eglSyncOES);
         map["GL_EXT_memory_object"] = enableableExtension(&Extensions::memoryObject);
         map["GL_EXT_memory_object_fd"] = enableableExtension(&Extensions::memoryObjectFd);
@@ -941,8 +944,7 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_OES_vertex_type_10_10_10_2"] = enableableExtension(&Extensions::vertexAttribType1010102OES);
         map["GL_KHR_debug"] = esOnlyExtension(&Extensions::debug);
         map["GL_OES_texture_border_clamp"] = enableableExtension(&Extensions::textureBorderClampOES);
-        // TODO(jmadill): Enable this when complete.
-        //map["GL_KHR_no_error"] = esOnlyExtension(&Extensions::noError);
+        map["GL_KHR_no_error"] = esOnlyExtension(&Extensions::noError);
         map["GL_ANGLE_lossy_etc_decode"] = enableableExtension(&Extensions::lossyETCDecode);
         map["GL_CHROMIUM_bind_uniform_location"] = esOnlyExtension(&Extensions::bindUniformLocation);
         map["GL_CHROMIUM_sync_query"] = enableableExtension(&Extensions::syncQuery);
@@ -1353,8 +1355,7 @@ std::vector<std::string> DisplayExtensions::getStrings() const
     InsertExtensionString("EGL_ANGLE_create_context_backwards_compatible",       createContextBackwardsCompatible,   &extensionStrings);
     InsertExtensionString("EGL_KHR_no_config_context",                           noConfigContext,                    &extensionStrings);
     InsertExtensionString("EGL_IMG_context_priority",                            contextPriority,                    &extensionStrings);
-    // TODO(jmadill): Enable this when complete.
-    //InsertExtensionString("KHR_create_context_no_error",                       createContextNoError,               &extensionStrings);
+    InsertExtensionString("EGL_KHR_create_context_no_error",                     createContextNoError,               &extensionStrings);
     // clang-format on
 
     return extensionStrings;
@@ -1390,6 +1391,7 @@ std::vector<std::string> ClientExtensions::getStrings() const
     InsertExtensionString("EGL_ANGLE_platform_angle",                         platformANGLE,                      &extensionStrings);
     InsertExtensionString("EGL_ANGLE_platform_angle_d3d",                     platformANGLED3D,                   &extensionStrings);
     InsertExtensionString("EGL_ANGLE_platform_angle_d3d11on12",               platformANGLED3D11ON12,             &extensionStrings);
+    InsertExtensionString("EGL_ANGLE_platform_angle_device_type_egl_angle",   platformANGLEDeviceTypeEGLANGLE,    &extensionStrings);
     InsertExtensionString("EGL_ANGLE_platform_angle_device_type_swiftshader", platformANGLEDeviceTypeSwiftShader, &extensionStrings);
     InsertExtensionString("EGL_ANGLE_platform_angle_opengl",                  platformANGLEOpenGL,                &extensionStrings);
     InsertExtensionString("EGL_ANGLE_platform_angle_null",                    platformANGLENULL,                  &extensionStrings);
