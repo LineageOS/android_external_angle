@@ -25,20 +25,50 @@ sdk_version = '28'
 stl = 'libc++_static'
 
 
-def write_blueprint_key_value(output, name, value, sort=True):
-    if isinstance(value, set):
-        value = sorted(value)
+def tabs(indent):
+    return ' ' * (indent * 4)
+
+
+def has_child_values(value):
+    # Elements of the blueprint can be pruned if they are empty lists or dictionaries of empty
+    # lists
+    if isinstance(value, list):
+        return len(value) > 0
+    if isinstance(value, dict):
+        for (item, item_value) in value.items():
+            if has_child_values(item_value):
+                return True
+        return False
+
+    # This is a value leaf node
+    return True
+
+
+def write_blueprint_key_value(output, name, value, indent=1):
+    if not has_child_values(value):
+        return
+
+    if isinstance(value, set) or isinstance(value, list):
+        value = list(sorted(set(value)))
 
     if isinstance(value, list):
-        output.append('    %s: [' % name)
-        for item in sorted(set(value)) if sort else value:
-            output.append('        "%s",' % item)
-        output.append('    ],')
+        output.append(tabs(indent) + '%s: [' % name)
+        for item in value:
+            output.append(tabs(indent + 1) + '"%s",' % item)
+        output.append(tabs(indent) + '],')
+        return
+    if isinstance(value, dict):
+        if not value:
+            return
+        output.append(tabs(indent) + '%s: {' % name)
+        for (item, item_value) in value.items():
+            write_blueprint_key_value(output, item, item_value, indent + 1)
+        output.append(tabs(indent) + '},')
         return
     if isinstance(value, bool):
-        output.append('    %s: %s,' % (name, 'true' if value else 'false'))
+        output.append(tabs(indent) + '%s: %s,' % (name, 'true' if value else 'false'))
         return
-    output.append('    %s: "%s",' % (name, value))
+    output.append(tabs(indent) + '%s: "%s",' % (name, value))
 
 
 def write_blueprint(output, target_type, values):
@@ -105,11 +135,9 @@ def gn_sources_to_blueprint_sources(sources):
 
 target_blackist = [
     '//build/config:shared_library_deps',
-    '//third_party/vulkan-headers/src:vulkan_headers',
 ]
 
 include_blacklist = [
-    '//third_party/vulkan-headers/src/include/',
 ]
 
 
@@ -180,33 +208,61 @@ def escape_quotes(str):
     return str.replace("\"", "\\\"").replace("\'", "\\\'")
 
 
+angle_cpu_bits_define = r'^ANGLE_IS_[0-9]+_BIT_CPU$'
+
+
 def gn_cflags_to_blueprint_cflags(target_info):
     result = []
 
     # Only forward cflags that disable warnings
     cflag_whitelist = r'^-Wno-.*$'
 
-    # Some clfags are not supported by the version of clang in Android
-    cflag_blacklist = [
-        '-Wno-bitwise-conditional-parentheses',
-        '-Wno-builtin-assume-aligned-alignment',
-        '-Wno-c99-designator',
-        '-Wno-deprecated-copy',
-        '-Wno-final-dtor-non-final-class',
-        '-Wno-implicit-int-float-conversion',
-        '-Wno-sizeof-array-div',
-        '-Wno-misleading-indentation',
-    ]
-
     for cflag_type in ['cflags', 'cflags_c', 'cflags_cc']:
         if cflag_type in target_info:
             for cflag in target_info[cflag_type]:
-                if re.search(cflag_whitelist, cflag) and not cflag in cflag_blacklist:
+                if re.search(cflag_whitelist, cflag):
                     result.append(cflag)
+
+    # Chrome and Android use different versions of Clang which support differnt warning options.
+    # Ignore errors about unrecognized warning flags.
+    result.append('-Wno-unknown-warning-option')
 
     if 'defines' in target_info:
         for define in target_info['defines']:
-            result.append('-D%s' % escape_quotes(define))
+            # Don't emit ANGLE's CPU-bits define here, it will be part of the arch-specific
+            # information later
+            if not re.search(angle_cpu_bits_define, define):
+                result.append('-D%s' % escape_quotes(define))
+
+    return result
+
+
+def gn_arch_specific_to_blueprint(target_info):
+    arch_infos = {
+        'arm': {
+            'bits': 32
+        },
+        'arm64': {
+            'bits': 64
+        },
+        'x86': {
+            'bits': 32
+        },
+        'x86_64': {
+            'bits': 64
+        },
+    }
+
+    result = {}
+    for (arch_name, arch_info) in arch_infos.items():
+        result[arch_name] = {'cflags': []}
+
+    # If the target has ANGLE's CPU-bits define, replace it with the arch-specific bits here.
+    if 'defines' in target_info:
+        for define in target_info['defines']:
+            if re.search(angle_cpu_bits_define, define):
+                for (arch_name, arch_info) in arch_infos.items():
+                    result[arch_name]['cflags'].append('-DANGLE_IS_%d_BIT_CPU' % arch_info['bits'])
 
     return result
 
@@ -227,9 +283,6 @@ def library_target_to_blueprint(target, build_info):
     bp = {}
     bp['name'] = gn_target_to_blueprint_target(target, target_info)
 
-    if target in root_targets:
-        bp['visibility'] = ["//visibility:public"]
-
     if 'sources' in target_info:
         bp['srcs'] = gn_sources_to_blueprint_sources(target_info['sources'])
 
@@ -240,6 +293,7 @@ def library_target_to_blueprint(target, build_info):
     bp['local_include_dirs'] = gn_include_dirs_to_blueprint_include_dirs(target_info)
 
     bp['cflags'] = gn_cflags_to_blueprint_cflags(target_info)
+    bp['arch'] = gn_arch_specific_to_blueprint(target_info)
 
     bp['sdk_version'] = sdk_version
     bp['stl'] = stl
@@ -358,18 +412,20 @@ def main():
 
     blueprint_targets = []
 
-    # Set the default visibility to private
-    blueprint_targets.append(('package', {'default_visibility': ['//visibility:private']}))
-
     for target in targets_to_write:
         blueprint_targets.append(gn_target_to_blueprint(target, build_info))
 
     # Add APKs with all of the root libraries
+    blueprint_targets.append(('filegroup', {
+        'name': 'ANGLE_srcs',
+        'srcs': ['src/**/*.java',],
+    }))
+
     blueprint_targets.append((
-        'android_app',
+        'java_defaults',
         {
             'name':
-                'ANGLE',
+                'ANGLE_java_defaults',
             'sdk_version':
                 'system_current',
             'min_sdk_version':
@@ -378,30 +434,46 @@ def main():
                 'both',
             'use_embedded_native_libs':
                 True,
-            'resource_dirs': ['src/android_system_settings/res',],
-            'asset_dirs': ['src/android_system_settings/assets',],
-            'srcs': [
-                'src/android_system_settings/src/com/android/angle/common/*.java',
-                'src/android_system_settings/src/com/android/angle/*.java',
+            'jni_libs': [
+                gn_target_to_blueprint_target(target, build_info[target])
+                for target in root_targets
             ],
-            'manifest':
-                'src/android_system_settings/src/com/android/angle/AndroidManifest.xml',
             'aaptflags': [
                 # Don't compress *.json files
                 '-0 .json',
                 # Give com.android.angle.common Java files access to the R class
                 '--extra-packages com.android.angle.common',
             ],
-            'static_libs': ['androidx.preference_preference',],
-            'jni_libs': [
-                gn_target_to_blueprint_target(target, build_info[target])
-                for target in root_targets
-            ],
+            'srcs': [':ANGLE_srcs'],
             'privileged':
                 True,
             'owner':
                 'google',
         }))
+
+    blueprint_targets.append((
+        'android_library',
+        {
+            'name': 'ANGLE_library',
+            'sdk_version': 'system_current',
+            'min_sdk_version': sdk_version,
+            'resource_dirs': ['src/android_system_settings/res',],
+            'asset_dirs': ['src/android_system_settings/assets',],
+            'aaptflags': [
+                # Don't compress *.json files
+                '-0 .json',
+            ],
+            'manifest': 'src/android_system_settings/src/com/android/angle/AndroidManifest.xml',
+            'static_libs': ['androidx.preference_preference',],
+        }))
+
+    blueprint_targets.append(('android_app', {
+        'name': 'ANGLE',
+        'defaults': ['ANGLE_java_defaults'],
+        'static_libs': ['ANGLE_library'],
+        'manifest': 'src/android_system_settings/src/com/android/angle/AndroidManifest.xml',
+        'required': ['privapp_whitelist_com.android.angle'],
+    }))
 
     output = [
         """// GENERATED FILE - DO NOT EDIT.

@@ -32,6 +32,9 @@ declare_args() {
   # Don't build extra (test, samples etc) for Windows UWP. We don't have
   # infrastructure (e.g. windowing helper functions) in place to run them.
   angle_build_all = !build_with_chromium && !angle_is_winuwp && angle_has_build
+
+  # Enable generating current commit information using git
+  angle_enable_commit_id = true
 }
 
 if (angle_build_all) {
@@ -463,9 +466,8 @@ action("commit_id") {
   outputs = [ commit_id_output_file ]
 
   # Add git as a dependency if it is available.
-  angle_git_is_present =
-      exec_script("src/commit_id.py", [ "check" ], "value") == 1
-  if (angle_git_is_present) {
+  if (angle_enable_commit_id &&
+      exec_script("src/commit_id.py", [ "check" ], "value") == 1) {
     # commit id should depend on angle's HEAD revision
     inputs = [ ".git/HEAD" ]
   }
@@ -742,8 +744,21 @@ angle_source_set("angle_gl_enum_utils") {
   ]
 }
 
+config("angle_compression_config") {
+  include_dirs = [ "//third_party/zlib/google" ]
+}
+
+group("angle_compression") {
+  public_configs = [
+    ":angle_compression_config",
+    "//third_party/zlib:zlib_config",
+  ]
+  public_deps = [ "//third_party/zlib/google:compression_utils_portable" ]
+}
+
 angle_source_set("libANGLE_with_capture") {
   public_deps = [ ":libANGLE_base" ]
+  deps = [ ":angle_compression" ]
   public_configs = [ ":angle_frame_capture_enabled" ]
   sources = libangle_capture_sources
 }
@@ -756,6 +771,16 @@ config("shared_library_public_config") {
       "-rpath",
       "@executable_path/",
     ]
+    if (build_with_chromium) {
+      ldflags += [
+        # Path for loading shared libraries for unbundled binaries.
+        # From //build/config/mac/BUILD.gn, this is only added for
+        # component builds. However, since ANGLE always dynamically
+        # links to libvulkan, it should be re-added for non-component
+        # builds. (anglebug.com/4455)
+        "-Wl,-rpath,@loader_path/.",
+      ]
+    }
   }
 
   if (angle_is_winuwp) {
