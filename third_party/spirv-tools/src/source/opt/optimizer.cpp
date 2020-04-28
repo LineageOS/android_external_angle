@@ -498,7 +498,7 @@ bool Optimizer::RegisterPassFromFlag(const std::string& flag) {
   } else if (pass_name == "legalize-vector-shuffle") {
     RegisterPass(CreateLegalizeVectorShufflePass());
   } else if (pass_name == "split-invalid-unreachable") {
-    RegisterPass(CreateLegalizeVectorShufflePass());
+    RegisterPass(CreateSplitInvalidUnreachablePass());
   } else if (pass_name == "decompose-initialized-variables") {
     RegisterPass(CreateDecomposeInitializedVariablesPass());
   } else if (pass_name == "graphics-robust-access") {
@@ -569,7 +569,12 @@ bool Optimizer::Run(const uint32_t* original_binary,
   }
 
 #ifndef NDEBUG
-  if (status == opt::Pass::Status::SuccessWithoutChange) {
+  // We do not keep the result id of DebugScope in struct DebugScope.
+  // Instead, we assign random ids for them, which results in sanity
+  // check failures. We want to skip the sanity check when the module
+  // contains DebugScope instructions.
+  if (status == opt::Pass::Status::SuccessWithoutChange &&
+      !context->module()->ContainsDebugScope()) {
     std::vector<uint32_t> optimized_binary_with_nop;
     context->module()->ToBinary(&optimized_binary_with_nop,
                                 /* skip_nop = */ false);

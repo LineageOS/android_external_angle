@@ -21,6 +21,7 @@ namespace rx
 namespace vk
 {
 class ImageHelper;
+enum class ImageLayout;
 
 using RenderPassAndSerial = ObjectAndSerial<RenderPass>;
 using PipelineAndSerial   = ObjectAndSerial<Pipeline>;
@@ -152,9 +153,12 @@ class AttachmentOpsArray final
     PackedAttachmentOpsDesc &operator[](size_t index);
 
     // Initializes an attachment op with whatever values. Used for compatible RenderPass checks.
-    void initDummyOp(size_t index, VkImageLayout initialLayout, VkImageLayout finalLayout);
-    // Initialize an attachment op with all load and store operations.
-    void initWithLoadStore(size_t index, VkImageLayout initialLayout, VkImageLayout finalLayout);
+    void initDummyOp(size_t index, ImageLayout initialLayout, ImageLayout finalLayout);
+    // Initialize an attachment op with store operations.
+    void initWithStore(size_t index,
+                       VkAttachmentLoadOp loadOp,
+                       ImageLayout initialLayout,
+                       ImageLayout finalLayout);
 
     size_t hash() const;
 
@@ -724,10 +728,8 @@ class TextureDescriptorDesc
 // This is IMPLEMENTATION_MAX_DRAW_BUFFERS + 1 for DS attachment
 constexpr size_t kMaxFramebufferAttachments = gl::IMPLEMENTATION_MAX_FRAMEBUFFER_ATTACHMENTS;
 // Color serials are at index [0:gl::IMPLEMENTATION_MAX_DRAW_BUFFERS-1]
-// Depth index is at gl::IMPLEMENTATION_MAX_DRAW_BUFFERS
-// Stencil index is at gl::IMPLEMENTATION_MAX_DRAW_BUFFERS + 1
-constexpr size_t kFramebufferDescDepthIndex   = gl::IMPLEMENTATION_MAX_DRAW_BUFFERS;
-constexpr size_t kFramebufferDescStencilIndex = gl::IMPLEMENTATION_MAX_DRAW_BUFFERS + 1;
+// Depth/stencil index is at gl::IMPLEMENTATION_MAX_DRAW_BUFFERS
+constexpr size_t kFramebufferDescDepthStencilIndex = gl::IMPLEMENTATION_MAX_DRAW_BUFFERS;
 // Struct for AttachmentSerial cache signatures. Includes level/layer for imageView as
 //  well as a unique Serial value for the underlying image
 struct AttachmentSerial
@@ -751,6 +753,8 @@ class FramebufferDesc
     void reset();
 
     bool operator==(const FramebufferDesc &other) const;
+
+    uint32_t attachmentCount() const;
 
   private:
     gl::AttachmentArray<AttachmentSerial> mSerials;
@@ -979,8 +983,6 @@ constexpr uint32_t kReservedDriverUniformBindingCount = 1;
 // supported.
 constexpr uint32_t kReservedPerStageDefaultUniformBindingCount = 1;
 constexpr uint32_t kReservedDefaultUniformBindingCount         = 3;
-// Binding index start for transform feedback buffers:
-constexpr uint32_t kXfbBindingIndexStart = kReservedDefaultUniformBindingCount;
 }  // namespace rx
 
 #endif  // LIBANGLE_RENDERER_VULKAN_VK_CACHE_UTILS_H_

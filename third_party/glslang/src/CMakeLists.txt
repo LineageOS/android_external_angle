@@ -75,7 +75,7 @@ endif()
 
 # Precompiled header macro. Parameters are source file list and filename for pch cpp file.
 macro(glslang_pch SRCS PCHCPP)
-  if(MSVC AND CMAKE_GENERATOR MATCHES "^Visual Studio" AND ENABLE_PCH)
+  if(MSVC AND CMAKE_GENERATOR MATCHES "^Visual Studio" AND NOT ${CMAKE_CXX_COMPILER_ID} MATCHES "Clang" AND ENABLE_PCH)
     set(PCH_NAME "$(IntDir)\\pch.pch")
     # make source files use/depend on PCH_NAME
     set_source_files_properties(${${SRCS}} PROPERTIES COMPILE_FLAGS "/Yupch.h /FIpch.h /Fp${PCH_NAME} /Zm300" OBJECT_DEPENDS "${PCH_NAME}")
@@ -124,14 +124,14 @@ if(${CMAKE_CXX_COMPILER_ID} MATCHES "GNU")
     if(NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS "9.0.0")
         add_compile_options(-Werror=deprecated-copy)
     endif()
-elseif(${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
+elseif(${CMAKE_CXX_COMPILER_ID} MATCHES "Clang" AND NOT MSVC)
     add_compile_options(-Wall -Wuninitialized -Wunused -Wunused-local-typedefs
                         -Wunused-parameter -Wunused-value  -Wunused-variable)
     add_compile_options(-Wno-reorder)  # disable this from -Wall, since it happens all over.
     if(NOT ENABLE_RTTI)
         add_compile_options(-fno-rtti)
     endif()
-elseif(${CMAKE_CXX_COMPILER_ID} MATCHES "MSVC")
+elseif(MSVC)
     if(NOT ENABLE_RTTI)
         add_compile_options(/GR-) # Disable RTTI
     endif()
@@ -142,7 +142,10 @@ if(ENABLE_GLSLANG_JS)
         add_compile_options(/Os /GR-)
     else()
         add_compile_options(-Os -fno-exceptions)
-        add_link_options(-Os)
+        if(${CMAKE_CXX_COMPILER_ID} MATCHES "Clang" AND NOT MSVC)
+            add_compile_options(-Wno-unused-parameter)
+            add_compile_options(-Wno-unused-variable -Wno-unused-const-variable)
+        endif()
     endif()
 endif(ENABLE_GLSLANG_JS)
 
@@ -150,7 +153,7 @@ endif(ENABLE_GLSLANG_JS)
 if(${CMAKE_VERSION} VERSION_LESS 3.1)
     # CMake versions before 3.1 do not understand CMAKE_CXX_STANDARD
     # remove this block once CMake >=3.1 has fixated in the ecosystem
-    add_compile_options(-std=c++11)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 else()
     set(CMAKE_CXX_STANDARD 11)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)

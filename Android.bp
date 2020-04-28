@@ -425,41 +425,17 @@ cc_library_shared {
     },
 }
 cc_defaults {
-    name: "angle_vulkan_headers",
+    name: "angle_vulkan_entry_points",
     stl: "libc++_static",
-    local_include_dirs: [
-        "",
-        "third_party/vulkan-headers/src/include/",
+    shared_libs: [
+        "libvulkan",
     ],
     sdk_version: "28",
     cflags: [
-        "-DANDROID",
-        "-DANDROID_NDK_VERSION_ROLL=r20_1",
-        "-DCR_CLANG_REVISION=\"n344329-9284abd0-6\"",
-        "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
-        "-DHAVE_SYS_UIO_H",
-        "-DNDEBUG",
-        "-DNVALGRIND",
-        "-DVK_USE_PLATFORM_ANDROID_KHR",
-        "-D_FORTIFY_SOURCE=2",
-        "-D_GNU_SOURCE",
-        "-D__STDC_CONSTANT_MACROS",
-        "-D__STDC_FORMAT_MACROS",
-        "-Wno-bitwise-conditional-parentheses",
-        "-Wno-builtin-assume-aligned-alignment",
-        "-Wno-builtin-macro-redefined",
-        "-Wno-c++11-narrowing",
-        "-Wno-deprecated-copy",
-        "-Wno-final-dtor-non-final-class",
-        "-Wno-ignored-pragma-optimize",
-        "-Wno-implicit-fallthrough",
-        "-Wno-implicit-int-float-conversion",
-        "-Wno-missing-field-initializers",
-        "-Wno-non-c-typedef-for-linkage",
-        "-Wno-undefined-var-template",
         "-Wno-unknown-warning-option",
-        "-Wno-unneeded-internal-declaration",
-        "-Wno-unused-parameter",
+    ],
+    defaults: [
+        "angle_volk",
     ],
 }
 cc_defaults {
@@ -508,19 +484,121 @@ cc_defaults {
     ],
 }
 cc_defaults {
-    name: "angle_vulkan_entry_points",
+    name: "angle_vulkan_memory_allocator",
     stl: "libc++_static",
-    shared_libs: [
-        "libvulkan",
+    local_include_dirs: [
+        "",
+        "src/third_party/volk/",
+        "third_party/VulkanMemoryAllocator/src/",
+        "third_party/vulkan-headers/src/include/",
     ],
     sdk_version: "28",
     cflags: [
+        "-DANDROID",
+        "-DANDROID_NDK_VERSION_ROLL=r20_1",
+        "-DCR_CLANG_REVISION=\"n344329-9284abd0-6\"",
+        "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
+        "-DHAVE_SYS_UIO_H",
+        "-DNDEBUG",
+        "-DNVALGRIND",
+        "-DVK_USE_PLATFORM_ANDROID_KHR",
+        "-DVMA_IMPLEMENTATION",
+        "-D_FORTIFY_SOURCE=2",
+        "-D_GNU_SOURCE",
+        "-D__STDC_CONSTANT_MACROS",
+        "-D__STDC_FORMAT_MACROS",
+        "-Wno-bitwise-conditional-parentheses",
+        "-Wno-builtin-assume-aligned-alignment",
+        "-Wno-builtin-macro-redefined",
+        "-Wno-c++11-narrowing",
+        "-Wno-deprecated-copy",
+        "-Wno-final-dtor-non-final-class",
+        "-Wno-ignored-pragma-optimize",
+        "-Wno-implicit-fallthrough",
+        "-Wno-implicit-int-float-conversion",
+        "-Wno-missing-field-initializers",
+        "-Wno-non-c-typedef-for-linkage",
+        "-Wno-undefined-var-template",
         "-Wno-unknown-warning-option",
+        "-Wno-unneeded-internal-declaration",
+        "-Wno-unused-parameter",
+        "-Wno-unused-variable",
     ],
     defaults: [
         "angle_volk",
-        "angle_vulkan_headers",
     ],
+}
+cc_defaults {
+    name: "angle_vk_mem_alloc_wrapper",
+    stl: "libc++_static",
+    local_include_dirs: [
+        "include/",
+        "src/",
+        "src/third_party/volk/",
+        "third_party/VulkanMemoryAllocator/src/",
+        "third_party/vulkan-headers/src/include/",
+    ],
+    srcs: [
+        "src/libANGLE/renderer/vulkan/vk_mem_alloc_wrapper.cpp",
+    ],
+    sdk_version: "28",
+    cflags: [
+        "-DANDROID",
+        "-DANDROID_NDK_VERSION_ROLL=r20_1",
+        "-DCR_CLANG_REVISION=\"n344329-9284abd0-6\"",
+        "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
+        "-DHAVE_SYS_UIO_H",
+        "-DNDEBUG",
+        "-DNVALGRIND",
+        "-DVK_USE_PLATFORM_ANDROID_KHR",
+        "-DVMA_IMPLEMENTATION",
+        "-D_FORTIFY_SOURCE=2",
+        "-D_GNU_SOURCE",
+        "-D__STDC_CONSTANT_MACROS",
+        "-D__STDC_FORMAT_MACROS",
+        "-Wno-bitwise-conditional-parentheses",
+        "-Wno-builtin-assume-aligned-alignment",
+        "-Wno-builtin-macro-redefined",
+        "-Wno-c++11-narrowing",
+        "-Wno-deprecated-copy",
+        "-Wno-extra-semi-stmt",
+        "-Wno-final-dtor-non-final-class",
+        "-Wno-ignored-pragma-optimize",
+        "-Wno-implicit-fallthrough",
+        "-Wno-implicit-int-float-conversion",
+        "-Wno-missing-field-initializers",
+        "-Wno-non-c-typedef-for-linkage",
+        "-Wno-undefined-var-template",
+        "-Wno-unknown-warning-option",
+        "-Wno-unneeded-internal-declaration",
+        "-Wno-unused-parameter",
+        "-Wno-unused-variable",
+    ],
+    defaults: [
+        "angle_vulkan_memory_allocator",
+    ],
+    arch: {
+        arm64: {
+            cflags: [
+                "-DANGLE_IS_64_BIT_CPU",
+            ],
+        },
+        x86_64: {
+            cflags: [
+                "-DANGLE_IS_64_BIT_CPU",
+            ],
+        },
+        x86: {
+            cflags: [
+                "-DANGLE_IS_32_BIT_CPU",
+            ],
+        },
+        arm: {
+            cflags: [
+                "-DANGLE_IS_32_BIT_CPU",
+            ],
+        },
+    },
 }
 cc_library_static {
     generated_headers: [
@@ -626,121 +704,130 @@ cc_library_static {
     ],
 }
 cc_genrule {
+    name: "angle_spvtools_vendor_tables_spv-amd-shader-trinary-minmax",
     tool_files: [
         "third_party/spirv-tools/src/utils/generate_grammar_tables.py",
     ],
+    cmd: "$(location) --extinst-vendor-grammar $(location third_party/spirv-tools/src/source/extinst.spv-amd-shader-trinary-minmax.grammar.json) --vendor-insts-output $(location spv-amd-shader-trinary-minmax.insts.inc) --vendor-operand-kind-prefix ...nil...",
     srcs: [
         "third_party/spirv-tools/src/source/extinst.spv-amd-shader-trinary-minmax.grammar.json",
     ],
-    cmd: "$(location) --extinst-vendor-grammar $(location third_party/spirv-tools/src/source/extinst.spv-amd-shader-trinary-minmax.grammar.json) --vendor-insts-output $(location spv-amd-shader-trinary-minmax.insts.inc) --vendor-operand-kind-prefix ...nil...",
-    name: "angle_spvtools_vendor_tables_spv-amd-shader-trinary-minmax",
+    sdk_version: "28",
     out: [
         "spv-amd-shader-trinary-minmax.insts.inc",
     ],
 }
 cc_genrule {
+    name: "angle_spvtools_vendor_tables_spv-amd-shader-explicit-vertex-parameter",
     tool_files: [
         "third_party/spirv-tools/src/utils/generate_grammar_tables.py",
     ],
+    cmd: "$(location) --extinst-vendor-grammar $(location third_party/spirv-tools/src/source/extinst.spv-amd-shader-explicit-vertex-parameter.grammar.json) --vendor-insts-output $(location spv-amd-shader-explicit-vertex-parameter.insts.inc) --vendor-operand-kind-prefix ...nil...",
     srcs: [
         "third_party/spirv-tools/src/source/extinst.spv-amd-shader-explicit-vertex-parameter.grammar.json",
     ],
-    cmd: "$(location) --extinst-vendor-grammar $(location third_party/spirv-tools/src/source/extinst.spv-amd-shader-explicit-vertex-parameter.grammar.json) --vendor-insts-output $(location spv-amd-shader-explicit-vertex-parameter.insts.inc) --vendor-operand-kind-prefix ...nil...",
-    name: "angle_spvtools_vendor_tables_spv-amd-shader-explicit-vertex-parameter",
+    sdk_version: "28",
     out: [
         "spv-amd-shader-explicit-vertex-parameter.insts.inc",
     ],
 }
 cc_genrule {
+    name: "angle_spvtools_vendor_tables_spv-amd-shader-ballot",
     tool_files: [
         "third_party/spirv-tools/src/utils/generate_grammar_tables.py",
     ],
+    cmd: "$(location) --extinst-vendor-grammar $(location third_party/spirv-tools/src/source/extinst.spv-amd-shader-ballot.grammar.json) --vendor-insts-output $(location spv-amd-shader-ballot.insts.inc) --vendor-operand-kind-prefix ...nil...",
     srcs: [
         "third_party/spirv-tools/src/source/extinst.spv-amd-shader-ballot.grammar.json",
     ],
-    cmd: "$(location) --extinst-vendor-grammar $(location third_party/spirv-tools/src/source/extinst.spv-amd-shader-ballot.grammar.json) --vendor-insts-output $(location spv-amd-shader-ballot.insts.inc) --vendor-operand-kind-prefix ...nil...",
-    name: "angle_spvtools_vendor_tables_spv-amd-shader-ballot",
+    sdk_version: "28",
     out: [
         "spv-amd-shader-ballot.insts.inc",
     ],
 }
 cc_genrule {
+    name: "angle_spvtools_vendor_tables_spv-amd-gcn-shader",
     tool_files: [
         "third_party/spirv-tools/src/utils/generate_grammar_tables.py",
     ],
+    cmd: "$(location) --extinst-vendor-grammar $(location third_party/spirv-tools/src/source/extinst.spv-amd-gcn-shader.grammar.json) --vendor-insts-output $(location spv-amd-gcn-shader.insts.inc) --vendor-operand-kind-prefix ...nil...",
     srcs: [
         "third_party/spirv-tools/src/source/extinst.spv-amd-gcn-shader.grammar.json",
     ],
-    cmd: "$(location) --extinst-vendor-grammar $(location third_party/spirv-tools/src/source/extinst.spv-amd-gcn-shader.grammar.json) --vendor-insts-output $(location spv-amd-gcn-shader.insts.inc) --vendor-operand-kind-prefix ...nil...",
-    name: "angle_spvtools_vendor_tables_spv-amd-gcn-shader",
+    sdk_version: "28",
     out: [
         "spv-amd-gcn-shader.insts.inc",
     ],
 }
 cc_genrule {
+    name: "angle_spvtools_vendor_tables_opencl.debuginfo.100",
     tool_files: [
         "third_party/spirv-tools/src/utils/generate_grammar_tables.py",
     ],
+    cmd: "$(location) --extinst-vendor-grammar $(location third_party/spirv-tools/src/source/extinst.opencl.debuginfo.100.grammar.json) --vendor-insts-output $(location opencl.debuginfo.100.insts.inc) --vendor-operand-kind-prefix CLDEBUG100_",
     srcs: [
         "third_party/spirv-tools/src/source/extinst.opencl.debuginfo.100.grammar.json",
     ],
-    cmd: "$(location) --extinst-vendor-grammar $(location third_party/spirv-tools/src/source/extinst.opencl.debuginfo.100.grammar.json) --vendor-insts-output $(location opencl.debuginfo.100.insts.inc) --vendor-operand-kind-prefix CLDEBUG100_",
-    name: "angle_spvtools_vendor_tables_opencl.debuginfo.100",
+    sdk_version: "28",
     out: [
         "opencl.debuginfo.100.insts.inc",
     ],
 }
 cc_genrule {
+    name: "angle_spvtools_vendor_tables_debuginfo",
     tool_files: [
         "third_party/spirv-tools/src/utils/generate_grammar_tables.py",
     ],
+    cmd: "$(location) --extinst-vendor-grammar $(location third_party/spirv-tools/src/source/extinst.debuginfo.grammar.json) --vendor-insts-output $(location debuginfo.insts.inc) --vendor-operand-kind-prefix ...nil...",
     srcs: [
         "third_party/spirv-tools/src/source/extinst.debuginfo.grammar.json",
     ],
-    cmd: "$(location) --extinst-vendor-grammar $(location third_party/spirv-tools/src/source/extinst.debuginfo.grammar.json) --vendor-insts-output $(location debuginfo.insts.inc) --vendor-operand-kind-prefix ...nil...",
-    name: "angle_spvtools_vendor_tables_debuginfo",
+    sdk_version: "28",
     out: [
         "debuginfo.insts.inc",
     ],
 }
 cc_genrule {
+    name: "angle_spvtools_opencl_tables_opencl1-0",
     tool_files: [
         "third_party/spirv-tools/src/utils/generate_grammar_tables.py",
     ],
+    cmd: "$(location) --spirv-core-grammar $(location third_party/spirv-headers/src/include/spirv/1.0/spirv.core.grammar.json) --extinst-debuginfo-grammar $(location third_party/spirv-tools/src/source/extinst.debuginfo.grammar.json) --extinst-cldebuginfo100-grammar $(location third_party/spirv-tools/src/source/extinst.opencl.debuginfo.100.grammar.json) --extinst-opencl-grammar $(location third_party/spirv-headers/src/include/spirv/1.0/extinst.opencl.std.100.grammar.json) --opencl-insts-output $(location opencl.std.insts.inc)",
     srcs: [
         "third_party/spirv-headers/src/include/spirv/1.0/extinst.opencl.std.100.grammar.json",
         "third_party/spirv-headers/src/include/spirv/1.0/spirv.core.grammar.json",
         "third_party/spirv-tools/src/source/extinst.debuginfo.grammar.json",
         "third_party/spirv-tools/src/source/extinst.opencl.debuginfo.100.grammar.json",
     ],
-    cmd: "$(location) --spirv-core-grammar $(location third_party/spirv-headers/src/include/spirv/1.0/spirv.core.grammar.json) --extinst-debuginfo-grammar $(location third_party/spirv-tools/src/source/extinst.debuginfo.grammar.json) --extinst-cldebuginfo100-grammar $(location third_party/spirv-tools/src/source/extinst.opencl.debuginfo.100.grammar.json) --extinst-opencl-grammar $(location third_party/spirv-headers/src/include/spirv/1.0/extinst.opencl.std.100.grammar.json) --opencl-insts-output $(location opencl.std.insts.inc)",
-    name: "angle_spvtools_opencl_tables_opencl1-0",
+    sdk_version: "28",
     out: [
         "opencl.std.insts.inc",
     ],
 }
 cc_genrule {
+    name: "angle_spvtools_language_header_debuginfo",
     tool_files: [
         "third_party/spirv-tools/src/utils/generate_language_headers.py",
     ],
+    cmd: "$(location) --extinst-grammar $(location third_party/spirv-tools/src/source/extinst.debuginfo.grammar.json) --extinst-output-path $(location DebugInfo.h)",
     srcs: [
         "third_party/spirv-tools/src/source/extinst.debuginfo.grammar.json",
     ],
-    cmd: "$(location) --extinst-grammar $(location third_party/spirv-tools/src/source/extinst.debuginfo.grammar.json) --extinst-output-path $(location DebugInfo.h)",
-    name: "angle_spvtools_language_header_debuginfo",
+    sdk_version: "28",
     out: [
         "DebugInfo.h",
     ],
 }
 cc_genrule {
+    name: "angle_spvtools_language_header_cldebuginfo100",
     tool_files: [
         "third_party/spirv-tools/src/utils/generate_language_headers.py",
     ],
+    cmd: "$(location) --extinst-grammar $(location third_party/spirv-tools/src/source/extinst.opencl.debuginfo.100.grammar.json) --extinst-output-path $(location OpenCLDebugInfo100.h)",
     srcs: [
         "third_party/spirv-tools/src/source/extinst.opencl.debuginfo.100.grammar.json",
     ],
-    cmd: "$(location) --extinst-grammar $(location third_party/spirv-tools/src/source/extinst.opencl.debuginfo.100.grammar.json) --extinst-output-path $(location OpenCLDebugInfo100.h)",
-    name: "angle_spvtools_language_header_cldebuginfo100",
+    sdk_version: "28",
     out: [
         "OpenCLDebugInfo100.h",
     ],
@@ -783,61 +870,65 @@ cc_defaults {
     ],
 }
 cc_genrule {
+    name: "angle_spvtools_glsl_tables_glsl1-0",
     tool_files: [
         "third_party/spirv-tools/src/utils/generate_grammar_tables.py",
     ],
+    cmd: "$(location) --spirv-core-grammar $(location third_party/spirv-headers/src/include/spirv/1.0/spirv.core.grammar.json) --extinst-debuginfo-grammar $(location third_party/spirv-tools/src/source/extinst.debuginfo.grammar.json) --extinst-cldebuginfo100-grammar $(location third_party/spirv-tools/src/source/extinst.opencl.debuginfo.100.grammar.json) --extinst-glsl-grammar $(location third_party/spirv-headers/src/include/spirv/1.0/extinst.glsl.std.450.grammar.json) --glsl-insts-output $(location glsl.std.450.insts.inc)",
     srcs: [
         "third_party/spirv-headers/src/include/spirv/1.0/extinst.glsl.std.450.grammar.json",
         "third_party/spirv-headers/src/include/spirv/1.0/spirv.core.grammar.json",
         "third_party/spirv-tools/src/source/extinst.debuginfo.grammar.json",
         "third_party/spirv-tools/src/source/extinst.opencl.debuginfo.100.grammar.json",
     ],
-    cmd: "$(location) --spirv-core-grammar $(location third_party/spirv-headers/src/include/spirv/1.0/spirv.core.grammar.json) --extinst-debuginfo-grammar $(location third_party/spirv-tools/src/source/extinst.debuginfo.grammar.json) --extinst-cldebuginfo100-grammar $(location third_party/spirv-tools/src/source/extinst.opencl.debuginfo.100.grammar.json) --extinst-glsl-grammar $(location third_party/spirv-headers/src/include/spirv/1.0/extinst.glsl.std.450.grammar.json) --glsl-insts-output $(location glsl.std.450.insts.inc)",
-    name: "angle_spvtools_glsl_tables_glsl1-0",
+    sdk_version: "28",
     out: [
         "glsl.std.450.insts.inc",
     ],
 }
 cc_genrule {
+    name: "angle_spvtools_generators_inc",
     tool_files: [
         "third_party/spirv-tools/src/utils/generate_registry_tables.py",
     ],
+    cmd: "$(location) --xml $(location third_party/spirv-headers/src/include/spirv/spir-v.xml) --generator $(location generators.inc)",
     srcs: [
         "third_party/spirv-headers/src/include/spirv/spir-v.xml",
     ],
-    cmd: "$(location) --xml $(location third_party/spirv-headers/src/include/spirv/spir-v.xml) --generator $(location generators.inc)",
-    name: "angle_spvtools_generators_inc",
+    sdk_version: "28",
     out: [
         "generators.inc",
     ],
 }
 cc_genrule {
+    name: "angle_spvtools_core_tables_unified1",
     tool_files: [
         "third_party/spirv-tools/src/utils/generate_grammar_tables.py",
     ],
+    cmd: "$(location) --spirv-core-grammar $(location third_party/spirv-headers/src/include/spirv/unified1/spirv.core.grammar.json) --core-insts-output $(location core.insts-unified1.inc) --extinst-debuginfo-grammar $(location third_party/spirv-tools/src/source/extinst.debuginfo.grammar.json) --extinst-cldebuginfo100-grammar $(location third_party/spirv-tools/src/source/extinst.opencl.debuginfo.100.grammar.json) --operand-kinds-output $(location operand.kinds-unified1.inc)",
     srcs: [
         "third_party/spirv-headers/src/include/spirv/unified1/spirv.core.grammar.json",
         "third_party/spirv-tools/src/source/extinst.debuginfo.grammar.json",
         "third_party/spirv-tools/src/source/extinst.opencl.debuginfo.100.grammar.json",
     ],
-    cmd: "$(location) --spirv-core-grammar $(location third_party/spirv-headers/src/include/spirv/unified1/spirv.core.grammar.json) --core-insts-output $(location core.insts-unified1.inc) --extinst-debuginfo-grammar $(location third_party/spirv-tools/src/source/extinst.debuginfo.grammar.json) --extinst-cldebuginfo100-grammar $(location third_party/spirv-tools/src/source/extinst.opencl.debuginfo.100.grammar.json) --operand-kinds-output $(location operand.kinds-unified1.inc)",
-    name: "angle_spvtools_core_tables_unified1",
+    sdk_version: "28",
     out: [
         "core.insts-unified1.inc",
         "operand.kinds-unified1.inc",
     ],
 }
 cc_genrule {
+    name: "angle_spvtools_core_enums_unified1",
     tool_files: [
         "third_party/spirv-tools/src/utils/generate_grammar_tables.py",
     ],
+    cmd: "$(location) --spirv-core-grammar $(location third_party/spirv-headers/src/include/spirv/unified1/spirv.core.grammar.json) --extinst-debuginfo-grammar $(location third_party/spirv-tools/src/source/extinst.debuginfo.grammar.json) --extinst-cldebuginfo100-grammar $(location third_party/spirv-tools/src/source/extinst.opencl.debuginfo.100.grammar.json) --extension-enum-output $(location extension_enum.inc) --enum-string-mapping-output $(location enum_string_mapping.inc)",
     srcs: [
         "third_party/spirv-headers/src/include/spirv/unified1/spirv.core.grammar.json",
         "third_party/spirv-tools/src/source/extinst.debuginfo.grammar.json",
         "third_party/spirv-tools/src/source/extinst.opencl.debuginfo.100.grammar.json",
     ],
-    cmd: "$(location) --spirv-core-grammar $(location third_party/spirv-headers/src/include/spirv/unified1/spirv.core.grammar.json) --extinst-debuginfo-grammar $(location third_party/spirv-tools/src/source/extinst.debuginfo.grammar.json) --extinst-cldebuginfo100-grammar $(location third_party/spirv-tools/src/source/extinst.opencl.debuginfo.100.grammar.json) --extension-enum-output $(location extension_enum.inc) --enum-string-mapping-output $(location enum_string_mapping.inc)",
-    name: "angle_spvtools_core_enums_unified1",
+    sdk_version: "28",
     out: [
         "enum_string_mapping.inc",
         "extension_enum.inc",
@@ -1464,6 +1555,7 @@ cc_defaults {
         "src/libANGLE/renderer/vulkan/MemoryObjectVk.cpp",
         "src/libANGLE/renderer/vulkan/OverlayVk.cpp",
         "src/libANGLE/renderer/vulkan/PersistentCommandPool.cpp",
+        "src/libANGLE/renderer/vulkan/ProgramExecutableVk.cpp",
         "src/libANGLE/renderer/vulkan/ProgramPipelineVk.cpp",
         "src/libANGLE/renderer/vulkan/ProgramVk.cpp",
         "src/libANGLE/renderer/vulkan/QueryVk.cpp",
@@ -1533,6 +1625,7 @@ cc_defaults {
     defaults: [
         "angle_glslang_wrapper",
         "angle_libANGLE_headers",
+        "angle_vk_mem_alloc_wrapper",
         "angle_vulkan_entry_points",
         "angle_vulkan_headers",
     ],
@@ -1725,6 +1818,7 @@ cc_library_static {
         "src/compiler/translator/tree_ops/ClampPointSize.cpp",
         "src/compiler/translator/tree_ops/DeclareAndInitBuiltinsForInstancedMultiview.cpp",
         "src/compiler/translator/tree_ops/DeferGlobalInitializers.cpp",
+        "src/compiler/translator/tree_ops/EarlyFragmentTestsOptimization.cpp",
         "src/compiler/translator/tree_ops/EmulateGLFragColorBroadcast.cpp",
         "src/compiler/translator/tree_ops/EmulateMultiDrawShaderBuiltins.cpp",
         "src/compiler/translator/tree_ops/EmulatePrecision.cpp",
@@ -2126,42 +2220,23 @@ cc_library_static {
         },
     },
 }
-cc_library_static {
-    generated_headers: [
-        "angle_commit_id",
-    ],
-    name: "angle_gpu_info_util",
+cc_defaults {
+    name: "angle_vulkan_headers",
     stl: "libc++_static",
-    static_libs: [
-        "angle_common",
-    ],
-    shared_libs: [
-        "liblog",
-    ],
     local_include_dirs: [
         "",
-        "include/",
-        "src/",
-        "src/common/third_party/base/",
-    ],
-    srcs: [
-        "src/gpu_info_util/SystemInfo.cpp",
-        "src/gpu_info_util/SystemInfo_android.cpp",
-        "src/gpu_info_util/SystemInfo_vulkan.cpp",
+        "third_party/vulkan-headers/src/include/",
     ],
     sdk_version: "28",
     cflags: [
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r20_1",
-        "-DANGLE_ENABLE_OPENGL",
-        "-DANGLE_ENABLE_OPENGL_NULL",
-        "-DANGLE_ENABLE_VULKAN",
-        "-DANGLE_USE_CUSTOM_VULKAN_CMD_BUFFERS=1",
         "-DCR_CLANG_REVISION=\"n344329-9284abd0-6\"",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
         "-DNDEBUG",
         "-DNVALGRIND",
+        "-DVK_USE_PLATFORM_ANDROID_KHR",
         "-D_FORTIFY_SOURCE=2",
         "-D_GNU_SOURCE",
         "-D__STDC_CONSTANT_MACROS",
@@ -2181,6 +2256,68 @@ cc_library_static {
         "-Wno-unknown-warning-option",
         "-Wno-unneeded-internal-declaration",
         "-Wno-unused-parameter",
+    ],
+}
+cc_library_static {
+    generated_headers: [
+        "angle_commit_id",
+    ],
+    name: "angle_gpu_info_util",
+    stl: "libc++_static",
+    static_libs: [
+        "angle_common",
+    ],
+    shared_libs: [
+        "liblog",
+    ],
+    local_include_dirs: [
+        "",
+        "include/",
+        "src/",
+        "src/common/third_party/base/",
+        "third_party/vulkan-headers/src/include/",
+    ],
+    srcs: [
+        "src/gpu_info_util/SystemInfo.cpp",
+        "src/gpu_info_util/SystemInfo_android.cpp",
+        "src/gpu_info_util/SystemInfo_vulkan.cpp",
+    ],
+    sdk_version: "28",
+    cflags: [
+        "-DANDROID",
+        "-DANDROID_NDK_VERSION_ROLL=r20_1",
+        "-DANGLE_ENABLE_OPENGL",
+        "-DANGLE_ENABLE_OPENGL_NULL",
+        "-DANGLE_ENABLE_VULKAN",
+        "-DANGLE_USE_CUSTOM_VULKAN_CMD_BUFFERS=1",
+        "-DCR_CLANG_REVISION=\"n344329-9284abd0-6\"",
+        "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
+        "-DHAVE_SYS_UIO_H",
+        "-DNDEBUG",
+        "-DNVALGRIND",
+        "-DVK_USE_PLATFORM_ANDROID_KHR",
+        "-D_FORTIFY_SOURCE=2",
+        "-D_GNU_SOURCE",
+        "-D__STDC_CONSTANT_MACROS",
+        "-D__STDC_FORMAT_MACROS",
+        "-Wno-bitwise-conditional-parentheses",
+        "-Wno-builtin-assume-aligned-alignment",
+        "-Wno-builtin-macro-redefined",
+        "-Wno-c++11-narrowing",
+        "-Wno-deprecated-copy",
+        "-Wno-final-dtor-non-final-class",
+        "-Wno-ignored-pragma-optimize",
+        "-Wno-implicit-fallthrough",
+        "-Wno-implicit-int-float-conversion",
+        "-Wno-missing-field-initializers",
+        "-Wno-non-c-typedef-for-linkage",
+        "-Wno-undefined-var-template",
+        "-Wno-unknown-warning-option",
+        "-Wno-unneeded-internal-declaration",
+        "-Wno-unused-parameter",
+    ],
+    defaults: [
+        "angle_vulkan_headers",
     ],
     arch: {
         arm64: {
@@ -2487,7 +2624,6 @@ cc_defaults {
         "src/libANGLE/GLES1Renderer.cpp",
         "src/libANGLE/GLES1State.cpp",
         "src/libANGLE/HandleAllocator.cpp",
-        "src/libANGLE/HandleRangeAllocator.cpp",
         "src/libANGLE/Image.cpp",
         "src/libANGLE/ImageIndex.cpp",
         "src/libANGLE/IndexRangeCache.cpp",
@@ -2495,9 +2631,9 @@ cc_defaults {
         "src/libANGLE/MemoryObject.cpp",
         "src/libANGLE/MemoryProgramCache.cpp",
         "src/libANGLE/Observer.cpp",
-        "src/libANGLE/Path.cpp",
         "src/libANGLE/Platform.cpp",
         "src/libANGLE/Program.cpp",
+        "src/libANGLE/ProgramExecutable.cpp",
         "src/libANGLE/ProgramLinkedResources.cpp",
         "src/libANGLE/ProgramPipeline.cpp",
         "src/libANGLE/Query.cpp",
@@ -2529,6 +2665,7 @@ cc_defaults {
         "src/libANGLE/renderer/DeviceImpl.cpp",
         "src/libANGLE/renderer/DisplayImpl.cpp",
         "src/libANGLE/renderer/Format_table_autogen.cpp",
+        "src/libANGLE/renderer/ProgramPipelineImpl.cpp",
         "src/libANGLE/renderer/QueryImpl.cpp",
         "src/libANGLE/renderer/ShaderImpl.cpp",
         "src/libANGLE/renderer/SurfaceImpl.cpp",
@@ -2546,7 +2683,6 @@ cc_defaults {
         "src/libANGLE/renderer/gl/FunctionsGL.cpp",
         "src/libANGLE/renderer/gl/ImageGL.cpp",
         "src/libANGLE/renderer/gl/MemoryObjectGL.cpp",
-        "src/libANGLE/renderer/gl/PathGL.cpp",
         "src/libANGLE/renderer/gl/ProgramGL.cpp",
         "src/libANGLE/renderer/gl/ProgramPipelineGL.cpp",
         "src/libANGLE/renderer/gl/QueryGL.cpp",
@@ -2834,11 +2970,12 @@ cc_defaults {
     },
 }
 cc_genrule {
+    name: "angle_commit_id",
     tool_files: [
         "src/commit_id.py",
     ],
     cmd: "$(location) gen $(location commit.h)",
-    name: "angle_commit_id",
+    sdk_version: "28",
     out: [
         "commit.h",
     ],
@@ -3047,16 +3184,19 @@ java_defaults {
     srcs: [
         ":ANGLE_srcs",
     ],
-    sdk_version: "system_current",
+    plugins: [
+        "java_api_finder",
+    ],
+    owner: "google",
     name: "ANGLE_java_defaults",
+    use_embedded_native_libs: true,
+    min_sdk_version: "28",
+    sdk_version: "system_current",
     aaptflags: [
         "--extra-packages com.android.angle.common",
         "-0 .json",
     ],
-    use_embedded_native_libs: true,
-    owner: "google",
     compile_multilib: "both",
-    min_sdk_version: "28",
     privileged: true,
 }
 android_library {
