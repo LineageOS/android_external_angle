@@ -365,6 +365,8 @@ def action_target_to_blueprint(target, build_info):
                                                              target_info['args'])
     bp['cmd'] = ' '.join(cmd)
 
+    bp['sdk_version'] = sdk_version
+
     return (blueprint_type, bp)
 
 
@@ -445,6 +447,7 @@ def main():
                 '--extra-packages com.android.angle.common',
             ],
             'srcs': [':ANGLE_srcs'],
+            'plugins': ['java_api_finder',],
             'privileged':
                 True,
             'owner':
@@ -488,7 +491,7 @@ def main():
     for (blueprint_type, blueprint_data) in blueprint_targets:
         write_blueprint(output, blueprint_type, blueprint_data)
 
-    print '\n'.join(output)
+    print('\n'.join(output))
 
 
 if __name__ == '__main__':

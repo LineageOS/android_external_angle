@@ -9,6 +9,7 @@
 #ifndef LIBANGLE_RENDERER_VULKAN_VK_HELPERS_H_
 #define LIBANGLE_RENDERER_VULKAN_VK_HELPERS_H_
 
+#include "common/MemoryBuffer.h"
 #include "libANGLE/renderer/vulkan/ResourceVk.h"
 #include "libANGLE/renderer/vulkan/vk_cache_utils.h"
 
@@ -93,7 +94,7 @@ class DynamicBuffer : angle::NonCopyable
     void releaseInFlightBuffers(ContextVk *contextVk);
 
     // This frees resources immediately.
-    void destroy(VkDevice device);
+    void destroy(RendererVk *renderer);
 
     BufferHelper *getCurrentBuffer() { return mBuffer; }
 
@@ -106,7 +107,7 @@ class DynamicBuffer : angle::NonCopyable
     void reset();
     angle::Result allocateNewBuffer(ContextVk *contextVk);
     void releaseBufferListToRenderer(RendererVk *renderer, std::vector<BufferHelper *> *buffers);
-    void destroyBufferList(VkDevice device, std::vector<BufferHelper *> *buffers);
+    void destroyBufferList(RendererVk *renderer, std::vector<BufferHelper *> *buffers);
 
     VkBufferUsageFlags mUsage;
     bool mHostVisible;
@@ -119,6 +120,77 @@ class DynamicBuffer : angle::NonCopyable
 
     std::vector<BufferHelper *> mInFlightBuffers;
     std::vector<BufferHelper *> mBufferFreeList;
+};
+
+// Based off of the DynamicBuffer class, DynamicShadowBuffer provides
+// a similar conceptually infinitely long buffer that will only be written
+// to and read by the CPU. This can be used to provide CPU cached copies of
+// GPU-read only buffers. The value add here is that when an app requests
+// CPU access to a buffer we can fullfil such a request in O(1) time since
+// we don't need to wait for GPU to be done with in-flight commands.
+//
+// The hidden cost here is that any operation that updates a buffer, either
+// through a buffer sub data update or a buffer-to-buffer copy will have an
+// additional overhead of having to update its CPU only buffer
+class DynamicShadowBuffer : public angle::NonCopyable
+{
+  public:
+    DynamicShadowBuffer();
+    DynamicShadowBuffer(DynamicShadowBuffer &&other);
+    ~DynamicShadowBuffer();
+
+    // Initialize the DynamicShadowBuffer.
+    void init(size_t initialSize);
+
+    // Returns whether this DynamicShadowBuffer is active
+    ANGLE_INLINE bool valid() { return (mSize != 0); }
+
+    // This call will actually allocate a new CPU only memory from the heap.
+    // The size can be different than the one specified during `init`.
+    angle::Result allocate(size_t sizeInBytes);
+
+    ANGLE_INLINE void updateData(const uint8_t *data, size_t size, size_t offset)
+    {
+        ASSERT(!mBuffer.empty());
+        // Memcopy data into the buffer
+        memcpy((mBuffer.data() + offset), data, size);
+    }
+
+    // Map the CPU only buffer and return the pointer. We map the entire buffer for now.
+    ANGLE_INLINE void map(size_t offset, void **mapPtr)
+    {
+        ASSERT(mapPtr);
+        ASSERT(!mBuffer.empty());
+        *mapPtr = mBuffer.data() + offset;
+    }
+
+    // Unmap the CPU only buffer, NOOP for now
+    ANGLE_INLINE void unmap() {}
+
+    // This releases resources when they might currently be in use.
+    void release();
+
+    // This frees resources immediately.
+    void destroy(VkDevice device);
+
+    ANGLE_INLINE uint8_t *getCurrentBuffer()
+    {
+        ASSERT(!mBuffer.empty());
+        return mBuffer.data();
+    }
+
+    ANGLE_INLINE const uint8_t *getCurrentBuffer() const
+    {
+        ASSERT(!mBuffer.empty());
+        return mBuffer.data();
+    }
+
+  private:
+    void reset();
+
+    size_t mInitialSize;
+    size_t mSize;
+    angle::MemoryBuffer mBuffer;
 };
 
 // Uses DescriptorPool to allocate descriptor sets as needed. If a descriptor pool becomes full, we
@@ -315,8 +387,14 @@ class QueryHelper final
     angle::Result beginQuery(ContextVk *contextVk);
     angle::Result endQuery(ContextVk *contextVk);
 
+    // for occlusion query
+    void beginOcclusionQuery(ContextVk *contextVk,
+                             PrimaryCommandBuffer *primaryCommands,
+                             CommandBuffer *renderPassCommandBuffer);
+    void endOcclusionQuery(ContextVk *contextVk, CommandBuffer *renderPassCommandBuffer);
+
     angle::Result flushAndWriteTimestamp(ContextVk *contextVk);
-    void writeTimestamp(vk::PrimaryCommandBuffer *primary);
+    void writeTimestamp(ContextVk *contextVk, PrimaryCommandBuffer *primary);
 
     Serial getStoredQueueSerial() { return mMostRecentSerial; }
     bool hasPendingWork(ContextVk *contextVk);
@@ -449,7 +527,7 @@ class LineLoopHelper final : angle::NonCopyable
                                       VkDeviceSize *indexIndirectBufferOffsetOut);
 
     void release(ContextVk *contextVk);
-    void destroy(VkDevice device);
+    void destroy(RendererVk *renderer);
 
     static void Draw(uint32_t count, uint32_t baseVertex, CommandBuffer *commandBuffer);
 
@@ -469,13 +547,12 @@ class BufferHelper final : public Resource
     angle::Result init(ContextVk *contextVk,
                        const VkBufferCreateInfo &createInfo,
                        VkMemoryPropertyFlags memoryPropertyFlags);
-    void destroy(VkDevice device);
+    void destroy(RendererVk *renderer);
 
     void release(RendererVk *renderer);
 
     bool valid() const { return mBuffer.valid(); }
     const Buffer &getBuffer() const { return mBuffer; }
-    const DeviceMemory &getDeviceMemory() const { return mDeviceMemory; }
     VkDeviceSize getSize() const { return mSize; }
     bool isHostVisible() const
     {
@@ -517,13 +594,22 @@ class BufferHelper final : public Resource
         *ptrOut = mMappedMemory;
         return angle::Result::Continue;
     }
-    void unmap(VkDevice device);
+
+    angle::Result mapWithOffset(ContextVk *contextVk, uint8_t **ptrOut, size_t offset)
+    {
+        uint8_t *mapBufPointer;
+        ANGLE_TRY(map(contextVk, &mapBufPointer));
+        *ptrOut = mapBufPointer + offset;
+        return angle::Result::Continue;
+    }
+
+    void unmap(RendererVk *renderer);
 
     // After a sequence of writes, call flush to ensure the data is visible to the device.
-    angle::Result flush(ContextVk *contextVk, VkDeviceSize offset, VkDeviceSize size);
+    angle::Result flush(RendererVk *renderer, VkDeviceSize offset, VkDeviceSize size);
 
     // After a sequence of writes, call invalidate to ensure the data is visible to the host.
-    angle::Result invalidate(ContextVk *contextVk, VkDeviceSize offset, VkDeviceSize size);
+    angle::Result invalidate(RendererVk *renderer, VkDeviceSize offset, VkDeviceSize size);
 
     void changeQueue(uint32_t newQueueFamilyIndex, CommandBuffer *commandBuffer);
 
@@ -563,7 +649,7 @@ class BufferHelper final : public Resource
     // Vulkan objects.
     Buffer mBuffer;
     BufferView mBufferView;
-    DeviceMemory mDeviceMemory;
+    Allocation mAllocation;
 
     // Cached properties.
     VkMemoryPropertyFlags mMemoryPropertyFlags;
@@ -609,25 +695,33 @@ class BufferHelper final : public Resource
 // are the same, they may occasionally be BOTTOM_OF_PIPE and TOP_OF_PIPE respectively.
 enum class ImageLayout
 {
-    Undefined                  = 0,
-    ExternalPreInitialized     = 1,
-    ExternalShadersReadOnly    = 2,
-    ExternalShadersWrite       = 3,
-    TransferSrc                = 4,
-    TransferDst                = 5,
-    ComputeShaderReadOnly      = 6,
-    ComputeShaderWrite         = 7,
-    AllGraphicsShadersReadOnly = 8,
-    AllGraphicsShadersWrite    = 9,
-    ColorAttachment            = 10,
-    DepthStencilAttachment     = 11,
-    Present                    = 12,
+    Undefined                   = 0,
+    ExternalPreInitialized      = 1,
+    ExternalShadersReadOnly     = 2,
+    ExternalShadersWrite        = 3,
+    TransferSrc                 = 4,
+    TransferDst                 = 5,
+    VertexShaderReadOnly        = 6,
+    VertexShaderWrite           = 7,
+    GeometryShaderReadOnly      = 8,
+    GeometryShaderWrite         = 9,
+    FragmentShaderReadOnly      = 10,
+    FragmentShaderWrite         = 11,
+    ComputeShaderReadOnly       = 12,
+    ComputeShaderWrite          = 13,
+    AllGraphicsShadersReadOnly  = 14,
+    AllGraphicsShadersReadWrite = 15,
+    ColorAttachment             = 16,
+    DepthStencilAttachment      = 17,
+    Present                     = 18,
 
-    InvalidEnum = 13,
-    EnumCount   = 13,
+    InvalidEnum = 19,
+    EnumCount   = 19,
 };
 
-class ImageHelper final : public Resource
+VkImageLayout ConvertImageLayoutToVkImageLayout(ImageLayout imageLayout);
+
+class ImageHelper final : public Resource, public angle::Subject
 {
   public:
     ImageHelper();
@@ -706,9 +800,11 @@ class ImageHelper final : public Resource
     VkImageAspectFlags getAspectFlags() const;
     // True if image contains both depth & stencil aspects
     bool isCombinedDepthStencilFormat() const;
-    void destroy(VkDevice device);
+    void destroy(RendererVk *renderer);
+    void release(RendererVk *renderer) { destroy(renderer); }
 
-    void init2DWeakReference(VkImage handle,
+    void init2DWeakReference(Context *context,
+                             VkImage handle,
                              const gl::Extents &glExtents,
                              const Format &format,
                              GLint samples);
@@ -717,12 +813,14 @@ class ImageHelper final : public Resource
     const Image &getImage() const { return mImage; }
     const DeviceMemory &getDeviceMemory() const { return mDeviceMemory; }
 
+    VkImageType getType() const { return mImageType; }
     const VkExtent3D &getExtents() const { return mExtents; }
     uint32_t getLayerCount() const { return mLayerCount; }
     uint32_t getLevelCount() const { return mLevelCount; }
     const Format &getFormat() const { return *mFormat; }
     GLint getSamples() const { return mSamples; }
 
+    void setCurrentImageLayout(ImageLayout newLayout) { mCurrentLayout = newLayout; }
     ImageLayout getCurrentImageLayout() const { return mCurrentLayout; }
     VkImageLayout getCurrentLayout() const;
 
@@ -731,7 +829,8 @@ class ImageHelper final : public Resource
     gl::Extents getLevelExtents2D(uint32_t level) const;
 
     // Clear either color or depth/stencil based on image format.
-    void clear(const VkClearValue &value,
+    void clear(VkImageAspectFlags aspectFlags,
+               const VkClearValue &value,
                uint32_t mipLevel,
                uint32_t baseArrayLayer,
                uint32_t layerCount,
@@ -815,16 +914,9 @@ class ImageHelper final : public Resource
                                          const gl::Extents &glExtents,
                                          const VkImageType imageType);
 
-    // Stage a clear operation to a clear value based on WebGL requirements.
-    void stageSubresourceRobustClear(const gl::ImageIndex &index, const Format &format);
-
-    // Stage a clear operation to a clear value that initializes emulated channels to the desired
-    // values.
-    void stageSubresourceEmulatedClear(const gl::ImageIndex &index, const angle::Format &format);
-
-    // If the image has emulated channels, we clear them once so as not to leave garbage on those
-    // channels.
-    void stageClearIfEmulatedFormat(const gl::ImageIndex &index, const Format &format);
+    // Stage a clear based on robust resource init.
+    void stageRobustResourceClear(const gl::ImageIndex &index, const vk::Format &format);
+    void stageSubresourceClear(const gl::ImageIndex &index);
 
     // This will use the underlying dynamic buffer to allocate some memory to be used as a src or
     // dst.
@@ -850,7 +942,6 @@ class ImageHelper final : public Resource
     angle::Result flushAllStagedUpdates(ContextVk *contextVk);
 
     bool isUpdateStaged(uint32_t level, uint32_t layer);
-
     bool hasStagedUpdates() const { return !mSubresourceUpdates.empty(); }
 
     // changeLayout automatically skips the layout change if it's unnecessary.  This function can be
@@ -937,36 +1028,6 @@ class ImageHelper final : public Resource
                                       GLuint *inputSkipBytes);
 
   private:
-    // Generalized to accept both "primary" and "secondary" command buffers.
-    template <typename CommandBufferT>
-    void forceChangeLayoutAndQueue(VkImageAspectFlags aspectMask,
-                                   ImageLayout newLayout,
-                                   uint32_t newQueueFamilyIndex,
-                                   CommandBufferT *commandBuffer);
-
-    void stageSubresourceClear(const gl::ImageIndex &index,
-                               const angle::Format &format,
-                               const VkClearColorValue &colorValue,
-                               const VkClearDepthStencilValue &depthStencilValue);
-
-    void clearColor(const VkClearColorValue &color,
-                    uint32_t baseMipLevel,
-                    uint32_t levelCount,
-                    uint32_t baseArrayLayer,
-                    uint32_t layerCount,
-                    CommandBuffer *commandBuffer);
-
-    void clearDepthStencil(VkImageAspectFlags imageAspectFlags,
-                           VkImageAspectFlags clearAspectFlags,
-                           const VkClearDepthStencilValue &depthStencil,
-                           uint32_t baseMipLevel,
-                           uint32_t levelCount,
-                           uint32_t baseArrayLayer,
-                           uint32_t layerCount,
-                           CommandBuffer *commandBuffer);
-
-    angle::Result initializeNonZeroMemory(Context *context, VkDeviceSize size);
-
     enum class UpdateSource
     {
         Clear,
@@ -975,6 +1036,7 @@ class ImageHelper final : public Resource
     };
     struct ClearUpdate
     {
+        VkImageAspectFlags aspectFlags;
         VkClearValue value;
         uint32_t levelIndex;
         uint32_t layerIndex;
@@ -996,7 +1058,9 @@ class ImageHelper final : public Resource
         SubresourceUpdate();
         SubresourceUpdate(BufferHelper *bufferHelperIn, const VkBufferImageCopy &copyRegion);
         SubresourceUpdate(ImageHelper *image, const VkImageCopy &copyRegion);
-        SubresourceUpdate(const VkClearValue &clearValue, const gl::ImageIndex &imageIndex);
+        SubresourceUpdate(VkImageAspectFlags aspectFlags,
+                          const VkClearValue &clearValue,
+                          const gl::ImageIndex &imageIndex);
         SubresourceUpdate(const SubresourceUpdate &other);
 
         void release(RendererVk *renderer);
@@ -1018,11 +1082,44 @@ class ImageHelper final : public Resource
         };
     };
 
+    // Generalized to accept both "primary" and "secondary" command buffers.
+    template <typename CommandBufferT>
+    void forceChangeLayoutAndQueue(VkImageAspectFlags aspectMask,
+                                   ImageLayout newLayout,
+                                   uint32_t newQueueFamilyIndex,
+                                   CommandBufferT *commandBuffer);
+
+    // If the image has emulated channels, we clear them once so as not to leave garbage on those
+    // channels.
+    void stageClearIfEmulatedFormat(Context *context);
+
+    void clearColor(const VkClearColorValue &color,
+                    uint32_t baseMipLevel,
+                    uint32_t levelCount,
+                    uint32_t baseArrayLayer,
+                    uint32_t layerCount,
+                    CommandBuffer *commandBuffer);
+
+    void clearDepthStencil(VkImageAspectFlags clearAspectFlags,
+                           const VkClearDepthStencilValue &depthStencil,
+                           uint32_t baseMipLevel,
+                           uint32_t levelCount,
+                           uint32_t baseArrayLayer,
+                           uint32_t layerCount,
+                           CommandBuffer *commandBuffer);
+
+    angle::Result initializeNonZeroMemory(Context *context, VkDeviceSize size);
+
+    void appendSubresourceUpdate(SubresourceUpdate &&update);
+    void prependSubresourceUpdate(SubresourceUpdate &&update);
+    void resetCachedProperties();
+
     // Vulkan objects.
     Image mImage;
     DeviceMemory mDeviceMemory;
 
     // Image properties.
+    VkImageType mImageType;
     VkExtent3D mExtents;
     const Format *mFormat;
     GLint mSamples;
@@ -1177,15 +1274,16 @@ class ShaderProgramHelper : angle::NonCopyable
     ShaderProgramHelper();
     ~ShaderProgramHelper();
 
-    bool valid() const;
+    bool valid(const gl::ShaderType shaderType) const;
     void destroy(VkDevice device);
     void release(ContextVk *contextVk);
 
     bool isGraphicsProgram() const
     {
-        ASSERT(mShaders[gl::ShaderType::Vertex].valid() !=
+        ASSERT((mShaders[gl::ShaderType::Vertex].valid() ||
+                mShaders[gl::ShaderType::Fragment].valid()) !=
                mShaders[gl::ShaderType::Compute].valid());
-        return mShaders[gl::ShaderType::Vertex].valid();
+        return !mShaders[gl::ShaderType::Compute].valid();
     }
 
     ShaderAndSerial &getShader(gl::ShaderType shaderType) { return mShaders[shaderType].get(); }

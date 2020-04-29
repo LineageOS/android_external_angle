@@ -2140,6 +2140,22 @@ Error ValidateCreateImage(const Display *display,
                 }
                 break;
 
+            case EGL_GL_COLORSPACE:
+                if (!displayExtensions.glColorspace)
+                {
+                    return EglBadParameter() << "EGL_GL_COLORSPACE cannot be used "
+                                                "without EGL_KHR_gl_colorspace support.";
+                }
+                switch (value)
+                {
+                    case EGL_GL_COLORSPACE_DEFAULT_EXT:
+                        break;
+                    default:
+                        ANGLE_TRY(ValidateColorspaceAttribute(displayExtensions, value));
+                        break;
+                }
+                break;
+
             case EGL_TEXTURE_INTERNAL_FORMAT_ANGLE:
                 if (!displayExtensions.imageD3D11Texture)
                 {
@@ -3147,12 +3163,26 @@ Error ValidateSyncControlCHROMIUM(const Display *display, const Surface *eglSurf
     return NoError();
 }
 
-Error ValidateGetMscRateCHROMIUM(const Display *display,
-                                 const Surface *eglSurface,
-                                 const EGLint *numerator,
-                                 const EGLint *denominator)
+Error ValidateSyncControlRateANGLE(const Display *display, const Surface *eglSurface)
 {
-    ANGLE_TRY(ValidateSyncControlCHROMIUM(display, eglSurface));
+    ANGLE_TRY(ValidateDisplay(display));
+    ANGLE_TRY(ValidateSurface(display, eglSurface));
+
+    const DisplayExtensions &displayExtensions = display->getExtensions();
+    if (!displayExtensions.syncControlRateANGLE)
+    {
+        return EglBadAccess() << "syncControlRateANGLE extension not active";
+    }
+
+    return NoError();
+}
+
+Error ValidateGetMscRateANGLE(const Display *display,
+                              const Surface *eglSurface,
+                              const EGLint *numerator,
+                              const EGLint *denominator)
+{
+    ANGLE_TRY(ValidateSyncControlRateANGLE(display, eglSurface));
 
     if (numerator == nullptr)
     {
