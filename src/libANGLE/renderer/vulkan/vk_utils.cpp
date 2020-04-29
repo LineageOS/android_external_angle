@@ -15,6 +15,7 @@
 #include "libANGLE/renderer/vulkan/DisplayVk.h"
 #include "libANGLE/renderer/vulkan/RendererVk.h"
 #include "libANGLE/renderer/vulkan/ResourceVk.h"
+#include "libANGLE/renderer/vulkan/vk_mem_alloc_wrapper.h"
 
 namespace angle
 {
@@ -86,7 +87,8 @@ angle::Result FindAndAllocateCompatibleMemory(vk::Context *context,
         {
             // Can map the memory.
             ANGLE_TRY(vk::InitMappableDeviceMemory(context, deviceMemoryOut,
-                                                   memoryRequirements.size, kNonZeroInitValue));
+                                                   memoryRequirements.size, kNonZeroInitValue,
+                                                   *memoryPropertyFlagsOut));
         }
     }
 
@@ -382,10 +384,11 @@ angle::Result MemoryProperties::findCompatibleMemoryIndex(
 // StagingBuffer implementation.
 StagingBuffer::StagingBuffer() : mSize(0) {}
 
-void StagingBuffer::destroy(VkDevice device)
+void StagingBuffer::destroy(RendererVk *renderer)
 {
+    VkDevice device = renderer->getDevice();
     mBuffer.destroy(device);
-    mDeviceMemory.destroy(device);
+    mAllocation.destroy(renderer->getAllocator());
     mSize = 0;
 }
 
@@ -400,14 +403,16 @@ angle::Result StagingBuffer::init(Context *context, VkDeviceSize size, StagingUs
     createInfo.queueFamilyIndexCount = 0;
     createInfo.pQueueFamilyIndices   = nullptr;
 
-    VkMemoryPropertyFlags flags =
-        (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    VkMemoryPropertyFlags memoryPropertyOutFlags;
+    VkMemoryPropertyFlags preferredFlags = 0;
+    VkMemoryPropertyFlags requiredFlags =
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
-    ANGLE_VK_TRY(context, mBuffer.init(context->getDevice(), createInfo));
-    VkMemoryPropertyFlags flagsOut = 0;
-    VkDeviceSize sizeIgnored;
-    ANGLE_TRY(AllocateBufferMemory(context, flags, &flagsOut, nullptr, &mBuffer, &mDeviceMemory,
-                                   &sizeIgnored));
+    mAllocation.createBufferAndMemory(
+        context->getRenderer()->getAllocator(), &createInfo, requiredFlags, preferredFlags,
+        context->getRenderer()->getFeatures().persistentlyMappedBuffers.enabled, &mBuffer,
+        &memoryPropertyOutFlags);
+
     mSize = static_cast<size_t>(size);
     return angle::Result::Continue;
 }
@@ -415,14 +420,14 @@ angle::Result StagingBuffer::init(Context *context, VkDeviceSize size, StagingUs
 void StagingBuffer::release(ContextVk *contextVk)
 {
     contextVk->addGarbage(&mBuffer);
-    contextVk->addGarbage(&mDeviceMemory);
+    contextVk->addGarbage(&mAllocation);
 }
 
 void StagingBuffer::collectGarbage(RendererVk *renderer, Serial serial)
 {
     vk::GarbageList garbageList;
     garbageList.emplace_back(vk::GetGarbage(&mBuffer));
-    garbageList.emplace_back(vk::GetGarbage(&mDeviceMemory));
+    garbageList.emplace_back(vk::GetGarbage(&mAllocation));
 
     vk::SharedResourceUse sharedUse;
     sharedUse.init();
@@ -430,10 +435,31 @@ void StagingBuffer::collectGarbage(RendererVk *renderer, Serial serial)
     renderer->collectGarbage(std::move(sharedUse), std::move(garbageList));
 }
 
+angle::Result InitMappableAllocation(VmaAllocator allocator,
+                                     Allocation *allocation,
+                                     VkDeviceSize size,
+                                     int value,
+                                     VkMemoryPropertyFlags memoryPropertyFlags)
+{
+    uint8_t *mapPointer;
+    allocation->map(allocator, &mapPointer);
+    memset(mapPointer, value, static_cast<size_t>(size));
+
+    if ((memoryPropertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) == 0)
+    {
+        allocation->flush(allocator, 0, size);
+    }
+
+    allocation->unmap(allocator);
+
+    return angle::Result::Continue;
+}
+
 angle::Result InitMappableDeviceMemory(Context *context,
                                        DeviceMemory *deviceMemory,
                                        VkDeviceSize size,
-                                       int value)
+                                       int value,
+                                       VkMemoryPropertyFlags memoryPropertyFlags)
 {
     VkDevice device = context->getDevice();
 
@@ -441,11 +467,15 @@ angle::Result InitMappableDeviceMemory(Context *context,
     ANGLE_VK_TRY(context, deviceMemory->map(device, 0, VK_WHOLE_SIZE, 0, &mapPointer));
     memset(mapPointer, value, static_cast<size_t>(size));
 
-    VkMappedMemoryRange mappedRange = {};
-    mappedRange.sType               = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-    mappedRange.memory              = deviceMemory->getHandle();
-    mappedRange.size                = VK_WHOLE_SIZE;
-    ANGLE_VK_TRY(context, vkFlushMappedMemoryRanges(device, 1, &mappedRange));
+    // if the memory type is not host coherent, we perform an explicit flush
+    if ((memoryPropertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) == 0)
+    {
+        VkMappedMemoryRange mappedRange = {};
+        mappedRange.sType               = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+        mappedRange.memory              = deviceMemory->getHandle();
+        mappedRange.size                = VK_WHOLE_SIZE;
+        ANGLE_VK_TRY(context, vkFlushMappedMemoryRanges(device, 1, &mappedRange));
+    }
 
     deviceMemory->unmap(device);
 
@@ -553,8 +583,9 @@ GarbageObject &GarbageObject::operator=(GarbageObject &&rhs)
 // GarbageObject implementation
 // Using c-style casts here to avoid conditional compile for MSVC 32-bit
 //  which fails to compile with reinterpret_cast, requiring static_cast.
-void GarbageObject::destroy(VkDevice device)
+void GarbageObject::destroy(RendererVk *renderer)
 {
+    VkDevice device = renderer->getDevice();
     switch (mHandleType)
     {
         case HandleType::Semaphore:
@@ -614,6 +645,9 @@ void GarbageObject::destroy(VkDevice device)
             break;
         case HandleType::QueryPool:
             vkDestroyQueryPool(device, (VkQueryPool)mHandle, nullptr);
+            break;
+        case HandleType::Allocation:
+            vma::FreeMemory(renderer->getAllocator(), (VmaAllocation)mHandle);
             break;
         default:
             UNREACHABLE();
