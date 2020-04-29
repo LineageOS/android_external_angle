@@ -513,6 +513,82 @@ OpFunctionEnd
   EXPECT_EQ(Pass::Status::SuccessWithoutChange, std::get<1>(result));
 }
 
+TEST_F(WrapOpKillTest, SetParentBlock) {
+  const std::string text = R"(
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main"
+OpExecutionMode %main OriginUpperLeft
+%void = OpTypeVoid
+%bool = OpTypeBool
+%undef = OpUndef %bool
+%void_fn = OpTypeFunction %void
+%main = OpFunction %void None %void_fn
+%entry = OpLabel
+OpBranch %loop
+%loop = OpLabel
+OpLoopMerge %merge %continue None
+OpBranchConditional %undef %merge %continue
+%continue = OpLabel
+%call = OpFunctionCall %void %kill_func
+OpBranch %loop
+%merge = OpLabel
+OpReturn
+OpFunctionEnd
+%kill_func = OpFunction %void None %void_fn
+%kill_entry = OpLabel
+OpKill
+OpFunctionEnd
+)";
+
+  auto result = SinglePassRunToBinary<WrapOpKill>(text, true);
+  EXPECT_EQ(Pass::Status::SuccessWithChange, std::get<1>(result));
+  result = SinglePassRunToBinary<WrapOpKill>(text, true);
+  EXPECT_EQ(Pass::Status::SuccessWithChange, std::get<1>(result));
+}
+
+TEST_F(WrapOpKillTest, KillInSingleBlockLoop) {
+  const std::string text = R"(
+; CHECK: OpFunction %void
+; CHECK: OpFunction %void
+; CHECK-NOT: OpKill
+; CHECK: OpFunctionCall %void [[new_kill:%\w+]]
+; CHECK-NOT: OpKill
+; CHECK: [[new_kill]] = OpFunction
+; CHECK-NEXT: OpLabel
+; CHECK-NEXT: OpKill
+; CHECK-NEXT: OpFunctionEnd
+              OpCapability Shader
+              OpCapability Linkage
+              OpMemoryModel Logical GLSL450
+      %void = OpTypeVoid
+      %bool = OpTypeBool
+     %undef = OpUndef %bool
+   %void_fn = OpTypeFunction %void
+      %main = OpFunction %void None %void_fn
+%main_entry = OpLabel
+              OpBranch %loop
+      %loop = OpLabel
+      %call = OpFunctionCall %void %sub
+              OpLoopMerge %exit %loop None
+              OpBranchConditional %undef %loop %exit
+      %exit = OpLabel
+              OpReturn
+              OpFunctionEnd
+       %sub = OpFunction %void None %void_fn
+ %sub_entry = OpLabel
+              OpSelectionMerge %ret None
+              OpBranchConditional %undef %kill %ret
+      %kill = OpLabel
+              OpKill
+       %ret = OpLabel
+              OpReturn
+              OpFunctionEnd
+)";
+
+  SinglePassRunAndMatch<WrapOpKill>(text, true);
+}
+
 }  // namespace
 }  // namespace opt
 }  // namespace spvtools

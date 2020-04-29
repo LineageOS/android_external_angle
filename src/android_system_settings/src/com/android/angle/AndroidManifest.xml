@@ -49,6 +49,21 @@
                 <action android:name="android.app.action.ANGLE_FOR_ANDROID" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES" />
+            </intent-filter>
+
+            <!-- Mark this fragment as a dynamic setting in the development category. -->
+            <intent-filter>
+                <action android:name="com.android.settings.action.IA_SETTINGS" />
+            </intent-filter>
+            <meta-data android:name="com.android.settings.category"
+                       android:value="com.android.settings.category.ia.development" />
+            <meta-data android:name="com.android.settings.summary" android:resource="@string/angle_preferences_summary" />
+            <meta-data android:name="com.android.settings.order" android:value="20" />
+            <meta-data android:name="com.android.settings.profile" android:value="primary_profile_only" />
+            <meta-data android:name="instantapps.clients.allowed" android:value="true" />
         </activity>
 
         <receiver android:name="com.android.angle.common.Receiver"
@@ -59,5 +74,17 @@
                 <action android:name="android.app.action.ANGLE_FOR_ANDROID_TOAST_MESSAGE" />
             </intent-filter>
         </receiver>
+
+        <provider
+            android:name="com.android.angle.common.SearchProvider"
+            android:authorities="com.android.angle"
+            android:multiprocess="false"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.READ_SEARCH_INDEXABLES"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.content.action.SEARCH_INDEXABLES_PROVIDER" />
+            </intent-filter>
+        </provider>
     </application>
 </manifest>

@@ -1189,8 +1189,9 @@ angle::Result UtilsVk::startRenderPass(ContextVk *contextVk,
     std::vector<VkClearValue> clearValues = {{}};
     ASSERT(clearValues.size() == 1);
 
-    renderPassAttachmentOps.initWithLoadStore(0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                              VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    renderPassAttachmentOps.initWithStore(0, VK_ATTACHMENT_LOAD_OP_LOAD,
+                                          vk::ImageLayout::ColorAttachment,
+                                          vk::ImageLayout::ColorAttachment);
 
     ANGLE_TRY(contextVk->flushAndBeginRenderPass(framebuffer, renderArea, renderPassDesc,
                                                  renderPassAttachmentOps, clearValues,
@@ -1426,8 +1427,8 @@ angle::Result UtilsVk::blitResolveImpl(ContextVk *contextVk,
     pipelineDesc.setScissor(gl_vk::GetRect(params.blitArea));
 
     // Change source layout outside render pass
-    ANGLE_TRY(contextVk->onImageRead(src->getAspectFlags(),
-                                     vk::ImageLayout::AllGraphicsShadersReadOnly, src));
+    ANGLE_TRY(contextVk->onImageRead(src->getAspectFlags(), vk::ImageLayout::FragmentShaderReadOnly,
+                                     src));
 
     vk::CommandBuffer *commandBuffer;
     ANGLE_TRY(framebuffer->startNewRenderPass(contextVk, params.blitArea, &commandBuffer));
@@ -1735,7 +1736,7 @@ angle::Result UtilsVk::copyImage(ContextVk *contextVk,
 
     // Change source layout outside render pass
     ANGLE_TRY(contextVk->onImageRead(VK_IMAGE_ASPECT_COLOR_BIT,
-                                     vk::ImageLayout::AllGraphicsShadersReadOnly, src));
+                                     vk::ImageLayout::FragmentShaderReadOnly, src));
     ANGLE_TRY(
         contextVk->onImageWrite(VK_IMAGE_ASPECT_COLOR_BIT, vk::ImageLayout::ColorAttachment, dest));
 

@@ -18,6 +18,7 @@
 #include "libANGLE/Fence.h"
 #include "libANGLE/Framebuffer.h"
 #include "libANGLE/GLES1State.h"
+#include "libANGLE/MemoryObject.h"
 #include "libANGLE/Program.h"
 #include "libANGLE/Renderbuffer.h"
 #include "libANGLE/Sampler.h"
@@ -1228,7 +1229,7 @@ void QueryProgramiv(Context *context, const Program *program, GLenum pname, GLin
             *params = program->isValidated();
             return;
         case GL_INFO_LOG_LENGTH:
-            *params = program->getInfoLogLength();
+            *params = program->getExecutable().getInfoLogLength();
             return;
         case GL_ATTACHED_SHADERS:
             *params = program->getAttachedShadersCount();
@@ -1269,7 +1270,14 @@ void QueryProgramiv(Context *context, const Program *program, GLenum pname, GLin
             *params = program->getBinaryRetrievableHint();
             break;
         case GL_PROGRAM_SEPARABLE:
-            *params = program->isSeparable();
+            // From es31cSeparateShaderObjsTests.cpp:
+            // ProgramParameteri PROGRAM_SEPARABLE
+            // NOTE: The query for PROGRAM_SEPARABLE must query latched
+            //       state. In other words, the state of the binary after
+            //       it was linked. So in the tests below, the queries
+            //       should return the default state GL_FALSE since the
+            //       program has no linked binary.
+            *params = program->isSeparable() && program->isLinked();
             break;
         case GL_COMPUTE_WORK_GROUP_SIZE:
         {
@@ -2068,6 +2076,37 @@ void QueryProgramInterfaceiv(const Program *program,
 
         case GL_MAX_NUM_ACTIVE_VARIABLES:
             *params = QueryProgramInterfaceMaxNumActiveVariables(program, programInterface);
+            break;
+
+        default:
+            UNREACHABLE();
+    }
+}
+
+angle::Result SetMemoryObjectParameteriv(const Context *context,
+                                         MemoryObject *memoryObject,
+                                         GLenum pname,
+                                         const GLint *params)
+{
+    switch (pname)
+    {
+        case GL_DEDICATED_MEMORY_OBJECT_EXT:
+            ANGLE_TRY(memoryObject->setDedicatedMemory(context, ConvertToBool(params[0])));
+            break;
+
+        default:
+            UNREACHABLE();
+    }
+
+    return angle::Result::Continue;
+}
+
+void QueryMemoryObjectParameteriv(const MemoryObject *memoryObject, GLenum pname, GLint *params)
+{
+    switch (pname)
+    {
+        case GL_DEDICATED_MEMORY_OBJECT_EXT:
+            *params = memoryObject->isDedicatedMemory();
             break;
 
         default:
@@ -3167,18 +3206,6 @@ bool GetQueryParameterInfo(const State &glState,
         }
     }
 
-    if (extensions.pathRendering)
-    {
-        switch (pname)
-        {
-            case GL_PATH_MODELVIEW_MATRIX_CHROMIUM:
-            case GL_PATH_PROJECTION_MATRIX_CHROMIUM:
-                *type      = GL_FLOAT;
-                *numParams = 16;
-                return true;
-        }
-    }
-
     if (extensions.bindGeneratesResource)
     {
         switch (pname)
@@ -3559,6 +3586,7 @@ bool GetQueryParameterInfo(const State &glState,
         return false;
     }
 
+    // Check for ES3.1+ parameter names
     switch (pname)
     {
         case GL_ATOMIC_COUNTER_BUFFER_BINDING:
@@ -3608,6 +3636,7 @@ bool GetQueryParameterInfo(const State &glState,
         case GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT:
         case GL_TEXTURE_BINDING_2D_MULTISAMPLE:
         case GL_TEXTURE_BINDING_2D_MULTISAMPLE_ARRAY:
+        case GL_PROGRAM_PIPELINE_BINDING:
             *type      = GL_INT;
             *numParams = 1;
             return true;
@@ -3648,6 +3677,113 @@ bool GetQueryParameterInfo(const State &glState,
 
     return false;
 }
+
+void QueryProgramPipelineiv(const Context *context,
+                            ProgramPipeline *programPipeline,
+                            GLenum pname,
+                            GLint *params)
+{
+    if (!params)
+    {
+        // Can't write the result anywhere, so just return immediately.
+        return;
+    }
+
+    switch (pname)
+    {
+        case GL_ACTIVE_PROGRAM:
+        {
+            // the name of the active program object of the program pipeline object is returned in
+            // params
+            *params = 0;
+            if (programPipeline)
+            {
+                const Program *program = programPipeline->getActiveShaderProgram();
+                if (program)
+                {
+                    *params = program->id().value;
+                }
+            }
+            break;
+        }
+
+        case GL_VERTEX_SHADER:
+        {
+            // the name of the current program object for the vertex shader type of the program
+            // pipeline object is returned in params
+            *params = 0;
+            if (programPipeline)
+            {
+                const Program *program = programPipeline->getShaderProgram(ShaderType::Vertex);
+                if (program)
+                {
+                    *params = program->id().value;
+                }
+            }
+            break;
+        }
+
+        case GL_FRAGMENT_SHADER:
+        {
+            // the name of the current program object for the fragment shader type of the program
+            // pipeline object is returned in params
+            *params = 0;
+            if (programPipeline)
+            {
+                const Program *program = programPipeline->getShaderProgram(ShaderType::Fragment);
+                if (program)
+                {
+                    *params = program->id().value;
+                }
+            }
+            break;
+        }
+
+        case GL_COMPUTE_SHADER:
+        {
+            // the name of the current program object for the compute shader type of the program
+            // pipeline object is returned in params
+            *params = 0;
+            if (programPipeline)
+            {
+                const Program *program = programPipeline->getShaderProgram(ShaderType::Compute);
+                if (program)
+                {
+                    *params = program->id().value;
+                }
+            }
+            break;
+        }
+
+        case GL_INFO_LOG_LENGTH:
+        {
+            // the length of the info log, including the null terminator, is returned in params. If
+            // there is no info log, zero is returned.
+            *params = 0;
+            if (programPipeline)
+            {
+                *params = programPipeline->getExecutable().getInfoLogLength();
+            }
+            break;
+        }
+
+        case GL_VALIDATE_STATUS:
+        {
+            // the validation status of pipeline, as determined by glValidateProgramPipeline, is
+            // returned in params
+            *params = 0;
+            if (programPipeline)
+            {
+                *params = programPipeline->isValid();
+            }
+            break;
+        }
+
+        default:
+            break;
+    }
+}
+
 }  // namespace gl
 
 namespace egl

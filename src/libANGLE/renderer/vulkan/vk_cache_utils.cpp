@@ -155,8 +155,10 @@ void UnpackAttachmentDesc(VkAttachmentDescription *desc,
     desc->storeOp        = static_cast<VkAttachmentStoreOp>(ops.storeOp);
     desc->stencilLoadOp  = static_cast<VkAttachmentLoadOp>(ops.stencilLoadOp);
     desc->stencilStoreOp = static_cast<VkAttachmentStoreOp>(ops.stencilStoreOp);
-    desc->initialLayout  = static_cast<VkImageLayout>(ops.initialLayout);
-    desc->finalLayout    = static_cast<VkImageLayout>(ops.finalLayout);
+    desc->initialLayout =
+        ConvertImageLayoutToVkImageLayout(static_cast<ImageLayout>(ops.initialLayout));
+    desc->finalLayout =
+        ConvertImageLayoutToVkImageLayout(static_cast<ImageLayout>(ops.finalLayout));
 }
 
 void UnpackStencilState(const vk::PackedStencilOpState &packedState,
@@ -1441,8 +1443,8 @@ PackedAttachmentOpsDesc &AttachmentOpsArray::operator[](size_t index)
 }
 
 void AttachmentOpsArray::initDummyOp(size_t index,
-                                     VkImageLayout initialLayout,
-                                     VkImageLayout finalLayout)
+                                     ImageLayout initialLayout,
+                                     ImageLayout finalLayout)
 {
     PackedAttachmentOpsDesc &ops = mOps[index];
 
@@ -1454,16 +1456,17 @@ void AttachmentOpsArray::initDummyOp(size_t index,
     SetBitField(ops.stencilStoreOp, VK_ATTACHMENT_STORE_OP_DONT_CARE);
 }
 
-void AttachmentOpsArray::initWithLoadStore(size_t index,
-                                           VkImageLayout initialLayout,
-                                           VkImageLayout finalLayout)
+void AttachmentOpsArray::initWithStore(size_t index,
+                                       VkAttachmentLoadOp loadOp,
+                                       ImageLayout initialLayout,
+                                       ImageLayout finalLayout)
 {
     PackedAttachmentOpsDesc &ops = mOps[index];
 
     SetBitField(ops.initialLayout, initialLayout);
     SetBitField(ops.finalLayout, finalLayout);
-    SetBitField(ops.loadOp, VK_ATTACHMENT_LOAD_OP_LOAD);
-    SetBitField(ops.stencilLoadOp, VK_ATTACHMENT_LOAD_OP_LOAD);
+    SetBitField(ops.loadOp, loadOp);
+    SetBitField(ops.stencilLoadOp, loadOp);
     SetBitField(ops.storeOp, VK_ATTACHMENT_STORE_OP_STORE);
     SetBitField(ops.stencilStoreOp, VK_ATTACHMENT_STORE_OP_STORE);
 }
@@ -1645,6 +1648,8 @@ bool TextureDescriptorDesc::operator==(const TextureDescriptorDesc &other) const
     return memcmp(mSerials.data(), other.mSerials.data(), sizeof(TexUnitSerials) * mMaxIndex) == 0;
 }
 
+// FramebufferDesc implementation.
+
 FramebufferDesc::FramebufferDesc()
 {
     reset();
@@ -1676,6 +1681,18 @@ bool FramebufferDesc::operator==(const FramebufferDesc &other) const
     return memcmp(&mSerials, &other.mSerials, sizeof(Serial) * kMaxFramebufferAttachments) == 0;
 }
 
+uint32_t FramebufferDesc::attachmentCount() const
+{
+    uint32_t count = 0;
+    for (const AttachmentSerial &serial : mSerials)
+    {
+        if (serial.imageSerial != 0)
+        {
+            count++;
+        }
+    }
+    return count;
+}
 }  // namespace vk
 
 // RenderPassCache implementation.
@@ -1718,15 +1735,15 @@ angle::Result RenderPassCache::addRenderPass(ContextVk *contextVk,
         }
 
         uint32_t colorIndexVk = colorAttachmentCount++;
-        ops.initDummyOp(colorIndexVk, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+        ops.initDummyOp(colorIndexVk, vk::ImageLayout::ColorAttachment,
+                        vk::ImageLayout::ColorAttachment);
     }
 
     if (desc.hasDepthStencilAttachment())
     {
         uint32_t depthStencilIndexVk = colorAttachmentCount;
-        ops.initDummyOp(depthStencilIndexVk, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+        ops.initDummyOp(depthStencilIndexVk, vk::ImageLayout::DepthStencilAttachment,
+                        vk::ImageLayout::DepthStencilAttachment);
     }
 
     return getRenderPassWithOps(contextVk, serial, desc, ops, renderPassOut);
