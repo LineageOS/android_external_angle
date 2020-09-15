@@ -124,7 +124,8 @@ angle::Result Renderbuffer::setStorageMultisample(const Context *context,
                                                   size_t samples,
                                                   GLenum internalformat,
                                                   size_t width,
-                                                  size_t height)
+                                                  size_t height,
+                                                  MultisamplingMode mode)
 {
     ANGLE_TRY(orphanImages(context));
 
@@ -132,8 +133,8 @@ angle::Result Renderbuffer::setStorageMultisample(const Context *context,
     const TextureCaps &formatCaps = context->getTextureCaps().get(internalformat);
     samples                       = formatCaps.getNearestSamples(static_cast<GLuint>(samples));
 
-    ANGLE_TRY(
-        mImplementation->setStorageMultisample(context, samples, internalformat, width, height));
+    ANGLE_TRY(mImplementation->setStorageMultisample(context, samples, internalformat, width,
+                                                     height, mode));
 
     mState.update(static_cast<GLsizei>(width), static_cast<GLsizei>(height), Format(internalformat),
                   static_cast<GLsizei>(samples), InitState::MayNeedInit);
@@ -234,12 +235,12 @@ GLint Renderbuffer::getMemorySize() const
     return size.ValueOrDefault(std::numeric_limits<GLint>::max());
 }
 
-void Renderbuffer::onAttach(const Context *context)
+void Renderbuffer::onAttach(const Context *context, rx::Serial framebufferSerial)
 {
     addRef();
 }
 
-void Renderbuffer::onDetach(const Context *context)
+void Renderbuffer::onDetach(const Context *context, rx::Serial framebufferSerial)
 {
     release(context);
 }

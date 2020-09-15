@@ -222,10 +222,10 @@ class UniformEncodingVisitorD3D : public sh::BlockEncoderVisitor
           mUniformMapOut(uniformMapOut)
     {}
 
-    void visitNamedSampler(const sh::ShaderVariable &sampler,
-                           const std::string &name,
-                           const std::string &mappedName,
-                           const std::vector<unsigned int> &arraySizes) override
+    void visitNamedSamplerOrImage(const sh::ShaderVariable &sampler,
+                                  const std::string &name,
+                                  const std::string &mappedName,
+                                  const std::vector<unsigned int> &arraySizes) override
     {
         auto uniformMapEntry = mUniformMapOut->find(name);
         if (uniformMapEntry == mUniformMapOut->end())
@@ -2032,7 +2032,8 @@ angle::Result ProgramD3D::getComputeExecutableForImage2DBindLayout(
 
 std::unique_ptr<LinkEvent> ProgramD3D::link(const gl::Context *context,
                                             const gl::ProgramLinkedResources &resources,
-                                            gl::InfoLog &infoLog)
+                                            gl::InfoLog &infoLog,
+                                            const gl::ProgramMergedVaryings & /*mergedVaryings*/)
 {
     ANGLE_TRACE_EVENT0("gpu.angle", "ProgramD3D::link");
     const auto &data = context->getState();

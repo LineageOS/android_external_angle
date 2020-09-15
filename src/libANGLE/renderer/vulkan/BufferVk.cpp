@@ -157,6 +157,7 @@ angle::Result BufferVk::initializeShadowBuffer(ContextVk *contextVk,
 
     // For now, enable shadow buffers only for pixel unpack buffers.
     // If usecases present themselves, we can enable them for other buffer types.
+    // Note: If changed, update the waitForIdle message in BufferVk::copySubData to reflect it.
     if (target == gl::BufferBinding::PixelUnpack)
     {
         // Initialize the shadow buffer
@@ -252,40 +253,49 @@ angle::Result BufferVk::copySubData(const gl::Context *context,
 {
     ASSERT(mBuffer && mBuffer->valid());
 
-    ContextVk *contextVk = vk::GetImpl(context);
-    auto *sourceBuffer   = GetAs<BufferVk>(source);
-    ASSERT(sourceBuffer->getBuffer().valid());
+    ContextVk *contextVk           = vk::GetImpl(context);
+    BufferVk *sourceVk             = GetAs<BufferVk>(source);
+    vk::BufferHelper &sourceBuffer = sourceVk->getBuffer();
+    ASSERT(sourceBuffer.valid());
 
     // If the shadow buffer is enabled for the destination buffer then
     // we need to update that as well. This will require us to complete
     // all recorded and in-flight commands involving the source buffer.
     if (mShadowBuffer.valid())
     {
-        ANGLE_TRY(sourceBuffer->getBuffer().waitForIdle(contextVk));
+        ANGLE_TRY(sourceBuffer.waitForIdle(
+            contextVk,
+            "GPU stall due to copy from buffer in use by the GPU to a pixel unpack buffer"));
 
         // Update the shadow buffer
         uint8_t *srcPtr;
-        ANGLE_TRY(sourceBuffer->getBuffer().mapWithOffset(contextVk, &srcPtr, sourceOffset));
+        ANGLE_TRY(sourceBuffer.mapWithOffset(contextVk, &srcPtr, sourceOffset));
 
         updateShadowBuffer(srcPtr, size, destOffset);
 
         // Unmap the source buffer
-        sourceBuffer->getBuffer().unmap(contextVk->getRenderer());
+        sourceBuffer.unmap(contextVk->getRenderer());
     }
 
-    vk::CommandBuffer *commandBuffer = nullptr;
+    // Check for self-dependency.
+    if (sourceBuffer.getBufferSerial() == mBuffer->getBufferSerial())
+    {
+        ANGLE_TRY(contextVk->onBufferSelfCopy(mBuffer));
+    }
+    else
+    {
+        ANGLE_TRY(contextVk->onBufferTransferRead(&sourceBuffer));
+        ANGLE_TRY(contextVk->onBufferTransferWrite(mBuffer));
+    }
 
-    ANGLE_TRY(contextVk->onBufferTransferRead(&sourceBuffer->getBuffer()));
-    ANGLE_TRY(contextVk->onBufferTransferWrite(mBuffer));
-    ANGLE_TRY(contextVk->endRenderPassAndGetCommandBuffer(&commandBuffer));
+    vk::CommandBuffer &commandBuffer = contextVk->getOutsideRenderPassCommandBuffer();
 
     // Enqueue a copy command on the GPU.
     const VkBufferCopy copyRegion = {static_cast<VkDeviceSize>(sourceOffset),
                                      static_cast<VkDeviceSize>(destOffset),
                                      static_cast<VkDeviceSize>(size)};
 
-    commandBuffer->copyBuffer(sourceBuffer->getBuffer().getBuffer(), mBuffer->getBuffer(), 1,
-                              &copyRegion);
+    commandBuffer.copyBuffer(sourceBuffer.getBuffer(), mBuffer->getBuffer(), 1, &copyRegion);
 
     // The new destination buffer data may require a conversion for the next draw, so mark it dirty.
     onDataChanged();
@@ -327,7 +337,8 @@ angle::Result BufferVk::mapRangeImpl(ContextVk *contextVk,
 
         if ((access & GL_MAP_UNSYNCHRONIZED_BIT) == 0)
         {
-            ANGLE_TRY(mBuffer->waitForIdle(contextVk));
+            ANGLE_TRY(mBuffer->waitForIdle(contextVk,
+                                           "GPU stall due to mapping buffer in use by the GPU"));
         }
 
         ANGLE_TRY(mBuffer->mapWithOffset(contextVk, reinterpret_cast<uint8_t **>(mapPtr),
@@ -365,7 +376,6 @@ angle::Result BufferVk::unmapImpl(ContextVk *contextVk)
     if (!mShadowBuffer.valid())
     {
         mBuffer->unmap(contextVk->getRenderer());
-        mBuffer->onExternalWrite(VK_ACCESS_HOST_WRITE_BIT);
     }
     else
     {
@@ -400,7 +410,9 @@ angle::Result BufferVk::getSubData(const gl::Context *context,
     {
         ASSERT(mBuffer && mBuffer->valid());
         ContextVk *contextVk = vk::GetImpl(context);
-        ANGLE_TRY(mBuffer->waitForIdle(contextVk));
+        // Note: This function is used for ANGLE's capture/replay tool, so no performance warnings
+        // is generated.
+        ANGLE_TRY(mBuffer->waitForIdle(contextVk, nullptr));
         if (mBuffer->isMapped())
         {
             memcpy(outData, mBuffer->getMappedMemory() + offset, size);
@@ -445,6 +457,9 @@ angle::Result BufferVk::getIndexRange(const gl::Context *context,
 
     if (!mShadowBuffer.valid())
     {
+        ANGLE_PERF_WARNING(contextVk->getDebug(), GL_DEBUG_SEVERITY_HIGH,
+                           "GPU stall due to index range validation");
+
         // Needed before reading buffer or we could get stale data.
         ANGLE_TRY(mBuffer->finishRunningCommands(contextVk));
 
@@ -476,7 +491,6 @@ angle::Result BufferVk::directUpdate(ContextVk *contextVk,
     memcpy(mapPointer, data, size);
     mBuffer->unmap(contextVk->getRenderer());
     ASSERT(mBuffer->isCoherent());
-    mBuffer->onExternalWrite(VK_ACCESS_HOST_WRITE_BIT);
 
     return angle::Result::Continue;
 }
@@ -490,7 +504,7 @@ angle::Result BufferVk::stagedUpdate(ContextVk *contextVk,
     uint8_t *mapPointer              = nullptr;
     VkDeviceSize stagingBufferOffset = 0;
 
-    vk::DynamicBuffer *stagingBuffer = contextVk->getStagingBufferStorage();
+    vk::DynamicBuffer *stagingBuffer = contextVk->getStagingBuffer();
     ANGLE_TRY(stagingBuffer->allocate(contextVk, size, &mapPointer, nullptr, &stagingBufferOffset,
                                       nullptr));
     ASSERT(mapPointer);
@@ -498,7 +512,6 @@ angle::Result BufferVk::stagedUpdate(ContextVk *contextVk,
     memcpy(mapPointer, data, size);
     ASSERT(!stagingBuffer->isCoherent());
     ANGLE_TRY(stagingBuffer->flush(contextVk));
-    stagingBuffer->getCurrentBuffer()->onExternalWrite(VK_ACCESS_HOST_WRITE_BIT);
 
     // Enqueue a copy command on the GPU.
     VkBufferCopy copyRegion = {stagingBufferOffset, offset, size};
@@ -590,12 +603,13 @@ angle::Result BufferVk::copyToBufferImpl(ContextVk *contextVk,
                                          uint32_t copyCount,
                                          const VkBufferCopy *copies)
 {
-    vk::CommandBuffer *commandBuffer;
+
     ANGLE_TRY(contextVk->onBufferTransferWrite(destBuffer));
     ANGLE_TRY(contextVk->onBufferTransferRead(mBuffer));
-    ANGLE_TRY(contextVk->endRenderPassAndGetCommandBuffer(&commandBuffer));
 
-    commandBuffer->copyBuffer(mBuffer->getBuffer(), destBuffer->getBuffer(), copyCount, copies);
+    vk::CommandBuffer &commandBuffer = contextVk->getOutsideRenderPassCommandBuffer();
+
+    commandBuffer.copyBuffer(mBuffer->getBuffer(), destBuffer->getBuffer(), copyCount, copies);
 
     return angle::Result::Continue;
 }
