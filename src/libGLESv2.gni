@@ -74,7 +74,7 @@ angle_system_utils_sources = [
   "src/common/system_utils.h",
 ]
 
-if (is_linux || is_android || is_fuchsia) {
+if (is_linux || is_chromeos || is_android || is_fuchsia) {
   angle_system_utils_sources += [
     "src/common/system_utils_linux.cpp",
     "src/common/system_utils_posix.cpp",
@@ -243,6 +243,7 @@ libangle_headers = [
   "src/libANGLE/OverlayWidgets.cpp",
   "src/libANGLE/OverlayWidgets.h",
   "src/libANGLE/Overlay_autogen.cpp",
+  "src/libANGLE/Overlay_autogen.h",
   "src/libANGLE/Overlay_font_autogen.cpp",
   "src/libANGLE/Overlay_font_autogen.h",
   "src/libANGLE/Program.h",
@@ -927,47 +928,6 @@ libangle_capture_sources = [
   "src/libANGLE/gl_enum_utils_autogen.cpp",
 ]
 
-libangle_null_sources = [
-  "src/libANGLE/renderer/null/BufferNULL.cpp",
-  "src/libANGLE/renderer/null/BufferNULL.h",
-  "src/libANGLE/renderer/null/CompilerNULL.cpp",
-  "src/libANGLE/renderer/null/CompilerNULL.h",
-  "src/libANGLE/renderer/null/ContextNULL.cpp",
-  "src/libANGLE/renderer/null/ContextNULL.h",
-  "src/libANGLE/renderer/null/DeviceNULL.cpp",
-  "src/libANGLE/renderer/null/DeviceNULL.h",
-  "src/libANGLE/renderer/null/DisplayNULL.cpp",
-  "src/libANGLE/renderer/null/DisplayNULL.h",
-  "src/libANGLE/renderer/null/FenceNVNULL.cpp",
-  "src/libANGLE/renderer/null/FenceNVNULL.h",
-  "src/libANGLE/renderer/null/FramebufferNULL.cpp",
-  "src/libANGLE/renderer/null/FramebufferNULL.h",
-  "src/libANGLE/renderer/null/ImageNULL.cpp",
-  "src/libANGLE/renderer/null/ImageNULL.h",
-  "src/libANGLE/renderer/null/ProgramNULL.cpp",
-  "src/libANGLE/renderer/null/ProgramNULL.h",
-  "src/libANGLE/renderer/null/ProgramPipelineNULL.cpp",
-  "src/libANGLE/renderer/null/ProgramPipelineNULL.h",
-  "src/libANGLE/renderer/null/QueryNULL.cpp",
-  "src/libANGLE/renderer/null/QueryNULL.h",
-  "src/libANGLE/renderer/null/RenderbufferNULL.cpp",
-  "src/libANGLE/renderer/null/RenderbufferNULL.h",
-  "src/libANGLE/renderer/null/SamplerNULL.cpp",
-  "src/libANGLE/renderer/null/SamplerNULL.h",
-  "src/libANGLE/renderer/null/ShaderNULL.cpp",
-  "src/libANGLE/renderer/null/ShaderNULL.h",
-  "src/libANGLE/renderer/null/SurfaceNULL.cpp",
-  "src/libANGLE/renderer/null/SurfaceNULL.h",
-  "src/libANGLE/renderer/null/SyncNULL.cpp",
-  "src/libANGLE/renderer/null/SyncNULL.h",
-  "src/libANGLE/renderer/null/TextureNULL.cpp",
-  "src/libANGLE/renderer/null/TextureNULL.h",
-  "src/libANGLE/renderer/null/TransformFeedbackNULL.cpp",
-  "src/libANGLE/renderer/null/TransformFeedbackNULL.h",
-  "src/libANGLE/renderer/null/VertexArrayNULL.cpp",
-  "src/libANGLE/renderer/null/VertexArrayNULL.h",
-]
-
 libgl_sources = [
   "src/common/angleutils.h",
   "src/common/debug.h",
@@ -1053,7 +1013,6 @@ libglesv2_sources = [
 
 libglesv1_cm_sources = [
   "src/libGLESv1_CM/libGLESv1_CM.cpp",
-  "src/libGLESv1_CM/libGLESv1_CM.def",
   "src/libGLESv1_CM/libGLESv1_CM.rc",
   "src/libGLESv1_CM/resource.h",
 ]

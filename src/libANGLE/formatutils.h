@@ -134,6 +134,7 @@ struct InternalFormat
 {
     InternalFormat();
     InternalFormat(const InternalFormat &other);
+    InternalFormat &operator=(const InternalFormat &other);
 
     GLuint computePixelBytes(GLenum formatType) const;
 

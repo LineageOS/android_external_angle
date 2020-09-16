@@ -741,15 +741,20 @@ void ClearValuesArray::store(uint32_t index,
         // Ensure for packed DS we're writing to the depth index.
         ASSERT(index == kClearValueDepthIndex ||
                (index == kClearValueStencilIndex && aspectFlags == VK_IMAGE_ASPECT_STENCIL_BIT));
-        mValues[kClearValueStencilIndex] = clearValue;
-        mEnabled.set(kClearValueStencilIndex);
+
+        storeNoDepthStencil(kClearValueStencilIndex, clearValue);
     }
 
     if (aspectFlags != VK_IMAGE_ASPECT_STENCIL_BIT)
     {
-        mValues[index] = clearValue;
-        mEnabled.set(index);
+        storeNoDepthStencil(index, clearValue);
     }
+}
+
+void ClearValuesArray::storeNoDepthStencil(uint32_t index, const VkClearValue &clearValue)
+{
+    mValues[index] = clearValue;
+    mEnabled.set(index);
 }
 
 // ResourceSerialFactory implementation.
@@ -786,8 +791,9 @@ PFN_vkCreateDebugReportCallbackEXT vkCreateDebugReportCallbackEXT   = nullptr;
 PFN_vkDestroyDebugReportCallbackEXT vkDestroyDebugReportCallbackEXT = nullptr;
 
 // VK_KHR_get_physical_device_properties2
-PFN_vkGetPhysicalDeviceProperties2KHR vkGetPhysicalDeviceProperties2KHR = nullptr;
-PFN_vkGetPhysicalDeviceFeatures2KHR vkGetPhysicalDeviceFeatures2KHR     = nullptr;
+PFN_vkGetPhysicalDeviceProperties2KHR vkGetPhysicalDeviceProperties2KHR             = nullptr;
+PFN_vkGetPhysicalDeviceFeatures2KHR vkGetPhysicalDeviceFeatures2KHR                 = nullptr;
+PFN_vkGetPhysicalDeviceMemoryProperties2KHR vkGetPhysicalDeviceMemoryProperties2KHR = nullptr;
 
 // VK_KHR_external_semaphore_fd
 PFN_vkImportSemaphoreFdKHR vkImportSemaphoreFdKHR = nullptr;
@@ -803,8 +809,13 @@ PFN_vkCmdBeginQueryIndexedEXT vkCmdBeginQueryIndexedEXT                       = 
 PFN_vkCmdEndQueryIndexedEXT vkCmdEndQueryIndexedEXT                           = nullptr;
 PFN_vkCmdDrawIndirectByteCountEXT vkCmdDrawIndirectByteCountEXT               = nullptr;
 
+// VK_KHR_get_memory_requirements2
 PFN_vkGetBufferMemoryRequirements2KHR vkGetBufferMemoryRequirements2KHR = nullptr;
 PFN_vkGetImageMemoryRequirements2KHR vkGetImageMemoryRequirements2KHR   = nullptr;
+
+// VK_KHR_bind_memory2
+PFN_vkBindBufferMemory2KHR vkBindBufferMemory2KHR = nullptr;
+PFN_vkBindImageMemory2KHR vkBindImageMemory2KHR   = nullptr;
 
 // VK_KHR_external_fence_capabilities
 PFN_vkGetPhysicalDeviceExternalFencePropertiesKHR vkGetPhysicalDeviceExternalFencePropertiesKHR =
@@ -952,6 +963,21 @@ GLenum CalculateGenerateMipmapFilter(ContextVk *contextVk, const vk::Format &for
     const bool hintFastest = contextVk->getState().getGenerateMipmapHint() == GL_FASTEST;
 
     return formatSupportsLinearFiltering && !hintFastest ? GL_LINEAR : GL_NEAREST;
+}
+
+// Return the log of samples.  Assumes |sampleCount| is a power of 2.  The result can be used to
+// index an array based on sample count.  See for example TextureVk::PerSampleCountArray.
+size_t PackSampleCount(GLint sampleCount)
+{
+    if (sampleCount == 0)
+    {
+        sampleCount = 1;
+    }
+
+    // We currently only support up to 16xMSAA.
+    ASSERT(sampleCount <= VK_SAMPLE_COUNT_16_BIT);
+    ASSERT(gl::isPow2(sampleCount));
+    return gl::ScanForward(static_cast<uint32_t>(sampleCount));
 }
 
 namespace gl_vk
@@ -1270,6 +1296,12 @@ void GetExtentsAndLayerCount(gl::TextureType textureType,
             break;
     }
 }
+
+vk::LevelIndex GetLevelIndex(gl::LevelIndex levelGL, gl::LevelIndex baseLevel)
+{
+    ASSERT(baseLevel <= levelGL);
+    return vk::LevelIndex(levelGL.get() - baseLevel.get());
+}
 }  // namespace gl_vk
 
 namespace vk_gl
@@ -1307,6 +1339,11 @@ GLuint GetSampleCount(VkSampleCountFlags supportedCounts, GLuint requestedCount)
 
     UNREACHABLE();
     return 0;
+}
+
+gl::LevelIndex GetLevelIndex(vk::LevelIndex levelVK, gl::LevelIndex baseLevel)
+{
+    return gl::LevelIndex(levelVK.get() + baseLevel.get());
 }
 }  // namespace vk_gl
 }  // namespace rx

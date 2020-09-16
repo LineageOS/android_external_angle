@@ -19,8 +19,9 @@ if (angle_has_build) {
 
 declare_args() {
   # Use the PCI lib to collect GPU information on Linux.
-  use_libpci = is_linux && (!is_chromecast || is_cast_desktop_build) &&
-               (angle_use_x11 || use_ozone)
+  use_libpci =
+      (is_linux || is_chromeos) && (!is_chromecast || is_cast_desktop_build) &&
+      (angle_use_x11 || use_ozone) && angle_has_build
 
   # Link in system libGL, to work with apitrace.  See doc/DebuggingTips.md.
   angle_link_glx = false
@@ -100,7 +101,7 @@ config("internal_config") {
 
   if (is_win) {
     defines += [ "ANGLE_IS_WIN" ]
-  } else if (is_linux) {
+  } else if (is_linux || is_chromeos) {
     defines += [ "ANGLE_IS_LINUX" ]
   }
 
@@ -133,6 +134,7 @@ config("extra_warnings") {
   if (is_win) {
     cflags += [
       "/we4244",  # Conversion: possible loss of data.
+      "/we4312",  # Conversion: greater size.
       "/we4456",  # Variable shadowing.
       "/we4458",  # declaration hides class member.
       "/we4715",  # not all control paths return a value
@@ -142,7 +144,9 @@ config("extra_warnings") {
   }
   if (is_clang) {
     cflags += [
+      "-Wbad-function-cast",
       "-Wconditional-uninitialized",
+      "-Wdeprecated-copy",
       "-Wextra-semi-stmt",
       "-Wfloat-conversion",
       "-Winconsistent-missing-destructor-override",
@@ -150,10 +154,14 @@ config("extra_warnings") {
       "-Wnewline-eof",
       "-Wnon-virtual-dtor",
       "-Wredundant-parens",
+      "-Wreturn-std-move-in-c++11",
       "-Wshadow-field",
+      "-Wsuggest-destructor-override",
+      "-Wsuggest-override",
       "-Wtautological-type-limit-compare",
       "-Wundefined-reinterpret-cast",
       "-Wunneeded-internal-declaration",
+      "-Wweak-template-vtables",
 
       # The below warnings are used by WebKit. We enable them to make rolling
       # ANGLE in WebKit easier.
@@ -250,12 +258,32 @@ config("angle_common_config") {
   }
 }
 
+# Silences the "indirect call of a function with wrong dynamic type" cfi error
+config("angle_no_cfi_icall") {
+  if (is_cfi && use_cfi_icall && current_toolchain == default_toolchain) {
+    cflags = [ "-fno-sanitize=cfi-icall" ]
+  }
+}
+
+# Silences the "cast from void* or another unrelated type to the wrong dynamic type" cfi error
+config("angle_no_cfi_unrelated_cast") {
+  if (is_cfi && use_cfi_cast && current_toolchain == default_toolchain) {
+    cflags = [ "-fno-sanitize=cfi-unrelated-cast" ]
+  }
+}
+
 angle_source_set("angle_system_utils") {
   sources = angle_system_utils_sources
+  if (is_linux || is_chromeos) {
+    libs = [ "dl" ]
+  }
 }
 
 angle_source_set("xxhash") {
   sources = xxhash_sources
+  if (is_clang) {
+    cflags_c = [ "-Wno-implicit-fallthrough" ]
+  }
 }
 
 if (angle_has_build) {
@@ -358,10 +386,10 @@ angle_static_library("angle_gpu_info_util") {
     libs += [ "dxgi.lib" ]
   }
 
-  if (is_linux) {
+  if (is_linux || is_chromeos) {
     sources += libangle_gpu_info_util_linux_sources
 
-    if (angle_use_x11) {
+    if (angle_use_x11 && angle_has_build) {
       sources += libangle_gpu_info_util_x11_sources
       deps += [ "src/third_party/libXNVCtrl:libXNVCtrl" ]
       defines += [ "GPU_INFO_USE_X11" ]
@@ -477,6 +505,11 @@ action("commit_id") {
       exec_script("src/commit_id.py", [ "check" ], "value") == 1) {
     # commit id should depend on angle's HEAD revision
     inputs = [ ".git/HEAD" ]
+    branch = read_file(".git/HEAD", "string")
+    result = string_split(branch)
+    if (result[0] == "ref:") {
+      inputs += [ ".git/" + result[1] ]
+    }
   }
 
   args = [
@@ -507,14 +540,15 @@ config("angle_backend_config") {
       defines += [ "ANGLE_ENABLE_OPENGL_NULL" ]
     }
   }
-  if (angle_enable_null) {
-    defines += [ "ANGLE_ENABLE_NULL" ]
-  }
   if (angle_delegate_workers) {
     defines += [ "ANGLE_DELEGATE_WORKERS" ]
   }
 
   configs = []
+
+  if (angle_enable_null) {
+    configs += [ "src/libANGLE/renderer/null:angle_null_backend_config" ]
+  }
 
   if (angle_enable_metal) {
     configs += [ "src/libANGLE/renderer/metal:angle_metal_backend_config" ]
@@ -618,6 +652,10 @@ angle_source_set("libANGLE_base") {
     ]
   }
 
+  if (angle_enable_null) {
+    public_deps += [ "src/libANGLE/renderer/null:angle_null_backend" ]
+  }
+
   if (angle_enable_vulkan) {
     public_deps += [ "src/libANGLE/renderer/vulkan:angle_vulkan_backend" ]
   }
@@ -677,7 +715,6 @@ angle_source_set("libANGLE_base") {
     }
     if (angle_use_x11) {
       sources += libangle_gl_glx_sources
-      deps += [ "src/third_party/libXNVCtrl:libXNVCtrl" ]
       libs += [
         "X11",
         "Xi",
@@ -698,7 +735,7 @@ angle_source_set("libANGLE_base") {
       sources += libangle_gl_egl_dl_sources
       sources += libangle_gl_egl_android_sources
     }
-    if (is_linux) {
+    if (is_linux || is_chromeos) {
       sources += libangle_gl_egl_sources
       sources += libangle_gl_egl_dl_sources
     }
@@ -708,10 +745,6 @@ angle_source_set("libANGLE_base") {
       deps += [ "//third_party/minigbm" ]
       sources += libangle_gl_gbm_sources
     }
-  }
-
-  if (angle_enable_null) {
-    sources += libangle_null_sources
   }
 
   if (is_mac) {
@@ -772,7 +805,8 @@ group("angle_compression") {
     ":angle_compression_config",
     "//third_party/zlib:zlib_config",
   ]
-  public_deps = [ "//third_party/zlib/google:compression_utils_portable" ]
+  public_deps =
+      [ "$angle_zlib_compression_utils_dir:compression_utils_portable" ]
 }
 
 angle_source_set("libANGLE_with_capture") {
@@ -945,6 +979,10 @@ angle_shared_library("libGLESv1_CM") {
     ":includes",
     ":libGLESv2",
   ]
+
+  if (is_win) {
+    sources += [ "src/libGLESv1_CM/libGLESv1_CM.def" ]
+  }
 }
 
 angle_static_library("libGLESv1_CM_static") {
@@ -1141,7 +1179,7 @@ if (build_with_chromium && !is_component_build && is_android &&
     current_toolchain == default_toolchain) {
   # Package ANGLE libraries
   angle_apk("angle_chromium_apk") {
-    package_name = "com.chromium.angle"
+    package_name = "org.chromium.angle"
     apk_name = "AngleLibraries"
   }
 

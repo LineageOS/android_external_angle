@@ -60,15 +60,14 @@ angle::Result RenderbufferMtl::setStorageImpl(const gl::Context *context,
     if ((mTexture == nullptr || !mTexture->valid()) && (width != 0 && height != 0))
     {
         ANGLE_TRY(mtl::Texture::Make2DTexture(contextMtl, mFormat, static_cast<uint32_t>(width),
-                                              static_cast<uint32_t>(height), 1, false, false,
-                                              &mTexture));
+                                              static_cast<uint32_t>(height), 1, false,
+                                              mFormat.hasDepthAndStencilBits(), &mTexture));
 
         mRenderTarget.set(mTexture, 0, 0, mFormat);
 
         // For emulated channels that GL texture intends to not have,
         // we need to initialize their content.
-        bool emulatedChannels;
-        mTexture->setColorWritableMask(mtl::GetEmulatedColorWriteMask(mFormat, &emulatedChannels));
+        bool emulatedChannels = mtl::IsFormatEmulated(mFormat);
         if (emulatedChannels)
         {
             gl::ImageIndex index;
@@ -94,7 +93,8 @@ angle::Result RenderbufferMtl::setStorageMultisample(const gl::Context *context,
                                                      size_t samples,
                                                      GLenum internalformat,
                                                      size_t width,
-                                                     size_t height)
+                                                     size_t height,
+                                                     gl::MultisamplingMode mode)
 {
     // NOTE(hqle): Support MSAA
     UNIMPLEMENTED();

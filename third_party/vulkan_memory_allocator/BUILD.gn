@@ -10,6 +10,8 @@ config("vulkan_memory_allocator_config") {
     cflags_cc = [
       "-Wno-implicit-fallthrough",
       "-Wno-nullability-completeness",
+      "-Wno-suggest-destructor-override",
+      "-Wno-suggest-override",
       "-Wno-unused-private-field",
       "-Wno-unused-variable",
     ]
@@ -22,8 +24,6 @@ config("vulkan_memory_allocator_config") {
 }
 
 source_set("vulkan_memory_allocator") {
-  sources = [
-    "src/vk_mem_alloc.h",
-  ]
+  sources = [ "src/vk_mem_alloc.h" ]
   public_configs = [ ":vulkan_memory_allocator_config" ]
 }

@@ -76,19 +76,21 @@ void RendererVk::ensureCapsInitialized() const
 
     // Enable this for simple buffer readback testing, but some functionality is missing.
     // TODO(jmadill): Support full mapBufferRange extension.
-    mNativeExtensions.mapBufferOES                 = true;
-    mNativeExtensions.mapBufferRange               = true;
-    mNativeExtensions.textureStorage               = true;
-    mNativeExtensions.drawBuffers                  = true;
-    mNativeExtensions.fragDepth                    = true;
-    mNativeExtensions.framebufferBlit              = true;
-    mNativeExtensions.framebufferMultisample       = true;
-    mNativeExtensions.multisampledRenderToTexture  = true;
-    mNativeExtensions.multisampledRenderToTexture2 = true;
-    mNativeExtensions.copyTexture                  = true;
-    mNativeExtensions.copyTexture3d                = true;
-    mNativeExtensions.copyCompressedTexture        = true;
-    mNativeExtensions.debugMarker                  = true;
+    mNativeExtensions.mapBufferOES           = true;
+    mNativeExtensions.mapBufferRange         = true;
+    mNativeExtensions.textureStorage         = true;
+    mNativeExtensions.drawBuffers            = true;
+    mNativeExtensions.fragDepth              = true;
+    mNativeExtensions.framebufferBlit        = true;
+    mNativeExtensions.framebufferMultisample = true;
+    mNativeExtensions.multisampledRenderToTexture =
+        getFeatures().enableMultisampledRenderToTexture.enabled;
+    mNativeExtensions.multisampledRenderToTexture2 =
+        getFeatures().enableMultisampledRenderToTexture.enabled;
+    mNativeExtensions.copyTexture           = true;
+    mNativeExtensions.copyTexture3d         = true;
+    mNativeExtensions.copyCompressedTexture = true;
+    mNativeExtensions.debugMarker           = true;
     mNativeExtensions.robustness =
         !IsSwiftshader(mPhysicalDeviceProperties.vendorID, mPhysicalDeviceProperties.deviceID) &&
         !IsARM(mPhysicalDeviceProperties.vendorID);
@@ -116,6 +118,7 @@ void RendererVk::ensureCapsInitialized() const
     mNativeExtensions.eglImageArray                = true;
     mNativeExtensions.memoryObject                 = true;
     mNativeExtensions.memoryObjectFd               = getFeatures().supportsExternalMemoryFd.enabled;
+    mNativeExtensions.memoryObjectFlagsANGLE       = true;
     mNativeExtensions.memoryObjectFuchsiaANGLE =
         getFeatures().supportsExternalMemoryFuchsia.enabled;
 
@@ -194,6 +197,8 @@ void RendererVk::ensureCapsInitialized() const
     mNativeExtensions.gpuShader5EXT = vk::CanSupportGPUShader5EXT(mPhysicalDeviceFeatures);
 
     mNativeExtensions.textureFilteringCHROMIUM = getFeatures().supportsFilteringPrecision.enabled;
+
+    mNativeExtensions.shadowSamplersEXT = true;
 
     // https://vulkan.lunarg.com/doc/view/1.0.30.0/linux/vkspec.chunked/ch31s02.html
     mNativeCaps.maxElementIndex  = std::numeric_limits<GLuint>::max() - 1;
@@ -623,11 +628,13 @@ EGLint ComputeMaximumPBufferPixels(const VkPhysicalDeviceProperties &physicalDev
 
 // Generates a basic config for a combination of color format, depth stencil format and sample
 // count.
-egl::Config GenerateDefaultConfig(const RendererVk *renderer,
+egl::Config GenerateDefaultConfig(DisplayVk *display,
                                   const gl::InternalFormat &colorFormat,
                                   const gl::InternalFormat &depthStencilFormat,
                                   EGLint sampleCount)
 {
+    const RendererVk *renderer = display->getRenderer();
+
     const VkPhysicalDeviceProperties &physicalDeviceProperties =
         renderer->getPhysicalDeviceProperties();
     gl::Version maxSupportedESVersion = renderer->getMaxSupportedESVersion();
@@ -677,6 +684,11 @@ egl::Config GenerateDefaultConfig(const RendererVk *renderer,
     config.transparentBlueValue  = 0;
     config.colorComponentType =
         gl_egl::GLComponentTypeToEGLColorComponentType(colorFormat.componentType);
+
+    // Vulkan always supports off-screen rendering.  Check the config with display to see if it can
+    // also have window support.  If not, the following call should automatically remove
+    // EGL_WINDOW_BIT.
+    display->checkConfigSupport(&config);
 
     return config;
 }
@@ -744,12 +756,9 @@ egl::ConfigSet GenerateConfigs(const GLenum *colorFormats,
 
             for (EGLint sampleCount : *configSampleCounts)
             {
-                egl::Config config = GenerateDefaultConfig(display->getRenderer(), colorFormatInfo,
+                egl::Config config = GenerateDefaultConfig(display, colorFormatInfo,
                                                            depthStencilFormatInfo, sampleCount);
-                if (display->checkConfigSupport(&config))
-                {
-                    configSet.add(config);
-                }
+                configSet.add(config);
             }
         }
     }
