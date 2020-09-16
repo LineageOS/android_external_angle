@@ -144,7 +144,7 @@ Result SerializeFramebufferAttachment(const gl::Context *context,
                                           framebuffer->getState().getColorAttachments().size()))
         {
             framebuffer->setReadBuffer(framebufferAttachment.getBinding());
-            ANGLE_TRY(framebuffer->syncState(context, GL_FRAMEBUFFER));
+            ANGLE_TRY(framebuffer->syncState(context, GL_FRAMEBUFFER, gl::Command::Other));
         }
         MemoryBuffer *pixelsPtr = nullptr;
         ANGLE_TRY(ReadPixelsFromAttachment(context, framebuffer, framebufferAttachment,
@@ -811,14 +811,6 @@ void SerializeImageDesc(gl::BinaryOutputStream *bos, const gl::ImageDesc &imageD
     bos->writeEnum(imageDesc.initState);
 }
 
-void SerializeContextBindingCount(gl::BinaryOutputStream *bos,
-                                  const gl::ContextBindingCount &contextBindingCount)
-{
-    bos->writeInt(contextBindingCount.contextID);
-    bos->writeInt(contextBindingCount.imageBindingCount);
-    bos->writeInt(contextBindingCount.samplerBindingCount);
-}
-
 void SerializeTextureState(gl::BinaryOutputStream *bos, const gl::TextureState &textureState)
 {
     bos->writeEnum(textureState.getType());
@@ -828,12 +820,7 @@ void SerializeTextureState(gl::BinaryOutputStream *bos, const gl::TextureState &
     bos->writeInt(textureState.getBaseLevel());
     bos->writeInt(textureState.getMaxLevel());
     bos->writeInt(textureState.getDepthStencilTextureMode());
-    const std::vector<gl::ContextBindingCount> &contextBindingCounts =
-        textureState.getBindingCounts();
-    for (const gl::ContextBindingCount &contextBindingCount : contextBindingCounts)
-    {
-        SerializeContextBindingCount(bos, contextBindingCount);
-    }
+    bos->writeInt(textureState.hasBeenBoundAsImage());
     bos->writeInt(textureState.getImmutableFormat());
     bos->writeInt(textureState.getImmutableLevels());
     bos->writeInt(textureState.getUsage());

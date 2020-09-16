@@ -55,6 +55,12 @@ constexpr TraceCategory gTraceCategories[2] = {
 
 void EmptyPlatformMethod(angle::PlatformMethods *, const char *) {}
 
+void CustomLogError(angle::PlatformMethods *platform, const char *errorMessage)
+{
+    auto *angleRenderTest = static_cast<ANGLERenderTest *>(platform->context);
+    angleRenderTest->onErrorMessage(errorMessage);
+}
+
 void OverrideWorkaroundsD3D(angle::PlatformMethods *platform, angle::FeaturesD3D *featuresD3D)
 {
     auto *angleRenderTest = static_cast<ANGLERenderTest *>(platform->context);
@@ -152,20 +158,6 @@ void DumpTraceEventsToJSONFile(const std::vector<TraceEvent> &traceEvents,
     writer->write(root, &outFile);
 
     outFile.close();
-}
-
-ANGLE_MAYBE_UNUSED void KHRONOS_APIENTRY DebugMessageCallback(GLenum source,
-                                                              GLenum type,
-                                                              GLuint id,
-                                                              GLenum severity,
-                                                              GLsizei length,
-                                                              const GLchar *message,
-                                                              const void *userParam)
-{
-    std::string sourceText   = gl::GetDebugMessageSourceString(source);
-    std::string typeText     = gl::GetDebugMessageTypeString(type);
-    std::string severityText = gl::GetDebugMessageSeverityString(severity);
-    std::cerr << sourceText << ", " << typeText << ", " << severityText << ": " << message << "\n";
 }
 }  // anonymous namespace
 
@@ -519,7 +511,7 @@ void ANGLERenderTest::SetUp()
     }
 
     mPlatformMethods.overrideWorkaroundsD3D      = OverrideWorkaroundsD3D;
-    mPlatformMethods.logError                    = EmptyPlatformMethod;
+    mPlatformMethods.logError                    = CustomLogError;
     mPlatformMethods.logWarning                  = EmptyPlatformMethod;
     mPlatformMethods.logInfo                     = EmptyPlatformMethod;
     mPlatformMethods.addTraceEvent               = AddPerfTraceEvent;
@@ -578,22 +570,7 @@ void ANGLERenderTest::SetUp()
 #if defined(ANGLE_ENABLE_ASSERTS)
     if (IsGLExtensionEnabled("GL_KHR_debug"))
     {
-        glEnable(GL_DEBUG_OUTPUT);
-        glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
-        // Enable medium and high priority messages.
-        glDebugMessageControlKHR(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_HIGH, 0, nullptr,
-                                 GL_TRUE);
-        glDebugMessageControlKHR(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_MEDIUM, 0, nullptr,
-                                 GL_TRUE);
-        // Disable low and notification priority messages.
-        glDebugMessageControlKHR(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_LOW, 0, nullptr,
-                                 GL_FALSE);
-        glDebugMessageControlKHR(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_NOTIFICATION, 0,
-                                 nullptr, GL_FALSE);
-        // Disable medium priority performance messages to reduce spam.
-        glDebugMessageControlKHR(GL_DONT_CARE, GL_DEBUG_TYPE_PERFORMANCE, GL_DEBUG_SEVERITY_MEDIUM,
-                                 0, nullptr, GL_FALSE);
-        glDebugMessageCallbackKHR(DebugMessageCallback, this);
+        EnableDebugCallback(this);
     }
 #endif
 
@@ -819,6 +796,11 @@ void ANGLERenderTest::setRobustResourceInit(bool enabled)
 std::vector<TraceEvent> &ANGLERenderTest::getTraceEventBuffer()
 {
     return mTraceEventBuffer;
+}
+
+void ANGLERenderTest::onErrorMessage(const char *errorMessage)
+{
+    FAIL() << "Failing test because of unexpected internal ANGLE error:\n" << errorMessage << "\n";
 }
 
 namespace angle

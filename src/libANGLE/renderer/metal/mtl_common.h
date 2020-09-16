@@ -97,7 +97,7 @@ namespace mtl
 // NOTE(hqle): support variable max number of vertex attributes
 constexpr uint32_t kMaxVertexAttribs = gl::MAX_VERTEX_ATTRIBS;
 // NOTE(hqle): support variable max number of render targets
-constexpr uint32_t kMaxRenderTargets = 1;
+constexpr uint32_t kMaxRenderTargets = 4;
 
 constexpr size_t kDefaultAttributeSize = 4 * sizeof(float);
 
@@ -132,6 +132,8 @@ constexpr uint32_t kDefaultUniformsBindingIndex = kDefaultAttribsBindingIndex + 
 constexpr uint32_t kStencilMaskAll = 0xff;  // Only 8 bits stencil is supported
 
 constexpr float kEmulatedAlphaValue = 1.0f;
+
+constexpr size_t kOcclusionQueryResultSize = sizeof(uint64_t);
 
 // NOTE(hqle): Support ES 3.0.
 constexpr gl::Version kMaxSupportedGLVersion = gl::Version(2, 0);

@@ -409,6 +409,17 @@ message Transformation {
     TransformationReplaceLoadStoreWithCopyMemory replace_load_store_with_copy_memory = 62;
     TransformationAddLoopPreheader add_loop_preheader = 63;
     TransformationMoveInstructionDown move_instruction_down = 64;
+    TransformationMakeVectorOperationDynamic make_vector_operation_dynamic = 65;
+    TransformationReplaceAddSubMulWithCarryingExtended replace_add_sub_mul_with_carrying_extended = 66;
+    TransformationPropagateInstructionUp propagate_instruction_up = 67;
+    TransformationCompositeInsert composite_insert = 68;
+    TransformationInlineFunction inline_function = 69;
+    TransformationAddOpPhiSynonym add_opphi_synonym = 70;
+    TransformationMutatePointer mutate_pointer = 71;
+    TransformationReplaceIrrelevantId replace_irrelevant_id = 72;
+    TransformationReplaceOpPhiIdFromDeadPredecessor replace_opphi_id_from_dead_predecessor = 73;
+    TransformationReplaceOpSelectWithConditionalBranch replace_opselect_with_conditional_branch = 74;
+    TransformationDuplicateRegionWithSelection duplicate_region_with_selection = 75;
     // Add additional option using the next available number.
   }
 }
@@ -741,6 +752,24 @@ message TransformationAddNoContractionDecoration {
 
 }
 
+message TransformationAddOpPhiSynonym {
+
+  // Adds an OpPhi instruction at the start of a block with n predecessors (pred_1, pred_2, ..., pred_n)
+  // and n related ids (id_1, id_2, ..., id_n) which are pairwise synonymous.
+  // The instruction will be of the form:
+  //       %fresh_id = OpPhi %type %id_1 %pred_1 %id_2 %pred_2 ... %id_n %pred_n
+  // and fresh_id will be recorded as being synonymous with all the other ids.
+
+  // Label id of the block
+  uint32 block_id = 1;
+
+  // Pairs (pred_i, id_i)
+  repeated UInt32Pair pred_to_id = 2;
+
+  // Fresh id for the new instruction
+  uint32 fresh_id = 3;
+}
+
 message TransformationAddParameter {
 
   // Adds a new parameter into the function.
@@ -751,15 +780,17 @@ message TransformationAddParameter {
   // Fresh id for a new parameter.
   uint32 parameter_fresh_id = 2;
 
-  // Result id of the instruction, used to initializer new parameter
-  // in function calls. Type id of that instruction is the type id of the parameter.
-  // It may not be OpTypeVoid.
-  uint32 initializer_id = 3;
+  // Type id for a new parameter.
+  uint32 parameter_type_id = 3;
+
+  // A map that maps from the OpFunctionCall id to the id that will be passed as the new
+  // parameter at that call site. It must have the same type as that of the new parameter.
+  repeated UInt32Pair call_parameter_ids = 4;
 
   // A fresh id for a new function type. This might not be used
   // if a required function type already exists or if we can change
   // the old function type.
-  uint32 function_type_fresh_id = 4;
+  uint32 function_type_fresh_id = 5;
 
 }
 
@@ -1016,6 +1047,29 @@ message TransformationCompositeExtract {
 
 }
 
+message TransformationCompositeInsert {
+
+  // A transformation that adds an instruction OpCompositeInsert which creates
+  // a new composite from an existing composite, with an element inserted.
+
+  // A descriptor for an instruction before which the new instruction
+  // OpCompositeInsert should be inserted.
+  InstructionDescriptor instruction_to_insert_before = 1;
+
+  // Result id of the inserted OpCompositeInsert instruction.
+  uint32 fresh_id = 2;
+
+  // Id of the composite used as the basis for the insertion.
+  uint32 composite_id = 3;
+
+  // Id of the object to be inserted.
+  uint32 object_id = 4;
+
+  // Indices that indicate which part of the composite should be inserted into.
+  repeated uint32 index = 5;
+
+}
+
 message TransformationComputeDataSynonymFactClosure {
 
   // A transformation that impacts the fact manager only, forcing a computation
@@ -1027,6 +1081,41 @@ message TransformationComputeDataSynonymFactClosure {
   // larger than this size will be skipped.
   uint32 maximum_equivalence_class_size = 1;
 
+}
+
+message TransformationDuplicateRegionWithSelection {
+
+  // A transformation that inserts a conditional statement with a boolean expression
+  // of arbitrary value and duplicates a given single-entry, single-exit region, so
+  // that it is present in each conditional branch and will be executed regardless
+  // of which branch will be taken.
+
+  // Fresh id for a label of the new entry block.
+  uint32 new_entry_fresh_id = 1;
+
+  // Id for a boolean expression.
+  uint32 condition_id = 2;
+
+  // Fresh id for a label of the merge block of the conditional.
+  uint32 merge_label_fresh_id = 3;
+
+  // Block id of the entry block of the original region.
+  uint32 entry_block_id = 4;
+
+  // Block id of the exit block of the original region.
+  uint32 exit_block_id = 5;
+
+  // Map that maps from a label in the original region to the corresponding label
+  // in the duplicated region.
+  repeated UInt32Pair original_label_to_duplicate_label = 6;
+
+  // Map that maps from a result id in the original region to the corresponding
+  // result id in the duplicated region.
+  repeated UInt32Pair original_id_to_duplicate_id = 7;
+
+  // Map that maps from a result id in the original region to the result id of the
+  // corresponding OpPhi instruction.
+  repeated UInt32Pair original_id_to_phi_id = 8;
 }
 
 message TransformationEquationInstruction {
@@ -1074,6 +1163,20 @@ message TransformationFunctionCall {
 
 }
 
+message TransformationInlineFunction {
+
+  // This transformation inlines a function by mapping the function instructions to fresh ids.
+
+  // Result id of the function call instruction.
+  uint32 function_call_id = 1;
+
+  // For each result id defined by the called function,
+  // this map provides an associated fresh id that can
+  // be used in the inlined version of the function call.
+  repeated UInt32Pair result_id_map = 2;
+
+}
+
 message TransformationInvertComparisonOperator {
 
   // For some instruction with result id |operator_id| that
@@ -1106,6 +1209,21 @@ message TransformationLoad {
 
 }
 
+message TransformationMakeVectorOperationDynamic {
+
+  // A transformation that replaces the OpCompositeExtract and OpCompositeInsert
+  // instructions with the OpVectorExtractDynamic and OpVectorInsertDynamic instructions.
+
+  // The composite instruction result id.
+  uint32 instruction_result_id = 1;
+
+  // The OpCompositeExtract/Insert instructions accept integer literals as indices to the composite object.
+  // However, the OpVectorInsert/ExtractDynamic instructions require its single index to be an integer instruction.
+  // This is the result id of the integer instruction.
+  uint32 constant_index_id = 2;
+
+}
+
 message TransformationMergeBlocks {
 
   // A transformation that merges a block with its predecessor.
@@ -1131,6 +1249,22 @@ message TransformationMoveInstructionDown {
 
   // The instruction to move down.
   InstructionDescriptor instruction = 1;
+
+}
+
+message TransformationMutatePointer {
+
+  // Backs up value of the pointer, writes into the pointer and
+  // restores the original value.
+
+  // Result id of the pointer instruction to mutate.
+  uint32 pointer_id = 1;
+
+  // Fresh id for the OpLoad instruction.
+  uint32 fresh_id = 2;
+
+  // Instruction to insert backup, mutation and restoration code before.
+  InstructionDescriptor insert_before = 3;
 
 }
 
@@ -1222,6 +1356,26 @@ message TransformationPermutePhiOperands {
 
 }
 
+message TransformationPropagateInstructionUp {
+
+  // Propagates an instruction in the block into the block's predecessors.
+  // Concretely, this transformation clones some particular instruction from
+  // the |block_id| into every block's predecessor and replaces the original
+  // instruction with OpPhi. Take a look at the transformation class to learn
+  // more about how we choose what instruction to propagate.
+
+  // Id of the block to propagate an instruction from.
+  uint32 block_id = 1;
+
+  // A map from the id of some predecessor of the |block_id| to the fresh id.
+  // The map contains a fresh id for at least every predecessor of the |block_id|.
+  // The instruction is propagated by creating a number of clones - one clone for
+  // each predecessor. Fresh ids from this field are used as result ids of cloned
+  // instructions.
+  repeated UInt32Pair predecessor_id_to_fresh_id = 2;
+
+}
+
 message TransformationPushIdThroughVariable {
 
   // A transformation that makes |value_synonym_id| and |value_id| to be
@@ -1266,6 +1420,24 @@ message TransformationRecordSynonymousConstants {
 
   // The id of the synonym
   uint32 constant2_id = 2;
+
+}
+
+message TransformationReplaceAddSubMulWithCarryingExtended {
+
+   // Replaces OpIAdd with OpIAddCarry, OpISub with OpISubBorrow, OpIMul
+   // with OpUMulExtended or OpSMulExtended (depending on the signedness
+   // of the operands) and stores the result into a |struct_fresh_id|.
+   // In the original instruction the result type id and the type ids of
+   // the operands must be the same. Then the transformation extracts
+   // the first element of the result into the original |result_id|.
+   // This value is the same as the result of the original instruction.
+
+   // The fresh id of the intermediate result.
+   uint32 struct_fresh_id = 1;
+
+   // The result id of the original instruction.
+   uint32 result_id = 2;
 
 }
 
@@ -1373,6 +1545,17 @@ message TransformationReplaceIdWithSynonym {
 
 }
 
+message TransformationReplaceIrrelevantId {
+
+  // Replaces an irrelevant id with another id of the same type.
+
+  // The id use that is to be replaced
+  IdUseDescriptor id_use_descriptor = 1;
+
+  // The replacement id
+  uint32 replacement_id = 2;
+}
+
 message TransformationReplaceLinearAlgebraInstruction {
 
   // Replaces a linear algebra instruction with its
@@ -1396,6 +1579,59 @@ message TransformationReplaceLoadStoreWithCopyMemory {
 
   // The instruction descriptor to OpStore
   InstructionDescriptor store_instruction_descriptor = 2;
+}
+
+message TransformationReplaceOpPhiIdFromDeadPredecessor {
+
+  // Replaces one of the ids used by an OpPhi instruction, when
+  // the corresponding predecessor is dead, with any available id
+  // of the correct type.
+
+  // The result id of the OpPhi instruction.
+  uint32 opphi_id = 1;
+
+  // The label id of one of the predecessors of the block containing
+  // the OpPhi instruction, corresponding to the id that we want to
+  // replace.
+  uint32 pred_label_id = 2;
+
+  // The id that, after the transformation, will be associated with
+  // the given predecessor.
+  uint32 replacement_id = 3;
+
+}
+
+message TransformationReplaceOpSelectWithConditionalBranch {
+
+  // A transformation that takes an OpSelect instruction with a
+  // scalar boolean condition and replaces it with a conditional
+  // branch and an OpPhi instruction.
+  // The OpSelect instruction must be the first instruction in its
+  // block, which must have a unique predecessor. The block will
+  // become the merge block of a new construct, while its predecessor
+  // will become the header.
+  // Given the original OpSelect instruction:
+  //   %id = OpSelect %type %cond %then %else
+  // The branching instruction of the header will be:
+  //         OpBranchConditional %cond %true_block_id %false_block_id
+  // and the OpSelect instruction will be turned into:
+  //   %id = OpPhi %type %then %true_block_id %else %false_block_id
+  // At most one of |true_block_id| and |false_block_id| can be zero. In
+  // that case, there will be no such block and all references to it
+  // will be replaced by %merge_block (where %merge_block is the
+  // block containing the OpSelect instruction).
+
+  // The result id of the OpSelect instruction.
+  uint32 select_id = 1;
+
+  // A fresh id for the new block that the predecessor of the block
+  // containing |select_id| will branch to if the condition holds.
+  uint32 true_block_id = 2;
+
+  // A fresh id for the new block that the predecessor of the block
+  // containing |select_id| will branch to if the condition does not
+  // hold.
+  uint32 false_block_id = 3;
 }
 
 message TransformationReplaceParamsWithStruct {

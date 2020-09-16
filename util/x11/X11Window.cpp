@@ -277,7 +277,7 @@ X11Window::~X11Window()
     destroy();
 }
 
-bool X11Window::initialize(const std::string &name, int width, int height)
+bool X11Window::initializeImpl(const std::string &name, int width, int height)
 {
     destroy();
 
@@ -398,7 +398,7 @@ EGLNativeWindowType X11Window::getNativeWindow() const
 
 EGLNativeDisplayType X11Window::getNativeDisplay() const
 {
-    return mDisplay;
+    return reinterpret_cast<EGLNativeDisplayType>(mDisplay);
 }
 
 void X11Window::messageLoop()

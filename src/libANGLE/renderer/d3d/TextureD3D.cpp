@@ -191,7 +191,9 @@ angle::Result TextureD3D::setStorageExternalMemory(const gl::Context *context,
                                                    GLenum internalFormat,
                                                    const gl::Extents &size,
                                                    gl::MemoryObject *memoryObject,
-                                                   GLuint64 offset)
+                                                   GLuint64 offset,
+                                                   GLbitfield createFlags,
+                                                   GLbitfield usageFlags)
 {
     ANGLE_HR_UNREACHABLE(GetImplAs<ContextD3D>(context));
     return angle::Result::Continue;
@@ -682,7 +684,7 @@ angle::Result TextureD3D::setBaseLevel(const gl::Context *context, GLuint baseLe
 
 angle::Result TextureD3D::syncState(const gl::Context *context,
                                     const gl::Texture::DirtyBits &dirtyBits,
-                                    gl::TextureCommand source)
+                                    gl::Command source)
 {
     // This could be improved using dirty bits.
     return angle::Result::Continue;
@@ -1135,7 +1137,7 @@ angle::Result TextureD3D_2D::copyTexture(const gl::Context *context,
                                          const gl::ImageIndex &index,
                                          GLenum internalFormat,
                                          GLenum type,
-                                         size_t sourceLevel,
+                                         GLint sourceLevel,
                                          bool unpackFlipY,
                                          bool unpackPremultiplyAlpha,
                                          bool unpackUnmultiplyAlpha,
@@ -1162,15 +1164,15 @@ angle::Result TextureD3D_2D::copyTexture(const gl::Context *context,
         ASSERT(isValidLevel(index.getLevelIndex()));
         ANGLE_TRY(updateStorageLevel(context, index.getLevelIndex()));
 
-        ANGLE_TRY(mRenderer->copyTexture(
-            context, source, static_cast<GLint>(sourceLevel), gl::TextureTarget::_2D, sourceBox,
-            internalFormatInfo.format, internalFormatInfo.type, destOffset, mTexStorage,
-            index.getTarget(), index.getLevelIndex(), unpackFlipY, unpackPremultiplyAlpha,
-            unpackUnmultiplyAlpha));
+        ANGLE_TRY(mRenderer->copyTexture(context, source, sourceLevel, gl::TextureTarget::_2D,
+                                         sourceBox, internalFormatInfo.format,
+                                         internalFormatInfo.type, destOffset, mTexStorage,
+                                         index.getTarget(), index.getLevelIndex(), unpackFlipY,
+                                         unpackPremultiplyAlpha, unpackUnmultiplyAlpha));
     }
     else
     {
-        gl::ImageIndex sourceImageIndex = gl::ImageIndex::Make2D(static_cast<GLint>(sourceLevel));
+        gl::ImageIndex sourceImageIndex = gl::ImageIndex::Make2D(sourceLevel);
         TextureD3D *sourceD3D           = GetImplAs<TextureD3D>(source);
         ImageD3D *sourceImage           = nullptr;
         ANGLE_TRY(sourceD3D->getImageAndSyncFromStorage(context, sourceImageIndex, &sourceImage));
@@ -1193,7 +1195,7 @@ angle::Result TextureD3D_2D::copyTexture(const gl::Context *context,
 angle::Result TextureD3D_2D::copySubTexture(const gl::Context *context,
                                             const gl::ImageIndex &index,
                                             const gl::Offset &destOffset,
-                                            size_t sourceLevel,
+                                            GLint sourceLevel,
                                             const gl::Box &sourceBox,
                                             bool unpackFlipY,
                                             bool unpackPremultiplyAlpha,
@@ -1210,15 +1212,15 @@ angle::Result TextureD3D_2D::copySubTexture(const gl::Context *context,
 
         const gl::InternalFormat &internalFormatInfo =
             gl::GetSizedInternalFormatInfo(getInternalFormat(index.getLevelIndex()));
-        ANGLE_TRY(mRenderer->copyTexture(
-            context, source, static_cast<GLint>(sourceLevel), gl::TextureTarget::_2D, sourceBox,
-            internalFormatInfo.format, internalFormatInfo.type, destOffset, mTexStorage,
-            index.getTarget(), index.getLevelIndex(), unpackFlipY, unpackPremultiplyAlpha,
-            unpackUnmultiplyAlpha));
+        ANGLE_TRY(mRenderer->copyTexture(context, source, sourceLevel, gl::TextureTarget::_2D,
+                                         sourceBox, internalFormatInfo.format,
+                                         internalFormatInfo.type, destOffset, mTexStorage,
+                                         index.getTarget(), index.getLevelIndex(), unpackFlipY,
+                                         unpackPremultiplyAlpha, unpackUnmultiplyAlpha));
     }
     else
     {
-        gl::ImageIndex sourceImageIndex = gl::ImageIndex::Make2D(static_cast<GLint>(sourceLevel));
+        gl::ImageIndex sourceImageIndex = gl::ImageIndex::Make2D(sourceLevel);
         TextureD3D *sourceD3D           = GetImplAs<TextureD3D>(source);
         ImageD3D *sourceImage           = nullptr;
         ANGLE_TRY(sourceD3D->getImageAndSyncFromStorage(context, sourceImageIndex, &sourceImage));
@@ -1885,7 +1887,7 @@ angle::Result TextureD3D_Cube::copyTexture(const gl::Context *context,
                                            const gl::ImageIndex &index,
                                            GLenum internalFormat,
                                            GLenum type,
-                                           size_t sourceLevel,
+                                           GLint sourceLevel,
                                            bool unpackFlipY,
                                            bool unpackPremultiplyAlpha,
                                            bool unpackUnmultiplyAlpha,
@@ -1913,15 +1915,15 @@ angle::Result TextureD3D_Cube::copyTexture(const gl::Context *context,
         ASSERT(isValidFaceLevel(faceIndex, index.getLevelIndex()));
         ANGLE_TRY(updateStorageFaceLevel(context, faceIndex, index.getLevelIndex()));
 
-        ANGLE_TRY(mRenderer->copyTexture(
-            context, source, static_cast<GLint>(sourceLevel), gl::TextureTarget::_2D, sourceBox,
-            internalFormatInfo.format, internalFormatInfo.type, destOffset, mTexStorage,
-            index.getTarget(), index.getLevelIndex(), unpackFlipY, unpackPremultiplyAlpha,
-            unpackUnmultiplyAlpha));
+        ANGLE_TRY(mRenderer->copyTexture(context, source, sourceLevel, gl::TextureTarget::_2D,
+                                         sourceBox, internalFormatInfo.format,
+                                         internalFormatInfo.type, destOffset, mTexStorage,
+                                         index.getTarget(), index.getLevelIndex(), unpackFlipY,
+                                         unpackPremultiplyAlpha, unpackUnmultiplyAlpha));
     }
     else
     {
-        gl::ImageIndex sourceImageIndex = gl::ImageIndex::Make2D(static_cast<GLint>(sourceLevel));
+        gl::ImageIndex sourceImageIndex = gl::ImageIndex::Make2D(sourceLevel);
         TextureD3D *sourceD3D           = GetImplAs<TextureD3D>(source);
         ImageD3D *sourceImage           = nullptr;
         ANGLE_TRY(sourceD3D->getImageAndSyncFromStorage(context, sourceImageIndex, &sourceImage));
@@ -1944,7 +1946,7 @@ angle::Result TextureD3D_Cube::copyTexture(const gl::Context *context,
 angle::Result TextureD3D_Cube::copySubTexture(const gl::Context *context,
                                               const gl::ImageIndex &index,
                                               const gl::Offset &destOffset,
-                                              size_t sourceLevel,
+                                              GLint sourceLevel,
                                               const gl::Box &sourceBox,
                                               bool unpackFlipY,
                                               bool unpackPremultiplyAlpha,
@@ -1963,15 +1965,15 @@ angle::Result TextureD3D_Cube::copySubTexture(const gl::Context *context,
 
         const gl::InternalFormat &internalFormatInfo =
             gl::GetSizedInternalFormatInfo(getInternalFormat(index.getLevelIndex(), faceIndex));
-        ANGLE_TRY(mRenderer->copyTexture(
-            context, source, static_cast<GLint>(sourceLevel), gl::TextureTarget::_2D, sourceBox,
-            internalFormatInfo.format, internalFormatInfo.type, destOffset, mTexStorage,
-            index.getTarget(), index.getLevelIndex(), unpackFlipY, unpackPremultiplyAlpha,
-            unpackUnmultiplyAlpha));
+        ANGLE_TRY(mRenderer->copyTexture(context, source, sourceLevel, gl::TextureTarget::_2D,
+                                         sourceBox, internalFormatInfo.format,
+                                         internalFormatInfo.type, destOffset, mTexStorage,
+                                         index.getTarget(), index.getLevelIndex(), unpackFlipY,
+                                         unpackPremultiplyAlpha, unpackUnmultiplyAlpha));
     }
     else
     {
-        gl::ImageIndex sourceImageIndex = gl::ImageIndex::Make2D(static_cast<GLint>(sourceLevel));
+        gl::ImageIndex sourceImageIndex = gl::ImageIndex::Make2D(sourceLevel);
         TextureD3D *sourceD3D           = GetImplAs<TextureD3D>(source);
         ImageD3D *sourceImage           = nullptr;
         ANGLE_TRY(sourceD3D->getImageAndSyncFromStorage(context, sourceImageIndex, &sourceImage));
@@ -2605,7 +2607,7 @@ angle::Result TextureD3D_3D::copyTexture(const gl::Context *context,
                                          const gl::ImageIndex &index,
                                          GLenum internalFormat,
                                          GLenum type,
-                                         size_t sourceLevel,
+                                         GLint sourceLevel,
                                          bool unpackFlipY,
                                          bool unpackPremultiplyAlpha,
                                          bool unpackUnmultiplyAlpha,
@@ -2634,15 +2636,15 @@ angle::Result TextureD3D_3D::copyTexture(const gl::Context *context,
         ASSERT(isValidLevel(index.getLevelIndex()));
         ANGLE_TRY(updateStorageLevel(context, index.getLevelIndex()));
 
-        ANGLE_TRY(mRenderer->copyTexture(
-            context, source, static_cast<GLint>(sourceLevel), gl::TextureTarget::_3D, sourceBox,
-            internalFormatInfo.format, internalFormatInfo.type, destOffset, mTexStorage,
-            index.getTarget(), index.getLevelIndex(), unpackFlipY, unpackPremultiplyAlpha,
-            unpackUnmultiplyAlpha));
+        ANGLE_TRY(mRenderer->copyTexture(context, source, sourceLevel, gl::TextureTarget::_3D,
+                                         sourceBox, internalFormatInfo.format,
+                                         internalFormatInfo.type, destOffset, mTexStorage,
+                                         index.getTarget(), index.getLevelIndex(), unpackFlipY,
+                                         unpackPremultiplyAlpha, unpackUnmultiplyAlpha));
     }
     else
     {
-        gl::ImageIndex sourceIndex = gl::ImageIndex::Make3D(static_cast<GLint>(sourceLevel));
+        gl::ImageIndex sourceIndex = gl::ImageIndex::Make3D(sourceLevel);
         ImageD3D *sourceImage      = nullptr;
         ImageD3D *destImage        = nullptr;
         TextureD3D *sourceD3D      = GetImplAs<TextureD3D>(source);
@@ -2664,7 +2666,7 @@ angle::Result TextureD3D_3D::copyTexture(const gl::Context *context,
 angle::Result TextureD3D_3D::copySubTexture(const gl::Context *context,
                                             const gl::ImageIndex &index,
                                             const gl::Offset &destOffset,
-                                            size_t sourceLevel,
+                                            GLint sourceLevel,
                                             const gl::Box &sourceBox,
                                             bool unpackFlipY,
                                             bool unpackPremultiplyAlpha,
@@ -2683,15 +2685,15 @@ angle::Result TextureD3D_3D::copySubTexture(const gl::Context *context,
 
         const gl::InternalFormat &internalFormatInfo =
             gl::GetSizedInternalFormatInfo(getInternalFormat(index.getLevelIndex()));
-        ANGLE_TRY(mRenderer->copyTexture(
-            context, source, static_cast<GLint>(sourceLevel), gl::TextureTarget::_3D, sourceBox,
-            internalFormatInfo.format, internalFormatInfo.type, destOffset, mTexStorage,
-            index.getTarget(), index.getLevelIndex(), unpackFlipY, unpackPremultiplyAlpha,
-            unpackUnmultiplyAlpha));
+        ANGLE_TRY(mRenderer->copyTexture(context, source, sourceLevel, gl::TextureTarget::_3D,
+                                         sourceBox, internalFormatInfo.format,
+                                         internalFormatInfo.type, destOffset, mTexStorage,
+                                         index.getTarget(), index.getLevelIndex(), unpackFlipY,
+                                         unpackPremultiplyAlpha, unpackUnmultiplyAlpha));
     }
     else
     {
-        gl::ImageIndex sourceImageIndex = gl::ImageIndex::Make3D(static_cast<GLint>(sourceLevel));
+        gl::ImageIndex sourceImageIndex = gl::ImageIndex::Make3D(sourceLevel);
         TextureD3D *sourceD3D           = GetImplAs<TextureD3D>(source);
         ImageD3D *sourceImage           = nullptr;
         ANGLE_TRY(sourceD3D->getImageAndSyncFromStorage(context, sourceImageIndex, &sourceImage));
@@ -3301,7 +3303,7 @@ angle::Result TextureD3D_2DArray::copyTexture(const gl::Context *context,
                                               const gl::ImageIndex &index,
                                               GLenum internalFormat,
                                               GLenum type,
-                                              size_t sourceLevel,
+                                              GLint sourceLevel,
                                               bool unpackFlipY,
                                               bool unpackPremultiplyAlpha,
                                               bool unpackUnmultiplyAlpha,
@@ -3333,20 +3335,19 @@ angle::Result TextureD3D_2DArray::copyTexture(const gl::Context *context,
         ANGLE_TRY(ensureRenderTarget(context));
         ASSERT(isValidLevel(index.getLevelIndex()));
         ANGLE_TRY(updateStorageLevel(context, index.getLevelIndex()));
-        ANGLE_TRY(mRenderer->copyTexture(
-            context, source, static_cast<GLint>(sourceLevel), gl::TextureTarget::_2DArray,
-            sourceBox, internalFormatInfo.format, internalFormatInfo.type, destOffset, mTexStorage,
-            index.getTarget(), index.getLevelIndex(), unpackFlipY, unpackPremultiplyAlpha,
-            unpackUnmultiplyAlpha));
+        ANGLE_TRY(mRenderer->copyTexture(context, source, sourceLevel, gl::TextureTarget::_2DArray,
+                                         sourceBox, internalFormatInfo.format,
+                                         internalFormatInfo.type, destOffset, mTexStorage,
+                                         index.getTarget(), index.getLevelIndex(), unpackFlipY,
+                                         unpackPremultiplyAlpha, unpackUnmultiplyAlpha));
     }
     else
     {
         for (int i = 0; i < size.depth; i++)
         {
-            gl::ImageIndex currentSourceDepthIndex =
-                gl::ImageIndex::Make2DArray(static_cast<GLint>(sourceLevel), i);
+            gl::ImageIndex currentSourceDepthIndex = gl::ImageIndex::Make2DArray(sourceLevel, i);
             gl::ImageIndex currentDestDepthIndex =
-                gl::ImageIndex::Make2DArray(static_cast<GLint>(index.getLevelIndex()), i);
+                gl::ImageIndex::Make2DArray(index.getLevelIndex(), i);
             ImageD3D *sourceImage = nullptr;
             ImageD3D *destImage   = nullptr;
             TextureD3D *sourceD3D = GetImplAs<TextureD3D>(source);
@@ -3373,7 +3374,7 @@ angle::Result TextureD3D_2DArray::copyTexture(const gl::Context *context,
 angle::Result TextureD3D_2DArray::copySubTexture(const gl::Context *context,
                                                  const gl::ImageIndex &index,
                                                  const gl::Offset &destOffset,
-                                                 size_t sourceLevel,
+                                                 GLint sourceLevel,
                                                  const gl::Box &sourceBox,
                                                  bool unpackFlipY,
                                                  bool unpackPremultiplyAlpha,
@@ -3393,20 +3394,20 @@ angle::Result TextureD3D_2DArray::copySubTexture(const gl::Context *context,
 
         const gl::InternalFormat &internalFormatInfo =
             gl::GetSizedInternalFormatInfo(getInternalFormat(destIndex.getLevelIndex()));
-        ANGLE_TRY(mRenderer->copyTexture(
-            context, source, static_cast<GLint>(sourceLevel), gl::TextureTarget::_2DArray,
-            sourceBox, internalFormatInfo.format, internalFormatInfo.type, destOffset, mTexStorage,
-            index.getTarget(), index.getLevelIndex(), unpackFlipY, unpackPremultiplyAlpha,
-            unpackUnmultiplyAlpha));
+        ANGLE_TRY(mRenderer->copyTexture(context, source, sourceLevel, gl::TextureTarget::_2DArray,
+                                         sourceBox, internalFormatInfo.format,
+                                         internalFormatInfo.type, destOffset, mTexStorage,
+                                         index.getTarget(), index.getLevelIndex(), unpackFlipY,
+                                         unpackPremultiplyAlpha, unpackUnmultiplyAlpha));
     }
     else
     {
         for (int i = 0; i < sourceBox.depth; i++)
         {
             gl::ImageIndex currentSourceIndex =
-                gl::ImageIndex::Make2DArray(static_cast<GLint>(sourceLevel), i + sourceBox.z);
-            gl::ImageIndex currentDestIndex = gl::ImageIndex::Make2DArray(
-                static_cast<GLint>(index.getLevelIndex()), i + destOffset.z);
+                gl::ImageIndex::Make2DArray(sourceLevel, i + sourceBox.z);
+            gl::ImageIndex currentDestIndex =
+                gl::ImageIndex::Make2DArray(index.getLevelIndex(), i + destOffset.z);
 
             gl::Box currentLayerBox(sourceBox.x, sourceBox.y, 0, sourceBox.width, sourceBox.height,
                                     1);

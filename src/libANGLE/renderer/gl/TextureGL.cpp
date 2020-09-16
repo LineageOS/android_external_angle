@@ -833,7 +833,7 @@ angle::Result TextureGL::copyTexture(const gl::Context *context,
                                      const gl::ImageIndex &index,
                                      GLenum internalFormat,
                                      GLenum type,
-                                     size_t sourceLevel,
+                                     GLint sourceLevel,
                                      bool unpackFlipY,
                                      bool unpackPremultiplyAlpha,
                                      bool unpackUnmultiplyAlpha,
@@ -859,7 +859,7 @@ angle::Result TextureGL::copyTexture(const gl::Context *context,
 angle::Result TextureGL::copySubTexture(const gl::Context *context,
                                         const gl::ImageIndex &index,
                                         const gl::Offset &destOffset,
-                                        size_t sourceLevel,
+                                        GLint sourceLevel,
                                         const gl::Box &sourceBox,
                                         bool unpackFlipY,
                                         bool unpackPremultiplyAlpha,
@@ -878,7 +878,7 @@ angle::Result TextureGL::copySubTextureHelper(const gl::Context *context,
                                               gl::TextureTarget target,
                                               size_t level,
                                               const gl::Offset &destOffset,
-                                              size_t sourceLevel,
+                                              GLint sourceLevel,
                                               const gl::Rectangle &sourceArea,
                                               const gl::InternalFormat &destFormat,
                                               bool unpackFlipY,
@@ -1217,8 +1217,14 @@ angle::Result TextureGL::setStorageExternalMemory(const gl::Context *context,
                                                   GLenum internalFormat,
                                                   const gl::Extents &size,
                                                   gl::MemoryObject *memoryObject,
-                                                  GLuint64 offset)
+                                                  GLuint64 offset,
+                                                  GLbitfield createFlags,
+                                                  GLbitfield usageFlags)
 {
+    // GL_ANGLE_external_objects_flags not supported.
+    ASSERT(createFlags == 0);
+    ASSERT(usageFlags == std::numeric_limits<uint32_t>::max());
+
     const FunctionsGL *functions      = GetFunctionsGL(context);
     StateManagerGL *stateManager      = GetStateManagerGL(context);
     const angle::FeaturesGL &features = GetFeaturesGL(context);
@@ -1383,7 +1389,7 @@ GLint TextureGL::getNativeID() const
 
 angle::Result TextureGL::syncState(const gl::Context *context,
                                    const gl::Texture::DirtyBits &dirtyBits,
-                                   gl::TextureCommand source)
+                                   gl::Command source)
 {
     if (dirtyBits.none() && mLocalDirtyBits.none())
     {
