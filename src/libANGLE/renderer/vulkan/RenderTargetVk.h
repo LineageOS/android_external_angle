@@ -46,7 +46,7 @@ class RenderTargetVk final : public FramebufferAttachmentRenderTarget
               vk::ImageViewHelper *imageViews,
               vk::ImageHelper *resolveImage,
               vk::ImageViewHelper *resolveImageViews,
-              uint32_t levelIndexGL,
+              gl::LevelIndex levelIndexGL,
               uint32_t layerIndex,
               bool isImageTransient);
     void reset();
@@ -55,8 +55,8 @@ class RenderTargetVk final : public FramebufferAttachmentRenderTarget
     vk::ImageViewSubresourceSerial getResolveSubresourceSerial() const;
 
     // Note: RenderTargets should be called in order, with the depth/stencil onRender last.
-    angle::Result onColorDraw(ContextVk *contextVk);
-    angle::Result onDepthStencilDraw(ContextVk *contextVk);
+    void onColorDraw(ContextVk *contextVk);
+    void onDepthStencilDraw(ContextVk *contextVk, bool isReadOnly);
 
     vk::ImageHelper &getImageForRenderPass();
     const vk::ImageHelper &getImageForRenderPass() const;
@@ -79,7 +79,7 @@ class RenderTargetVk final : public FramebufferAttachmentRenderTarget
 
     const vk::Format &getImageFormat() const;
     gl::Extents getExtents() const;
-    uint32_t getLevelIndex() const { return mLevelIndexGL; }
+    gl::LevelIndex getLevelIndex() const { return mLevelIndexGL; }
     uint32_t getLayerIndex() const { return mLayerIndex; }
 
     gl::ImageIndex getImageIndex() const;
@@ -101,6 +101,7 @@ class RenderTargetVk final : public FramebufferAttachmentRenderTarget
     // Mark content as undefined so that certain optimizations are possible such as using DONT_CARE
     // as loadOp of the render target in the next renderpass.
     void invalidateEntireContent() { mContentDefined = false; }
+    void restoreEntireContent() { mContentDefined = true; }
 
     // See the description of mIsImageTransient for details of how the following two can
     // interact.
@@ -132,7 +133,7 @@ class RenderTargetVk final : public FramebufferAttachmentRenderTarget
     vk::ImageViewHelper *mResolveImageViews;
 
     // Which subresource of the image is used as render target.
-    uint32_t mLevelIndexGL;
+    gl::LevelIndex mLevelIndexGL;
     uint32_t mLayerIndex;
 
     // Whether the render target has been invalidated.  If so, DONT_CARE is used instead of LOAD for
@@ -148,18 +149,15 @@ class RenderTargetVk final : public FramebufferAttachmentRenderTarget
     //   extension, even though a resolve attachment is not even provided.
     // - Multisampled swapchain: TODO(syoussefi) this is true for the multisampled color attachment.
     //   http://anglebug.com/4836
-    // - glBlitFramebuffer optimization: TODO(timvp) this is **false** in this case, as the
-    //   multisampled attachment and the resolve attachments belong to independent framebuffers.
-    //   http://anglebug.com/4753
     //
     // Based on the above, we have:
     //
     //                   mResolveImage == nullptr        |       mResolveImage != nullptr
     //                                                   |
-    //                      Normal rendering             |          Blit optimization
-    // !IsTransient            No resolve                |               Resolve
-    //                       storeOp = STORE             |           storeOp = STORE
-    //                    Owner of data: mImage          |        Owner of data: mImage
+    //                      Normal rendering             |               Invalid
+    // !IsTransient            No resolve                |
+    //                       storeOp = STORE             |
+    //                    Owner of data: mImage          |
     //                                                   |
     //      ---------------------------------------------+---------------------------------------
     //                                                   |

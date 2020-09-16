@@ -324,6 +324,8 @@ class CommandBuffer : public WrappedObject<CommandBuffer, VkCommandBuffer>
                        VkPipelineStageFlags dstStageMask,
                        const VkMemoryBarrier *memoryBarrier);
 
+    void nextSubpass(VkSubpassContents subpassContents);
+
     void pipelineBarrier(VkPipelineStageFlags srcStageMask,
                          VkPipelineStageFlags dstStageMask,
                          VkDependencyFlags dependencyFlags,
@@ -469,7 +471,8 @@ class Allocator : public WrappedObject<Allocator, VmaAllocator>
     VkResult init(VkPhysicalDevice physicalDevice,
                   VkDevice device,
                   VkInstance instance,
-                  uint32_t apiVersion);
+                  uint32_t apiVersion,
+                  VkDeviceSize preferredLargeHeapBlockSize);
 
     // Initializes the buffer handle and memory allocation.
     VkResult createBuffer(const VkBufferCreateInfo &bufferCreateInfo,
@@ -748,6 +751,12 @@ ANGLE_INLINE void CommandBuffer::memoryBarrier(VkPipelineStageFlags srcStageMask
     ASSERT(valid());
     vkCmdPipelineBarrier(mHandle, srcStageMask, dstStageMask, 0, 1, memoryBarrier, 0, nullptr, 0,
                          nullptr);
+}
+
+ANGLE_INLINE void CommandBuffer::nextSubpass(VkSubpassContents subpassContents)
+{
+    ASSERT(valid());
+    vkCmdNextSubpass(mHandle, subpassContents);
 }
 
 ANGLE_INLINE void CommandBuffer::pipelineBarrier(VkPipelineStageFlags srcStageMask,
@@ -1394,10 +1403,12 @@ ANGLE_INLINE void Allocator::destroy()
 ANGLE_INLINE VkResult Allocator::init(VkPhysicalDevice physicalDevice,
                                       VkDevice device,
                                       VkInstance instance,
-                                      uint32_t apiVersion)
+                                      uint32_t apiVersion,
+                                      VkDeviceSize preferredLargeHeapBlockSize)
 {
     ASSERT(!valid());
-    return vma::InitAllocator(physicalDevice, device, instance, apiVersion, &mHandle);
+    return vma::InitAllocator(physicalDevice, device, instance, apiVersion,
+                              preferredLargeHeapBlockSize, &mHandle);
 }
 
 ANGLE_INLINE VkResult Allocator::createBuffer(const VkBufferCreateInfo &bufferCreateInfo,

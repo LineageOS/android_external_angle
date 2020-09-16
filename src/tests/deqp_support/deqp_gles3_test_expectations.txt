@@ -77,6 +77,8 @@
 2222 D3D11 NVIDIA : dEQP-GLES3.functional.texture.mipmap.3d.min_lod.nearest_nearest = FAIL
 2222 D3D11 NVIDIA : dEQP-GLES3.functional.texture.mipmap.cube.min_lod.linear_nearest = FAIL
 2222 D3D11 NVIDIA : dEQP-GLES3.functional.texture.mipmap.cube.min_lod.nearest_nearest = FAIL
+// Fails on 451.48 driver version
+4948 D3D11 NVIDIA : dEQP-GLES3.functional.shaders.texture_functions.texturesize.* = FAIL
 
 // Flaky on Win7 D3D11 NVIDIA
 4070 WIN7 D3D11 NVIDIA : dEQP-GLES3.functional.rasterization.flatshading.triangles = FAIL
@@ -234,15 +236,6 @@
 2137 MAC INTEL : dEQP-GLES3.functional.fbo.color.repeated_clear.sample.tex2d.* = FAIL
 
 // Linux only failures
-
-// UBO tests trigger crashes when getting the program info log, skip them until this is fixed.
-1323 LINUX OPENGL : dEQP-GLES3.functional.ubo.* = SKIP
-
-1323 LINUX OPENGL : dEQP-GLES3.functional.fbo.depth.depth_test_clamp.depth_component32f = FAIL
-1323 LINUX OPENGL : dEQP-GLES3.functional.fbo.depth.depth_test_clamp.depth32f_stencil8 = FAIL
-1323 LINUX OPENGL : dEQP-GLES3.functional.fbo.depth.depth_write_clamp.depth_component32f = FAIL
-1323 LINUX OPENGL : dEQP-GLES3.functional.fbo.depth.depth_write_clamp.depth32f_stencil8 = FAIL
-1323 LINUX OPENGL : dEQP-GLES3.functional.rasterization.fbo.rbo_multisample_max.primitives.points = FAIL
 
 // While loops with 'continue' seem flaky on Linux. (Possibly all GL renderers)
 1324 LINUX OPENGL : dEQP-GLES3.functional.shaders.loops.while_constant_iterations.conditional_continue_vertex = FAIL
@@ -639,7 +632,3 @@
 
 // Fails on SwANGLE bots
 4418 SWIFTSHADER : dEQP-GLES3.functional.negative_api.buffer.framebuffer_texture_layer = FAIL
-
-// Bug in gl.xml, aliasing glRenderbufferStorageMultisampleEXT and glRenderbufferStorageMultisample
-// for GLES.  See https://github.com/KhronosGroup/OpenGL-Registry/issues/413
-4836 VULKAN : dEQP-GLES3.functional.negative_api.buffer.renderbuffer_storage_multisample = FAIL

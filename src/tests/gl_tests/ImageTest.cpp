@@ -1434,6 +1434,39 @@ void ImageTest::Source2DTarget2DArray_helper(const EGLint *attribs)
     glDeleteTextures(1, &target);
 }
 
+// Testing source AHB EGL image, target 2D texture and delete when in use
+// If refcounted correctly, the test should pass without issues
+TEST_P(ImageTest, SourceAHBTarget2DEarlyDelete)
+{
+    EGLWindow *window = getEGLWindow();
+
+    ANGLE_SKIP_TEST_IF(!hasOESExt() || !hasBaseExt() || !has2DTextureExt());
+    ANGLE_SKIP_TEST_IF(!hasAndroidImageNativeBufferExt() || !hasAndroidHardwareBufferSupport());
+
+    GLubyte data[4] = {7, 51, 197, 231};
+
+    // Create the Image
+    AHardwareBuffer *source;
+    EGLImageKHR image;
+    createEGLImageAndroidHardwareBufferSource(1, 1, 1, GL_RGBA8, kDefaultAttribs, data, 4, &source,
+                                              &image);
+
+    // Create a texture target to bind the egl image
+    GLuint target;
+    createEGLImageTargetTexture2D(image, &target);
+
+    // Delete the source AHB when in use
+    destroyAndroidHardwareBuffer(source);
+
+    // Use texture target bound to egl image as source and render to framebuffer
+    // Verify that data in framebuffer matches that in the egl image
+    verifyResults2D(target, data);
+
+    // Clean up
+    glDeleteTextures(1, &target);
+    eglDestroyImageKHR(window->getDisplay(), image);
+}
+
 // Testing source AHB EGL image, target 2D texture
 TEST_P(ImageTest, SourceAHBTarget2D)
 {
@@ -1757,13 +1790,13 @@ void ImageTest::Source2DTargetExternal_helper(const EGLint *attribs)
     GLuint target;
     createEGLImageTargetTextureExternal(image, &target);
 
-    // Expect that the target renderbuffer has the same color as the source texture
+    // Expect that the target texture when sampled has the same color as the source image
     verifyResultsExternal(target, data);
 
     // Clean up
     glDeleteTextures(1, &source);
     eglDestroyImageKHR(window->getDisplay(), image);
-    glDeleteRenderbuffers(1, &target);
+    glDeleteTextures(1, &target);
 }
 
 TEST_P(ImageTestES3, Source2DTargetExternalESSL3)
@@ -1795,13 +1828,13 @@ void ImageTest::Source2DTargetExternalESSL3_helper(const EGLint *attribs)
     GLuint target;
     createEGLImageTargetTextureExternal(image, &target);
 
-    // Expect that the target renderbuffer has the same color as the source texture
+    // Expect that the target texture when sampled has the same color as the source image
     verifyResultsExternalESSL3(target, data);
 
     // Clean up
     glDeleteTextures(1, &source);
     eglDestroyImageKHR(window->getDisplay(), image);
-    glDeleteRenderbuffers(1, &target);
+    glDeleteTextures(1, &target);
 }
 
 TEST_P(ImageTest, SourceCubeTarget2D)

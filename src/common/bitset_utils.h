@@ -139,6 +139,8 @@ class BitSetT final
 
     constexpr static BitSetT Zero() { return BitSetT(); }
 
+    ParamT first() const;
+
   private:
     // Produces a mask of ones up to the "x"th bit.
     constexpr static BitsT Mask(std::size_t x)
@@ -203,7 +205,7 @@ IterableBitSet<N>::Iterator::Iterator(const std::bitset<N> &bitset)
     }
     else
     {
-        mOffset = static_cast<unsigned long>(rx::roundUp(N, BitsPerWord));
+        mOffset = static_cast<unsigned long>(rx::roundUpPow2(N, BitsPerWord));
     }
 }
 
@@ -448,6 +450,13 @@ BitSetT<N, BitsT, ParamT> &BitSetT<N, BitsT, ParamT>::flip(ParamT pos)
     ASSERT(mBits == (mBits & Mask(N)));
     mBits ^= Bit<BitsT>(pos) & Mask(N);
     return *this;
+}
+
+template <size_t N, typename BitsT, typename ParamT>
+ParamT BitSetT<N, BitsT, ParamT>::first() const
+{
+    ASSERT(!none());
+    return static_cast<ParamT>(gl::ScanForward(mBits));
 }
 
 template <size_t N, typename BitsT, typename ParamT>

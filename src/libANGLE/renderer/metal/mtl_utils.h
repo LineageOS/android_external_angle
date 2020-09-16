@@ -28,7 +28,7 @@ namespace mtl
 
 NS_ASSUME_NONNULL_BEGIN
 
-// Initialize texture content to (0, 0, 0, 1)
+// Initialize texture content to black.
 angle::Result InitializeTextureContents(const gl::Context *context,
                                         const TextureRef &texture,
                                         const Format &textureObjFormat,
@@ -37,8 +37,24 @@ angle::Result InitializeTextureContents(const gl::Context *context,
 // - channelsToInit parameter controls which channels will get their content initialized.
 angle::Result InitializeTextureContentsGPU(const gl::Context *context,
                                            const TextureRef &texture,
+                                           const Format &textureObjFormat,
                                            const gl::ImageIndex &index,
                                            MTLColorWriteMask channelsToInit);
+
+// Same as above but for a depth/stencil texture.
+angle::Result InitializeDepthStencilTextureContentsGPU(const gl::Context *context,
+                                                       const TextureRef &texture,
+                                                       const Format &textureObjFormat,
+                                                       const gl::ImageIndex &index);
+
+// Unified texture's per slice/depth texel reading function
+angle::Result ReadTexturePerSliceBytes(const gl::Context *context,
+                                       const TextureRef &texture,
+                                       size_t bytesPerRow,
+                                       const gl::Rectangle &fromRegion,
+                                       uint32_t mipLevel,
+                                       uint32_t sliceOrDepth,
+                                       uint8_t *dataOut);
 
 MTLViewport GetViewport(const gl::Rectangle &rect, double znear = 0, double zfar = 1);
 MTLViewport GetViewportFlipY(const gl::Rectangle &rect,
@@ -53,6 +69,8 @@ MTLViewport GetViewport(const gl::Rectangle &rect,
 MTLScissorRect GetScissorRect(const gl::Rectangle &rect,
                               NSUInteger screenHeight = 0,
                               bool flipY              = false);
+
+uint32_t GetDeviceVendorId(id<MTLDevice> metalDevice);
 
 AutoObjCPtr<id<MTLLibrary>> CreateShaderLibrary(id<MTLDevice> metalDevice,
                                                 const std::string &source,
@@ -98,6 +116,10 @@ MTLWinding GetFontfaceWinding(GLenum frontFaceMode, bool invert);
 PrimitiveTopologyClass GetPrimitiveTopologyClass(gl::PrimitiveMode mode);
 MTLPrimitiveType GetPrimitiveType(gl::PrimitiveMode mode);
 MTLIndexType GetIndexType(gl::DrawElementsType type);
+
+#if defined(__IPHONE_13_0) || defined(__MAC_10_15)
+MTLTextureSwizzle GetTextureSwizzle(GLenum swizzle);
+#endif
 
 // Get color write mask for a specified format. Some formats such as RGB565 doesn't have alpha
 // channel but is emulated by a RGBA8 format, we need to disable alpha write for this format.

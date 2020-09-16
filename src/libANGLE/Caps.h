@@ -95,6 +95,8 @@ struct Extensions
     Extensions();
     Extensions(const Extensions &other);
 
+    Extensions &operator=(const Extensions &other);
+
     // Generate a vector of supported extension strings
     std::vector<std::string> getStrings() const;
 
@@ -416,6 +418,9 @@ struct Extensions
     // GL_EXT_memory_object_fd
     bool memoryObjectFd = false;
 
+    // GL_ANGLE_memory_object_flags
+    bool memoryObjectFlagsANGLE = false;
+
     // GL_ANGLE_memory_object_fuchsia
     bool memoryObjectFuchsiaANGLE = false;
 
@@ -636,6 +641,9 @@ struct Extensions
     {
         return (textureCubeMapArrayOES || textureCubeMapArrayEXT);
     }
+
+    // GL_EXT_shadow_samplers
+    bool shadowSamplersEXT = false;
 };
 
 // Pointer to a boolean memeber of the Extensions struct
@@ -692,6 +700,8 @@ struct TypePrecision
 {
     TypePrecision();
     TypePrecision(const TypePrecision &other);
+
+    TypePrecision &operator=(const TypePrecision &other);
 
     void setIEEEFloat();
     void setTwosComplementInt(unsigned int bits);

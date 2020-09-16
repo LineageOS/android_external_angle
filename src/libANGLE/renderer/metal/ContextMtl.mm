@@ -17,7 +17,9 @@
 #include "libANGLE/renderer/metal/DisplayMtl.h"
 #include "libANGLE/renderer/metal/FrameBufferMtl.h"
 #include "libANGLE/renderer/metal/ProgramMtl.h"
+#include "libANGLE/renderer/metal/QueryMtl.h"
 #include "libANGLE/renderer/metal/RenderBufferMtl.h"
+#include "libANGLE/renderer/metal/RenderTargetMtl.h"
 #include "libANGLE/renderer/metal/ShaderMtl.h"
 #include "libANGLE/renderer/metal/TextureMtl.h"
 #include "libANGLE/renderer/metal/VertexArrayMtl.h"
@@ -96,7 +98,7 @@ ContextMtl::ContextMtl(const gl::State &state, gl::ErrorSet *errorSet, DisplayMt
     : ContextImpl(state, errorSet),
       mtl::Context(display),
       mCmdBuffer(&display->cmdQueue()),
-      mRenderEncoder(&mCmdBuffer),
+      mRenderEncoder(&mCmdBuffer, mOcclusionQueryPool),
       mBlitEncoder(&mCmdBuffer),
       mComputeEncoder(&mCmdBuffer)
 {}
@@ -121,6 +123,7 @@ void ContextMtl::onDestroy(const gl::Context *context)
 {
     mTriFanIndexBuffer.destroy(this);
     mLineLoopIndexBuffer.destroy(this);
+    mOcclusionQueryPool.destroy(this);
 
     mIncompleteTextures.onDestroy(context);
     mIncompleteTexturesInitialized = false;
@@ -132,7 +135,7 @@ angle::Result ContextMtl::ensureIncompleteTexturesCreated(const gl::Context *con
     {
         return angle::Result::Continue;
     }
-    constexpr gl::TextureType supportedTextureTypes[] = {gl::TextureType::_2D,
+    constexpr gl::TextureType supportedTextureTypes[] = {gl::TextureType::_2D, gl::TextureType::_3D,
                                                          gl::TextureType::CubeMap};
     for (gl::TextureType texType : supportedTextureTypes)
     {
@@ -926,9 +929,7 @@ VertexArrayImpl *ContextMtl::createVertexArray(const gl::VertexArrayState &state
 // Query and Fence creation
 QueryImpl *ContextMtl::createQuery(gl::QueryType type)
 {
-    // NOTE(hqle): ES 3.0
-    UNIMPLEMENTED();
-    return nullptr;
+    return new QueryMtl(type);
 }
 FenceNVImpl *ContextMtl::createFenceNV()
 {
@@ -1118,6 +1119,11 @@ const mtl::VertexFormat &ContextMtl::getVertexFormat(angle::FormatID angleFormat
     return getDisplay()->getVertexFormat(angleFormatId, tightlyPacked);
 }
 
+const mtl::FormatCaps &ContextMtl::getNativeFormatCaps(MTLPixelFormat mtlFormat) const
+{
+    return getDisplay()->getNativeFormatCaps(mtlFormat);
+}
+
 angle::Result ContextMtl::getIncompleteTexture(const gl::Context *context,
                                                gl::TextureType type,
                                                gl::Texture **textureOut)
@@ -1125,9 +1131,18 @@ angle::Result ContextMtl::getIncompleteTexture(const gl::Context *context,
     return mIncompleteTextures.getIncompleteTexture(context, type, nullptr, textureOut);
 }
 
-void ContextMtl::endEncoding(mtl::RenderCommandEncoder *encoder)
+void ContextMtl::endRenderEncoding(mtl::RenderCommandEncoder *encoder)
 {
+    // End any pending visibility query in the render pass
+    if (mOcclusionQuery)
+    {
+        disableActiveOcclusionQueryInRenderPass();
+    }
+
     encoder->endEncoding();
+
+    // Resolve visibility results
+    mOcclusionQueryPool.resolveVisibilityResults(this);
 }
 
 void ContextMtl::endEncoding(bool forceSaveRenderPassContent)
@@ -1137,11 +1152,10 @@ void ContextMtl::endEncoding(bool forceSaveRenderPassContent)
         if (forceSaveRenderPassContent)
         {
             // Save the work in progress.
-            mRenderEncoder.setColorStoreAction(MTLStoreActionStore);
-            mRenderEncoder.setDepthStencilStoreAction(MTLStoreActionStore, MTLStoreActionStore);
+            mRenderEncoder.setStoreAction(MTLStoreActionStore);
         }
 
-        mRenderEncoder.endEncoding();
+        endRenderEncoding(&mRenderEncoder);
     }
 
     if (mBlitEncoder.valid())
@@ -1207,7 +1221,7 @@ mtl::RenderCommandEncoder *ContextMtl::getRenderCommandEncoder()
     return &mRenderEncoder;
 }
 
-mtl::RenderCommandEncoder *ContextMtl::getRenderCommandEncoder(const mtl::RenderPassDesc &desc)
+mtl::RenderCommandEncoder *ContextMtl::getRenderPassCommandEncoder(const mtl::RenderPassDesc &desc)
 {
     if (hasStartedRenderPass(desc))
     {
@@ -1224,12 +1238,11 @@ mtl::RenderCommandEncoder *ContextMtl::getRenderCommandEncoder(const mtl::Render
     return &mRenderEncoder.restart(desc);
 }
 
-// Utilities to quickly create render command enconder to a specific texture:
-// The previous content of texture will be loaded if clearColor is not provided
-mtl::RenderCommandEncoder *ContextMtl::getRenderCommandEncoder(
+// Utilities to quickly create render command encoder to a specific texture:
+// The previous content of texture will be loaded
+mtl::RenderCommandEncoder *ContextMtl::getTextureRenderCommandEncoder(
     const mtl::TextureRef &textureTarget,
-    const gl::ImageIndex &index,
-    const Optional<MTLClearColor> &clearColor)
+    const gl::ImageIndex &index)
 {
     ASSERT(textureTarget && textureTarget->valid());
 
@@ -1239,21 +1252,39 @@ mtl::RenderCommandEncoder *ContextMtl::getRenderCommandEncoder(
     rpDesc.colorAttachments[0].level        = index.getLevelIndex();
     rpDesc.colorAttachments[0].sliceOrDepth = index.hasLayer() ? index.getLayerIndex() : 0;
     rpDesc.numColorAttachments              = 1;
+    rpDesc.sampleCount                      = textureTarget->samples();
+
+    return getRenderPassCommandEncoder(rpDesc);
+}
+
+// The previous content of texture will be loaded if clearColor is not provided
+mtl::RenderCommandEncoder *ContextMtl::getRenderTargetCommandEncoderWithClear(
+    const RenderTargetMtl &renderTarget,
+    const Optional<MTLClearColor> &clearColor)
+{
+    ASSERT(renderTarget.getTexture());
+
+    mtl::RenderPassDesc rpDesc;
+    renderTarget.toRenderPassAttachmentDesc(&rpDesc.colorAttachments[0]);
+    rpDesc.numColorAttachments = 1;
+    rpDesc.sampleCount         = renderTarget.getRenderSamples();
 
     if (clearColor.valid())
     {
         rpDesc.colorAttachments[0].loadAction = MTLLoadActionClear;
-        rpDesc.colorAttachments[0].clearColor =
-            mtl::EmulatedAlphaClearColor(clearColor.value(), textureTarget->getColorWritableMask());
+        rpDesc.colorAttachments[0].clearColor = mtl::EmulatedAlphaClearColor(
+            clearColor.value(), renderTarget.getTexture()->getColorWritableMask());
+
+        endEncoding(true);
     }
 
-    return getRenderCommandEncoder(rpDesc);
+    return getRenderPassCommandEncoder(rpDesc);
 }
 // The previous content of texture will be loaded
-mtl::RenderCommandEncoder *ContextMtl::getRenderCommandEncoder(const mtl::TextureRef &textureTarget,
-                                                               const gl::ImageIndex &index)
+mtl::RenderCommandEncoder *ContextMtl::getRenderTargetCommandEncoder(
+    const RenderTargetMtl &renderTarget)
 {
-    return getRenderCommandEncoder(textureTarget, index, Optional<MTLClearColor>());
+    return getRenderTargetCommandEncoderWithClear(renderTarget, Optional<MTLClearColor>());
 }
 
 mtl::BlitCommandEncoder *ContextMtl::getBlitCommandEncoder()
@@ -1398,25 +1429,33 @@ void ContextMtl::updateDrawFrameBufferBinding(const gl::Context *context)
 
     mDrawFramebuffer->onStartedDrawingToFrameBuffer(context);
 
-    onDrawFrameBufferChange(context, mDrawFramebuffer);
+    onDrawFrameBufferChangedState(context, mDrawFramebuffer, true);
 }
 
-void ContextMtl::onDrawFrameBufferChange(const gl::Context *context, FramebufferMtl *framebuffer)
+void ContextMtl::onDrawFrameBufferChangedState(const gl::Context *context,
+                                               FramebufferMtl *framebuffer,
+                                               bool renderPassChanged)
 {
     const gl::State &glState = getState();
     ASSERT(framebuffer == mtl::GetImpl(glState.getDrawFramebuffer()));
-
-    mDirtyBits.set(DIRTY_BIT_DRAW_FRAMEBUFFER);
 
     updateViewport(framebuffer, glState.getViewport(), glState.getNearPlane(),
                    glState.getFarPlane());
     updateFrontFace(glState);
     updateScissor(glState);
 
-    // End any render encoding using the old render pass.
-    endEncoding(false);
-    // Need to re-apply state to RenderCommandEncoder
-    invalidateState(context);
+    if (renderPassChanged)
+    {
+        // End any render encoding using the old render pass.
+        endEncoding(false);
+        // Need to re-apply state to RenderCommandEncoder
+        invalidateState(context);
+    }
+    else
+    {
+        // Invalidate current pipeline only.
+        invalidateRenderPipeline();
+    }
 }
 
 void ContextMtl::onBackbufferResized(const gl::Context *context, WindowSurfaceMtl *backbuffer)
@@ -1428,9 +1467,88 @@ void ContextMtl::onBackbufferResized(const gl::Context *context, WindowSurfaceMt
         return;
     }
 
-    updateViewport(framebuffer, glState.getViewport(), glState.getNearPlane(),
-                   glState.getFarPlane());
-    updateScissor(glState);
+    onDrawFrameBufferChangedState(context, framebuffer, true);
+}
+
+angle::Result ContextMtl::onOcclusionQueryBegin(const gl::Context *context, QueryMtl *query)
+{
+    ASSERT(mOcclusionQuery == nullptr);
+    mOcclusionQuery = query;
+
+    if (mRenderEncoder.valid())
+    {
+        // if render pass has started, start the query in the encoder
+        return startOcclusionQueryInRenderPass(query, true);
+    }
+    else
+    {
+        query->resetVisibilityResult(this);
+    }
+
+    return angle::Result::Continue;
+}
+void ContextMtl::onOcclusionQueryEnd(const gl::Context *context, QueryMtl *query)
+{
+    ASSERT(mOcclusionQuery == query);
+
+    if (mRenderEncoder.valid())
+    {
+        // if render pass has started, end the query in the encoder
+        disableActiveOcclusionQueryInRenderPass();
+    }
+
+    mOcclusionQuery = nullptr;
+}
+void ContextMtl::onOcclusionQueryDestroy(const gl::Context *context, QueryMtl *query)
+{
+    if (query->getAllocatedVisibilityOffsets().empty())
+    {
+        return;
+    }
+    if (mOcclusionQuery == query)
+    {
+        onOcclusionQueryEnd(context, query);
+    }
+    mOcclusionQueryPool.deallocateQueryOffset(this, query);
+}
+
+void ContextMtl::disableActiveOcclusionQueryInRenderPass()
+{
+    if (!mOcclusionQuery || mOcclusionQuery->getAllocatedVisibilityOffsets().empty())
+    {
+        return;
+    }
+
+    ASSERT(mRenderEncoder.valid());
+    mRenderEncoder.setVisibilityResultMode(MTLVisibilityResultModeDisabled,
+                                           mOcclusionQuery->getAllocatedVisibilityOffsets().back());
+}
+
+angle::Result ContextMtl::restartActiveOcclusionQueryInRenderPass()
+{
+    if (!mOcclusionQuery || mOcclusionQuery->getAllocatedVisibilityOffsets().empty())
+    {
+        return angle::Result::Continue;
+    }
+
+    return startOcclusionQueryInRenderPass(mOcclusionQuery, false);
+}
+
+angle::Result ContextMtl::startOcclusionQueryInRenderPass(QueryMtl *query, bool clearOldValue)
+{
+    ASSERT(mRenderEncoder.valid());
+
+    ANGLE_TRY(mOcclusionQueryPool.allocateQueryOffset(this, query, clearOldValue));
+
+    mRenderEncoder.setVisibilityResultMode(MTLVisibilityResultModeBoolean,
+                                           query->getAllocatedVisibilityOffsets().back());
+
+    // We need to mark the query's buffer as being written in this command buffer now. Since the
+    // actual writing is deferred until the render pass ends and user could try to read the query
+    // result before the render pass ends.
+    mCmdBuffer.setWriteDependency(query->getVisibilityResultBuffer());
+
+    return angle::Result::Continue;
 }
 
 void ContextMtl::updateProgramExecutable(const gl::Context *context)
@@ -1517,6 +1635,13 @@ angle::Result ContextMtl::setupDraw(const gl::Context *context,
 
         // re-apply everything
         invalidateState(context);
+    }
+
+    if (mOcclusionQuery && mOcclusionQueryPool.getNumRenderPassAllocatedQueries() == 0)
+    {
+        // The occlusion query is still active, and a new render pass has started.
+        // We need to continue the querying process in the new render encoder.
+        ANGLE_TRY(startOcclusionQueryInRenderPass(mOcclusionQuery, false));
     }
 
     Optional<mtl::RenderPipelineDesc> changedPipelineDesc;
@@ -1792,6 +1917,9 @@ angle::Result ContextMtl::checkIfPipelineChanged(
         mRenderPipelineDesc.inputPrimitiveTopology = topologyClass;
         mRenderPipelineDesc.alphaToCoverageEnabled = mState.isSampleAlphaToCoverageEnabled();
         mRenderPipelineDesc.emulateCoverageMask    = mState.isSampleCoverageEnabled();
+
+        mRenderPipelineDesc.outputDescriptor.updateEnabledDrawBuffers(
+            mDrawFramebuffer->getState().getEnabledDrawBuffers());
 
         *changedPipelineDesc = mRenderPipelineDesc;
     }

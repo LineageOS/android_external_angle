@@ -403,6 +403,9 @@ class IRContext {
   // instruction exists.
   Instruction* KillInst(Instruction* inst);
 
+  // Removes the non-semantic instruction tree that uses |inst|'s result id.
+  void KillNonSemanticInfo(Instruction* inst);
+
   // Returns true if all of the given analyses are valid.
   bool AreAnalysesValid(Analysis set) { return (set & valid_analyses_) == set; }
 
@@ -415,13 +418,13 @@ class IRContext {
   bool ReplaceAllUsesWith(uint32_t before, uint32_t after);
 
   // Replace all uses of |before| id with |after| id if those uses
-  // (instruction, operand pair) return true for |predicate|. Returns true if
+  // (instruction) return true for |predicate|. Returns true if
   // any replacement happens. This method does not kill the definition of the
   // |before| id. If |after| is the same as |before|, does nothing and return
   // false.
   bool ReplaceAllUsesWithPredicate(
       uint32_t before, uint32_t after,
-      const std::function<bool(Instruction*, uint32_t)>& predicate);
+      const std::function<bool(Instruction*)>& predicate);
 
   // Returns true if all of the analyses that are suppose to be valid are
   // actually valid.
