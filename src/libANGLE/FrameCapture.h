@@ -23,6 +23,8 @@ enum class GLenumGroup;
 
 namespace angle
 {
+
+using ParamData = std::vector<std::vector<uint8_t>>;
 struct ParamCapture : angle::NonCopyable
 {
     ParamCapture();
@@ -36,7 +38,7 @@ struct ParamCapture : angle::NonCopyable
     ParamType type;
     ParamValue value;
     gl::GLenumGroup enumGroup;  // only used for param type GLenum, GLboolean and GLbitfield
-    std::vector<std::vector<uint8_t>> data;
+    ParamData data;
     int arrayClientPointerIndex = -1;
     size_t readBufferSizeBytes  = 0;
 };
@@ -177,6 +179,34 @@ class DataCounters final : angle::NonCopyable
     std::map<Counter, int> mData;
 };
 
+constexpr int kStringsNotFound = -1;
+class StringCounters final : angle::NonCopyable
+{
+  public:
+    StringCounters();
+    ~StringCounters();
+
+    int getStringCounter(std::vector<std::string> &str);
+    void setStringCounter(std::vector<std::string> &str, int &counter);
+
+  private:
+    std::map<std::vector<std::string>, int> mStringCounterMap;
+};
+
+class DataTracker final : angle::NonCopyable
+{
+  public:
+    DataTracker();
+    ~DataTracker();
+
+    DataCounters &getCounters() { return mCounters; }
+    StringCounters &getStringCounters() { return mStringCounters; }
+
+  private:
+    DataCounters mCounters;
+    StringCounters mStringCounters;
+};
+
 using BufferSet   = std::set<gl::BufferID>;
 using BufferCalls = std::map<gl::BufferID, std::vector<CallCapture>>;
 
@@ -272,6 +302,7 @@ class FrameCapture final : angle::NonCopyable
     ~FrameCapture();
 
     void captureCall(const gl::Context *context, CallCapture &&call);
+    void checkForCaptureTrigger();
     void onEndFrame(const gl::Context *context);
     void onDestroyContext(const gl::Context *context);
     void onMakeCurrent(const egl::Surface *drawSurface);
@@ -297,6 +328,7 @@ class FrameCapture final : angle::NonCopyable
     void captureCompressedTextureData(const gl::Context *context, const CallCapture &call);
 
     void reset();
+    void maybeOverrideEntryPoint(const gl::Context *context, CallCapture &call);
     void maybeCaptureClientData(const gl::Context *context, CallCapture &call);
     void maybeCapturePostCallUpdates(const gl::Context *context);
 
@@ -338,6 +370,11 @@ class FrameCapture final : angle::NonCopyable
     // Cache a shadow copy of texture level data
     TextureLevels mCachedTextureLevels;
     TextureLevelDataMap mCachedTextureLevelData;
+
+    // If you don't know which frame you want to start capturing at, use the capture trigger.
+    // Initialize it to the number of frames you want to capture, and then clear the value to 0 when
+    // you reach the content you want to capture. Currently only available on Android.
+    uint32_t mCaptureTrigger;
 };
 
 template <typename CaptureFuncT, typename... ArgsT>
@@ -351,6 +388,10 @@ void CaptureCallToFrameCapture(CaptureFuncT captureFunc,
         return;
 
     CallCapture call = captureFunc(context->getState(), isCallValid, captureParams...);
+
+    if (!isCallValid)
+        INFO() << "FrameCapture: Capturing invalid call to " << GetEntryPointName(call.entryPoint);
+
     frameCapture->captureCall(context, std::move(call));
 }
 

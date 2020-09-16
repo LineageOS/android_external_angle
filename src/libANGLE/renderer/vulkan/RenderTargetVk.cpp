@@ -41,7 +41,7 @@ void RenderTargetVk::init(vk::ImageHelper *image,
                           vk::ImageViewHelper *imageViews,
                           vk::ImageHelper *resolveImage,
                           vk::ImageViewHelper *resolveImageViews,
-                          uint32_t levelIndexGL,
+                          gl::LevelIndex levelIndexGL,
                           uint32_t layerIndex,
                           bool isImageTransient)
 {
@@ -64,7 +64,7 @@ void RenderTargetVk::reset()
     mImageViews        = nullptr;
     mResolveImage      = nullptr;
     mResolveImageViews = nullptr;
-    mLevelIndexGL      = 0;
+    mLevelIndexGL      = gl::LevelIndex(0);
     mLayerIndex        = 0;
     mContentDefined    = false;
 }
@@ -74,7 +74,7 @@ vk::ImageViewSubresourceSerial RenderTargetVk::getSubresourceSerialImpl(
 {
     ASSERT(imageViews);
     ASSERT(mLayerIndex < std::numeric_limits<uint16_t>::max());
-    ASSERT(mLevelIndexGL < std::numeric_limits<uint16_t>::max());
+    ASSERT(mLevelIndexGL.get() < std::numeric_limits<uint16_t>::max());
 
     vk::ImageViewSubresourceSerial imageViewSerial =
         imageViews->getSubresourceSerial(mLevelIndexGL, 1, mLayerIndex, vk::LayerMode::Single);
@@ -91,42 +91,48 @@ vk::ImageViewSubresourceSerial RenderTargetVk::getResolveSubresourceSerial() con
     return getSubresourceSerialImpl(mResolveImageViews);
 }
 
-angle::Result RenderTargetVk::onColorDraw(ContextVk *contextVk)
+void RenderTargetVk::onColorDraw(ContextVk *contextVk)
 {
     ASSERT(!mImage->getFormat().actualImageFormat().hasDepthOrStencilBits());
 
-    contextVk->onRenderPassImageWrite(VK_IMAGE_ASPECT_COLOR_BIT, vk::ImageLayout::ColorAttachment,
+    contextVk->onImageRenderPassWrite(VK_IMAGE_ASPECT_COLOR_BIT, vk::ImageLayout::ColorAttachment,
                                       mImage);
     if (mResolveImage)
     {
-        contextVk->onRenderPassImageWrite(VK_IMAGE_ASPECT_COLOR_BIT,
+        contextVk->onImageRenderPassWrite(VK_IMAGE_ASPECT_COLOR_BIT,
                                           vk::ImageLayout::ColorAttachment, mResolveImage);
     }
     retainImageViews(contextVk);
 
     mContentDefined = true;
-
-    return angle::Result::Continue;
 }
 
-angle::Result RenderTargetVk::onDepthStencilDraw(ContextVk *contextVk)
+void RenderTargetVk::onDepthStencilDraw(ContextVk *contextVk, bool isReadOnly)
 {
-    ASSERT(mImage->getFormat().actualImageFormat().hasDepthOrStencilBits());
-
-    const angle::Format &format    = mImage->getFormat().actualImageFormat();
+    const angle::Format &format = mImage->getFormat().actualImageFormat();
+    ASSERT(format.hasDepthOrStencilBits());
     VkImageAspectFlags aspectFlags = vk::GetDepthStencilAspectFlags(format);
 
-    contextVk->onRenderPassImageWrite(aspectFlags, vk::ImageLayout::DepthStencilAttachment, mImage);
-    if (mResolveImage)
+    if (isReadOnly)
     {
-        contextVk->onRenderPassImageWrite(aspectFlags, vk::ImageLayout::DepthStencilAttachment,
-                                          mResolveImage);
+        ASSERT(!mResolveImage);
+        contextVk->onImageRenderPassRead(aspectFlags, vk::ImageLayout::DepthStencilReadOnly,
+                                         mImage);
     }
+    else
+    {
+        contextVk->onImageRenderPassWrite(aspectFlags, vk::ImageLayout::DepthStencilAttachment,
+                                          mImage);
+        if (mResolveImage)
+        {
+            contextVk->onImageRenderPassWrite(aspectFlags, vk::ImageLayout::DepthStencilAttachment,
+                                              mResolveImage);
+        }
+    }
+
     retainImageViews(contextVk);
 
     mContentDefined = true;
-
-    return angle::Result::Continue;
 }
 
 vk::ImageHelper &RenderTargetVk::getImageForRenderPass()
@@ -159,7 +165,7 @@ angle::Result RenderTargetVk::getImageViewImpl(ContextVk *contextVk,
                                                const vk::ImageView **imageViewOut) const
 {
     ASSERT(image.valid() && imageViews);
-    int32_t levelVK = mLevelIndexGL - mImage->getBaseLevel();
+    vk::LevelIndex levelVK = mImage->toVKLevel(mLevelIndexGL);
     return imageViews->getLevelLayerDrawImageView(contextVk, image, levelVK, mLayerIndex,
                                                   imageViewOut);
 }
@@ -218,7 +224,7 @@ const vk::Format &RenderTargetVk::getImageFormat() const
 gl::Extents RenderTargetVk::getExtents() const
 {
     ASSERT(mImage && mImage->valid());
-    uint32_t levelVK = mLevelIndexGL - mImage->getBaseLevel();
+    vk::LevelIndex levelVK = mImage->toVKLevel(mLevelIndexGL);
     return mImage->getLevelExtents2D(levelVK);
 }
 
@@ -281,10 +287,8 @@ angle::Result RenderTargetVk::flushStagedUpdates(ContextVk *contextVk,
         return angle::Result::Continue;
     }
 
-    vk::CommandBuffer *commandBuffer;
-    ANGLE_TRY(contextVk->endRenderPassAndGetCommandBuffer(&commandBuffer));
-    return image->flushSingleSubresourceStagedUpdates(
-        contextVk, mLevelIndexGL, layerIndex, commandBuffer, deferredClears, deferredClearIndex);
+    return image->flushSingleSubresourceStagedUpdates(contextVk, mLevelIndexGL, layerIndex,
+                                                      deferredClears, deferredClearIndex);
 }
 
 void RenderTargetVk::retainImageViews(ContextVk *contextVk) const
@@ -301,16 +305,16 @@ gl::ImageIndex RenderTargetVk::getImageIndex() const
     // Determine the GL type from the Vk Image properties.
     if (mImage->getType() == VK_IMAGE_TYPE_3D)
     {
-        return gl::ImageIndex::Make3D(mLevelIndexGL, mLayerIndex);
+        return gl::ImageIndex::Make3D(mLevelIndexGL.get(), mLayerIndex);
     }
 
     // We don't need to distinguish 2D array and cube.
     if (mImage->getLayerCount() > 1)
     {
-        return gl::ImageIndex::Make2DArray(mLevelIndexGL, mLayerIndex);
+        return gl::ImageIndex::Make2DArray(mLevelIndexGL.get(), mLayerIndex);
     }
 
     ASSERT(mLayerIndex == 0);
-    return gl::ImageIndex::Make2D(mLevelIndexGL);
+    return gl::ImageIndex::Make2D(mLevelIndexGL.get());
 }
 }  // namespace rx

@@ -1264,6 +1264,309 @@ TEST_P(VertexAttributeTest, DrawArraysWithBufferOffset)
     EXPECT_GL_NO_ERROR();
 }
 
+// Verify that using an unaligned offset doesn't mess up the draw.
+TEST_P(VertexAttributeTest, DrawArraysWithUnalignedBufferOffset)
+{
+    // anglebug.com/4258
+    ANGLE_SKIP_TEST_IF(IsOpenGL() && IsNVIDIA() && IsOSX());
+
+    // anglebug.com/4163
+    ANGLE_SKIP_TEST_IF(IsD3D11() && IsNVIDIA() && IsWindows7());
+
+    // TODO(jmadill): Diagnose this failure.
+    ANGLE_SKIP_TEST_IF(IsD3D11_FL93());
+
+    // TODO(geofflang): Figure out why this is broken on AMD OpenGL
+    ANGLE_SKIP_TEST_IF(IsAMD() && IsOpenGL());
+
+    // TODO(cnorthrop): Test this again on more recent drivers. http://anglebug.com/3951
+    ANGLE_SKIP_TEST_IF(IsLinux() && IsNVIDIA() && IsVulkan());
+
+    // TODO(https://anglebug.com/4269): Test is flaky on OpenGL and Metal on Mac NVIDIA.
+    ANGLE_SKIP_TEST_IF(IsOSX() && IsNVIDIA());
+
+    initBasicProgram();
+    glUseProgram(mProgram);
+
+    std::array<GLfloat, kVertexCount> inputData;
+    std::array<GLfloat, kVertexCount> expectedData;
+    InitTestData(inputData, expectedData);
+
+    auto quadVertices        = GetQuadVertices();
+    GLsizei quadVerticesSize = static_cast<GLsizei>(quadVertices.size() * sizeof(quadVertices[0]));
+
+    glGenBuffers(1, &mQuadBuffer);
+    glBindBuffer(GL_ARRAY_BUFFER, mQuadBuffer);
+    glBufferData(GL_ARRAY_BUFFER, quadVerticesSize + sizeof(Vector3), nullptr, GL_STATIC_DRAW);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, quadVerticesSize, quadVertices.data());
+
+    GLint positionLocation = glGetAttribLocation(mProgram, "position");
+    ASSERT_NE(-1, positionLocation);
+    glVertexAttribPointer(positionLocation, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
+    glEnableVertexAttribArray(positionLocation);
+
+    // Unaligned buffer offset (3)
+    GLsizei dataSize = kVertexCount * TypeStride(GL_FLOAT) + 3;
+    glBindBuffer(GL_ARRAY_BUFFER, mBuffer);
+    glBufferData(GL_ARRAY_BUFFER, dataSize, nullptr, GL_STATIC_DRAW);
+    glBufferSubData(GL_ARRAY_BUFFER, 3, dataSize - 3, inputData.data());
+    glVertexAttribPointer(mTestAttrib, 1, GL_FLOAT, GL_FALSE, 0, reinterpret_cast<void *>(3));
+    glEnableVertexAttribArray(mTestAttrib);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glVertexAttribPointer(mExpectedAttrib, 1, GL_FLOAT, GL_FALSE, 0, expectedData.data());
+    glEnableVertexAttribArray(mExpectedAttrib);
+
+    // Vertex draw with no start vertex offset (second argument is zero).
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    checkPixels();
+
+    // Draw offset by one vertex.
+    glDrawArrays(GL_TRIANGLES, 1, 6);
+    checkPixels();
+
+    EXPECT_GL_NO_ERROR();
+}
+
+// Verify that using an unaligned offset & GL_SHORT vertex attribute doesn't mess up the draw.
+// In Metal backend, GL_SHORTx3 is coverted to GL_SHORTx4 if offset is unaligned.
+TEST_P(VertexAttributeTest, DrawArraysWithUnalignedShortBufferOffset)
+{
+    // anglebug.com/4258
+    ANGLE_SKIP_TEST_IF(IsOpenGL() && IsNVIDIA() && IsOSX());
+
+    // anglebug.com/4163
+    ANGLE_SKIP_TEST_IF(IsD3D11() && IsNVIDIA() && IsWindows7());
+
+    // TODO(jmadill): Diagnose this failure.
+    ANGLE_SKIP_TEST_IF(IsD3D11_FL93());
+
+    // TODO(geofflang): Figure out why this is broken on AMD OpenGL
+    ANGLE_SKIP_TEST_IF(IsAMD() && IsOpenGL());
+
+    // TODO(cnorthrop): Test this again on more recent drivers. http://anglebug.com/3951
+    ANGLE_SKIP_TEST_IF(IsLinux() && IsNVIDIA() && IsVulkan());
+
+    // TODO(https://anglebug.com/4269): Test is flaky on OpenGL and Metal on Mac NVIDIA.
+    ANGLE_SKIP_TEST_IF(IsOSX() && IsNVIDIA());
+
+    initBasicProgram();
+    glUseProgram(mProgram);
+
+    // input data is GL_SHORTx3 (6 bytes) but stride=8
+    std::array<GLshort, 4 * kVertexCount> inputData;
+    std::array<GLfloat, 3 * kVertexCount> expectedData;
+    for (size_t i = 0; i < kVertexCount; ++i)
+    {
+        inputData[4 * i]     = 3 * i;
+        inputData[4 * i + 1] = 3 * i + 1;
+        inputData[4 * i + 2] = 3 * i + 2;
+
+        expectedData[3 * i]     = 3 * i;
+        expectedData[3 * i + 1] = 3 * i + 1;
+        expectedData[3 * i + 2] = 3 * i + 2;
+    }
+
+    auto quadVertices        = GetQuadVertices();
+    GLsizei quadVerticesSize = static_cast<GLsizei>(quadVertices.size() * sizeof(quadVertices[0]));
+
+    glGenBuffers(1, &mQuadBuffer);
+    glBindBuffer(GL_ARRAY_BUFFER, mQuadBuffer);
+    glBufferData(GL_ARRAY_BUFFER, quadVerticesSize + sizeof(Vector3), nullptr, GL_STATIC_DRAW);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, quadVerticesSize, quadVertices.data());
+
+    GLint positionLocation = glGetAttribLocation(mProgram, "position");
+    ASSERT_NE(-1, positionLocation);
+    glVertexAttribPointer(positionLocation, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
+    glEnableVertexAttribArray(positionLocation);
+
+    // Unaligned buffer offset (8)
+    GLsizei dataSize = 3 * kVertexCount * TypeStride(GL_SHORT) + 8;
+    glBindBuffer(GL_ARRAY_BUFFER, mBuffer);
+    glBufferData(GL_ARRAY_BUFFER, dataSize, nullptr, GL_STATIC_DRAW);
+    glBufferSubData(GL_ARRAY_BUFFER, 8, dataSize - 8, inputData.data());
+    glVertexAttribPointer(mTestAttrib, 3, GL_SHORT, GL_FALSE, /* stride */ 8,
+                          reinterpret_cast<void *>(8));
+    glEnableVertexAttribArray(mTestAttrib);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glVertexAttribPointer(mExpectedAttrib, 3, GL_FLOAT, GL_FALSE, 0, expectedData.data());
+    glEnableVertexAttribArray(mExpectedAttrib);
+
+    // Vertex draw with no start vertex offset (second argument is zero).
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    checkPixels();
+
+    // Draw offset by one vertex.
+    glDrawArrays(GL_TRIANGLES, 1, 6);
+    checkPixels();
+
+    EXPECT_GL_NO_ERROR();
+}
+
+// Verify that using an aligned but non-multiples of 4 offset vertex attribute doesn't mess up the
+// draw.
+TEST_P(VertexAttributeTest, DrawArraysWithShortBufferOffsetNotMultipleOf4)
+{
+    // anglebug.com/4258
+    ANGLE_SKIP_TEST_IF(IsOpenGL() && IsNVIDIA() && IsOSX());
+
+    // anglebug.com/4163
+    ANGLE_SKIP_TEST_IF(IsD3D11() && IsNVIDIA() && IsWindows7());
+
+    // TODO(jmadill): Diagnose this failure.
+    ANGLE_SKIP_TEST_IF(IsD3D11_FL93());
+
+    // TODO(geofflang): Figure out why this is broken on AMD OpenGL
+    ANGLE_SKIP_TEST_IF(IsAMD() && IsOpenGL());
+
+    // TODO(cnorthrop): Test this again on more recent drivers. http://anglebug.com/3951
+    ANGLE_SKIP_TEST_IF(IsLinux() && IsNVIDIA() && IsVulkan());
+
+    // TODO(https://anglebug.com/4269): Test is flaky on OpenGL and Metal on Mac NVIDIA.
+    ANGLE_SKIP_TEST_IF(IsOSX() && IsNVIDIA());
+
+    initBasicProgram();
+    glUseProgram(mProgram);
+
+    // input data is GL_SHORTx3 (6 bytes) but stride=8
+    std::array<GLshort, 4 * kVertexCount> inputData;
+    std::array<GLfloat, 3 * kVertexCount> expectedData;
+    for (size_t i = 0; i < kVertexCount; ++i)
+    {
+        inputData[4 * i]     = 3 * i;
+        inputData[4 * i + 1] = 3 * i + 1;
+        inputData[4 * i + 2] = 3 * i + 2;
+
+        expectedData[3 * i]     = 3 * i;
+        expectedData[3 * i + 1] = 3 * i + 1;
+        expectedData[3 * i + 2] = 3 * i + 2;
+    }
+
+    auto quadVertices        = GetQuadVertices();
+    GLsizei quadVerticesSize = static_cast<GLsizei>(quadVertices.size() * sizeof(quadVertices[0]));
+
+    glGenBuffers(1, &mQuadBuffer);
+    glBindBuffer(GL_ARRAY_BUFFER, mQuadBuffer);
+    glBufferData(GL_ARRAY_BUFFER, quadVerticesSize + sizeof(Vector3), nullptr, GL_STATIC_DRAW);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, quadVerticesSize, quadVertices.data());
+
+    GLint positionLocation = glGetAttribLocation(mProgram, "position");
+    ASSERT_NE(-1, positionLocation);
+    glVertexAttribPointer(positionLocation, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
+    glEnableVertexAttribArray(positionLocation);
+
+    // Aligned but not multiples of 4 buffer offset (18)
+    GLsizei dataSize = 4 * kVertexCount * TypeStride(GL_SHORT) + 8;
+    glBindBuffer(GL_ARRAY_BUFFER, mBuffer);
+    glBufferData(GL_ARRAY_BUFFER, dataSize, nullptr, GL_STATIC_DRAW);
+    glBufferSubData(GL_ARRAY_BUFFER, 18, dataSize - 18, inputData.data());
+    glVertexAttribPointer(mTestAttrib, 3, GL_SHORT, GL_FALSE, /* stride */ 8,
+                          reinterpret_cast<void *>(18));
+    glEnableVertexAttribArray(mTestAttrib);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glVertexAttribPointer(mExpectedAttrib, 3, GL_FLOAT, GL_FALSE, 0, expectedData.data());
+    glEnableVertexAttribArray(mExpectedAttrib);
+
+    // Vertex draw with no start vertex offset (second argument is zero).
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    checkPixels();
+
+    // Draw offset by one vertex.
+    glDrawArrays(GL_TRIANGLES, 1, 6);
+    checkPixels();
+
+    EXPECT_GL_NO_ERROR();
+}
+
+// Verify that using both aligned and unaligned offsets doesn't mess up the draw.
+TEST_P(VertexAttributeTest, DrawArraysWithAlignedAndUnalignedBufferOffset)
+{
+    // anglebug.com/4258
+    ANGLE_SKIP_TEST_IF(IsOpenGL() && IsNVIDIA() && IsOSX());
+
+    // anglebug.com/4163
+    ANGLE_SKIP_TEST_IF(IsD3D11() && IsNVIDIA() && IsWindows7());
+
+    // TODO(jmadill): Diagnose this failure.
+    ANGLE_SKIP_TEST_IF(IsD3D11_FL93());
+
+    // TODO(geofflang): Figure out why this is broken on AMD OpenGL
+    ANGLE_SKIP_TEST_IF(IsAMD() && IsOpenGL());
+
+    // TODO(cnorthrop): Test this again on more recent drivers. http://anglebug.com/3951
+    ANGLE_SKIP_TEST_IF(IsLinux() && IsNVIDIA() && IsVulkan());
+
+    // TODO(https://anglebug.com/4269): Test is flaky on OpenGL and Metal on Mac NVIDIA.
+    ANGLE_SKIP_TEST_IF(IsOSX() && IsNVIDIA());
+
+    initBasicProgram();
+    glUseProgram(mProgram);
+
+    std::array<GLfloat, kVertexCount> inputData;
+    std::array<GLfloat, kVertexCount> expectedData;
+    InitTestData(inputData, expectedData);
+
+    auto quadVertices        = GetQuadVertices();
+    GLsizei quadVerticesSize = static_cast<GLsizei>(quadVertices.size() * sizeof(quadVertices[0]));
+
+    glGenBuffers(1, &mQuadBuffer);
+    glBindBuffer(GL_ARRAY_BUFFER, mQuadBuffer);
+    glBufferData(GL_ARRAY_BUFFER, quadVerticesSize + sizeof(Vector3), nullptr, GL_STATIC_DRAW);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, quadVerticesSize, quadVertices.data());
+
+    GLint positionLocation = glGetAttribLocation(mProgram, "position");
+    ASSERT_NE(-1, positionLocation);
+    glVertexAttribPointer(positionLocation, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
+    glEnableVertexAttribArray(positionLocation);
+
+    // ----------- Aligned buffer offset (4) -------------
+    GLsizei dataSize = kVertexCount * TypeStride(GL_FLOAT) + 4;
+    GLBuffer alignedBufer;
+    glBindBuffer(GL_ARRAY_BUFFER, alignedBufer);
+    glBufferData(GL_ARRAY_BUFFER, dataSize, nullptr, GL_STATIC_DRAW);
+    glBufferSubData(GL_ARRAY_BUFFER, 4, dataSize - 4, inputData.data());
+    glVertexAttribPointer(mTestAttrib, 1, GL_FLOAT, GL_FALSE, 0, reinterpret_cast<void *>(4));
+    glEnableVertexAttribArray(mTestAttrib);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glVertexAttribPointer(mExpectedAttrib, 1, GL_FLOAT, GL_FALSE, 0, expectedData.data());
+    glEnableVertexAttribArray(mExpectedAttrib);
+
+    // Vertex draw with no start vertex offset (second argument is zero).
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    checkPixels();
+
+    // Draw offset by one vertex.
+    glDrawArrays(GL_TRIANGLES, 1, 6);
+    checkPixels();
+
+    // ----------- Unaligned buffer offset (3) -------------
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    dataSize = kVertexCount * TypeStride(GL_FLOAT) + 3;
+    glBindBuffer(GL_ARRAY_BUFFER, mBuffer);
+    glBufferData(GL_ARRAY_BUFFER, dataSize, nullptr, GL_STATIC_DRAW);
+    glBufferSubData(GL_ARRAY_BUFFER, 3, dataSize - 3, inputData.data());
+    glVertexAttribPointer(mTestAttrib, 1, GL_FLOAT, GL_FALSE, 0, reinterpret_cast<void *>(3));
+    glEnableVertexAttribArray(mTestAttrib);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glVertexAttribPointer(mExpectedAttrib, 1, GL_FLOAT, GL_FALSE, 0, expectedData.data());
+    glEnableVertexAttribArray(mExpectedAttrib);
+
+    // Vertex draw with no start vertex offset (second argument is zero).
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    checkPixels();
+
+    // Draw offset by one vertex.
+    glDrawArrays(GL_TRIANGLES, 1, 6);
+    checkPixels();
+
+    EXPECT_GL_NO_ERROR();
+}
+
 // Verify that when we pass a client memory pointer to a disabled attribute the draw is still
 // correct.
 TEST_P(VertexAttributeTest, DrawArraysWithDisabledAttribute)
@@ -1382,7 +1685,7 @@ TEST_P(VertexAttributeTest, DisabledAttribArrays)
         drawQuad(program, "a_position", 0.5f);
         ASSERT_GL_NO_ERROR();
 
-        EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green);
+        EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green) << "color index " << colorIndex;
 
         glDeleteProgram(program);
     }
@@ -1835,6 +2138,152 @@ void main()
 
     // Modify the testBuffer using a raw buffer
     glUseProgram(computeProgram);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, testBuffer);
+    glDispatchCompute(1, 1, 1);
+    glMemoryBarrier(GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
+
+    // Draw again to verify that testBuffer has been changed.
+    glUseProgram(mProgram);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    EXPECT_GL_NO_ERROR();
+    checkPixelsUnEqual();
+}
+
+TEST_P(VertexAttributeTestES31, UsePpoComputeShaderToUpdateVertexBuffer)
+{
+    // PPOs are only supported in the Vulkan backend
+    ANGLE_SKIP_TEST_IF(!isVulkanRenderer());
+
+    initTest();
+    constexpr char kComputeShader[] =
+        R"(#version 310 es
+layout(local_size_x=24) in;
+layout(std430, binding = 0) buffer buf {
+    uint outData[24];
+};
+void main()
+{
+    outData[gl_LocalInvocationIndex] = gl_LocalInvocationIndex;
+})";
+
+    glUseProgram(mProgram);
+
+    GLuint mid                                 = std::numeric_limits<GLuint>::max() >> 1;
+    GLuint hi                                  = std::numeric_limits<GLuint>::max();
+    std::array<GLuint, kVertexCount> inputData = {
+        {0, 1, 2, 3, 254, 255, 256, mid - 1, mid, mid + 1, hi - 2, hi - 1, hi}};
+    std::array<GLfloat, kVertexCount> expectedData;
+    for (size_t i = 0; i < kVertexCount; i++)
+    {
+        expectedData[i] = Normalize(inputData[i]);
+    }
+
+    // Normalized unsigned int attribute will be classified as translated static attribute.
+    TestData data(GL_UNSIGNED_INT, GL_TRUE, Source::BUFFER, inputData.data(), expectedData.data());
+    GLint typeSize   = 4;
+    GLsizei dataSize = kVertexCount * TypeStride(data.type);
+    GLBuffer testBuffer;
+    glBindBuffer(GL_ARRAY_BUFFER, testBuffer);
+    glBufferData(GL_ARRAY_BUFFER, dataSize, data.inputData, GL_STATIC_DRAW);
+    glVertexAttribPointer(mTestAttrib, typeSize, data.type, data.normalized, 0,
+                          reinterpret_cast<void *>(data.bufferOffset));
+    glEnableVertexAttribArray(mTestAttrib);
+
+    glBindBuffer(GL_ARRAY_BUFFER, mExpectedBuffer);
+    glBufferData(GL_ARRAY_BUFFER, dataSize, data.expectedData, GL_STATIC_DRAW);
+    glVertexAttribPointer(mExpectedAttrib, typeSize, GL_FLOAT, GL_FALSE, 0, nullptr);
+
+    // Draw twice to make sure that all static attributes dirty bits are synced.
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    checkPixels();
+
+    // Modify the testBuffer using a raw buffer
+    GLProgramPipeline pipeline;
+    ANGLE_GL_COMPUTE_PROGRAM(computeProgram, kComputeShader);
+    glProgramParameteri(computeProgram, GL_PROGRAM_SEPARABLE, GL_TRUE);
+    glUseProgramStages(pipeline, GL_COMPUTE_SHADER_BIT, computeProgram);
+    EXPECT_GL_NO_ERROR();
+    glBindProgramPipeline(pipeline);
+    EXPECT_GL_NO_ERROR();
+    glUseProgram(0);
+
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, testBuffer);
+    glDispatchCompute(1, 1, 1);
+    glMemoryBarrier(GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
+
+    // Draw again to verify that testBuffer has been changed.
+    glUseProgram(mProgram);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    EXPECT_GL_NO_ERROR();
+    checkPixelsUnEqual();
+}
+
+TEST_P(VertexAttributeTestES31, UseComputeShaderToUpdateVertexBufferSamePpo)
+{
+    // PPOs are only supported in the Vulkan backend
+    ANGLE_SKIP_TEST_IF(!isVulkanRenderer());
+
+    initTest();
+    constexpr char kComputeShader[] =
+        R"(#version 310 es
+layout(local_size_x=24) in;
+layout(std430, binding = 0) buffer buf {
+    uint outData[24];
+};
+void main()
+{
+    outData[gl_LocalInvocationIndex] = gl_LocalInvocationIndex;
+})";
+
+    // Mark the program separable and re-link it so it can be bound to the PPO.
+    glProgramParameteri(mProgram, GL_PROGRAM_SEPARABLE, GL_TRUE);
+    glLinkProgram(mProgram);
+    mProgram = CheckLinkStatusAndReturnProgram(mProgram, true);
+
+    GLProgramPipeline pipeline;
+    EXPECT_GL_NO_ERROR();
+    glBindProgramPipeline(pipeline);
+    glUseProgramStages(pipeline, GL_VERTEX_SHADER_BIT | GL_FRAGMENT_SHADER_BIT, mProgram);
+    EXPECT_GL_NO_ERROR();
+    glUseProgram(0);
+
+    GLuint mid                                 = std::numeric_limits<GLuint>::max() >> 1;
+    GLuint hi                                  = std::numeric_limits<GLuint>::max();
+    std::array<GLuint, kVertexCount> inputData = {
+        {0, 1, 2, 3, 254, 255, 256, mid - 1, mid, mid + 1, hi - 2, hi - 1, hi}};
+    std::array<GLfloat, kVertexCount> expectedData;
+    for (size_t i = 0; i < kVertexCount; i++)
+    {
+        expectedData[i] = Normalize(inputData[i]);
+    }
+
+    // Normalized unsigned int attribute will be classified as translated static attribute.
+    TestData data(GL_UNSIGNED_INT, GL_TRUE, Source::BUFFER, inputData.data(), expectedData.data());
+    GLint typeSize   = 4;
+    GLsizei dataSize = kVertexCount * TypeStride(data.type);
+    GLBuffer testBuffer;
+    glBindBuffer(GL_ARRAY_BUFFER, testBuffer);
+    glBufferData(GL_ARRAY_BUFFER, dataSize, data.inputData, GL_STATIC_DRAW);
+    glVertexAttribPointer(mTestAttrib, typeSize, data.type, data.normalized, 0,
+                          reinterpret_cast<void *>(data.bufferOffset));
+    glEnableVertexAttribArray(mTestAttrib);
+
+    glBindBuffer(GL_ARRAY_BUFFER, mExpectedBuffer);
+    glBufferData(GL_ARRAY_BUFFER, dataSize, data.expectedData, GL_STATIC_DRAW);
+    glVertexAttribPointer(mExpectedAttrib, typeSize, GL_FLOAT, GL_FALSE, 0, nullptr);
+
+    // Draw twice to make sure that all static attributes dirty bits are synced.
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    checkPixels();
+
+    // Modify the testBuffer using a raw buffer
+    ANGLE_GL_COMPUTE_PROGRAM(computeProgram, kComputeShader);
+    glProgramParameteri(computeProgram, GL_PROGRAM_SEPARABLE, GL_TRUE);
+    glUseProgramStages(pipeline, GL_COMPUTE_SHADER_BIT, computeProgram);
+    EXPECT_GL_NO_ERROR();
+
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, testBuffer);
     glDispatchCompute(1, 1, 1);
     glMemoryBarrier(GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);

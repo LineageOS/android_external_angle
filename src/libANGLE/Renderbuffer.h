@@ -83,7 +83,8 @@ class Renderbuffer final : public RefCountObject<RenderbufferID>,
                                         size_t samples,
                                         GLenum internalformat,
                                         size_t width,
-                                        size_t height);
+                                        size_t height,
+                                        MultisamplingMode mode);
     angle::Result setStorageEGLImageTarget(const Context *context, egl::Image *imageTarget);
 
     rx::RenderbufferImpl *getImplementation() const;
@@ -110,8 +111,8 @@ class Renderbuffer final : public RefCountObject<RenderbufferID>,
                       GLenum binding,
                       const ImageIndex &imageIndex) const override;
 
-    void onAttach(const Context *context) override;
-    void onDetach(const Context *context) override;
+    void onAttach(const Context *context, rx::Serial framebufferSerial) override;
+    void onDetach(const Context *context, rx::Serial framebufferSerial) override;
     GLuint getId() const override;
 
     InitState initState(const ImageIndex &imageIndex) const override;

@@ -360,6 +360,17 @@ std::ostream &FmtHex(std::ostream &os, T value)
 #endif
 
 #if defined(__clang__)
+#    define ANGLE_DISABLE_SUGGEST_OVERRIDE_WARNINGS                               \
+        _Pragma("clang diagnostic push")                                          \
+            _Pragma("clang diagnostic ignored \"-Wsuggest-destructor-override\"") \
+                _Pragma("clang diagnostic ignored \"-Wsuggest-override\"")
+#    define ANGLE_REENABLE_SUGGEST_OVERRIDE_WARNINGS _Pragma("clang diagnostic pop")
+#else
+#    define ANGLE_DISABLE_SUGGEST_OVERRIDE_WARNINGS
+#    define ANGLE_REENABLE_SUGGEST_OVERRIDE_WARNINGS
+#endif
+
+#if defined(__clang__)
 #    define ANGLE_DISABLE_EXTRA_SEMI_WARNING \
         _Pragma("clang diagnostic push") _Pragma("clang diagnostic ignored \"-Wextra-semi\"")
 #    define ANGLE_REENABLE_EXTRA_SEMI_WARNING _Pragma("clang diagnostic pop")
@@ -385,6 +396,16 @@ std::ostream &FmtHex(std::ostream &os, T value)
 #else
 #    define ANGLE_DISABLE_DESTRUCTOR_OVERRIDE_WARNING
 #    define ANGLE_REENABLE_DESTRUCTOR_OVERRIDE_WARNING
+#endif
+
+#if defined(__clang__)
+#    define ANGLE_DISABLE_WEAK_TEMPLATE_VTABLES_WARNING \
+        _Pragma("clang diagnostic push")                \
+            _Pragma("clang diagnostic ignored \"-Wweak-template-vtables\"")
+#    define ANGLE_REENABLE_WEAK_TEMPLATE_VTABLES_WARNING _Pragma("clang diagnostic pop")
+#else
+#    define ANGLE_DISABLE_WEAK_TEMPLATE_VTABLES_WARNING
+#    define ANGLE_REENABLE_WEAK_TEMPLATE_VTABLES_WARNING
 #endif
 
 #endif  // COMMON_DEBUG_H_

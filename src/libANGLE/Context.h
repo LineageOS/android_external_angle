@@ -628,16 +628,24 @@ class Context final : public egl::LabeledObject, angle::NonCopyable, public angl
     bool isClearBufferMaskedOut(GLenum buffer, GLint drawbuffer) const;
     bool noopClearBuffer(GLenum buffer, GLint drawbuffer) const;
 
+    void addRef() const { mRefCount++; }
+    void release() const { mRefCount--; }
+    size_t getRefCount() const { return mRefCount; }
+
+    egl::ShareGroup *getShareGroup() const { return mState.getShareGroup(); }
+
   private:
     void initialize();
 
     angle::Result prepareForDraw(PrimitiveMode mode);
     angle::Result prepareForClear(GLbitfield mask);
     angle::Result prepareForClearBuffer(GLenum buffer, GLint drawbuffer);
-    angle::Result syncState(const State::DirtyBits &bitMask, const State::DirtyObjects &objectMask);
+    angle::Result syncState(const State::DirtyBits &bitMask,
+                            const State::DirtyObjects &objectMask,
+                            Command command);
     angle::Result syncDirtyBits();
     angle::Result syncDirtyBits(const State::DirtyBits &bitMask);
-    angle::Result syncDirtyObjects(const State::DirtyObjects &objectMask);
+    angle::Result syncDirtyObjects(const State::DirtyObjects &objectMask, Command command);
     angle::Result syncStateForReadPixels();
     angle::Result syncStateForTexImage();
     angle::Result syncStateForBlit();
@@ -674,6 +682,12 @@ class Context final : public egl::LabeledObject, angle::NonCopyable, public angl
                           UniformLocation location,
                           GLsizei count,
                           const GLint *v);
+    void renderbufferStorageMultisampleImpl(GLenum target,
+                                            GLsizei samples,
+                                            GLenum internalformat,
+                                            GLsizei width,
+                                            GLsizei height,
+                                            MultisamplingMode mode);
 
     void convertPpoToComputeOrDraw(bool isCompute);
 
@@ -779,6 +793,8 @@ class Context final : public egl::LabeledObject, angle::NonCopyable, public angl
 
     // Note: we use a raw pointer here so we can exclude frame capture sources from the build.
     std::unique_ptr<angle::FrameCapture> mFrameCapture;
+
+    mutable size_t mRefCount;
 
     OverlayType mOverlay;
 };
