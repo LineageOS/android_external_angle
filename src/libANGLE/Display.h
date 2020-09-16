@@ -77,12 +77,15 @@ class ShareGroup final : angle::NonCopyable
 
     rx::ShareGroupImpl *getImplementation() const { return mImplementation; }
 
+    rx::Serial generateFramebufferSerial() { return mFramebufferSerialFactory.generate(); }
+
   protected:
     ~ShareGroup();
 
   private:
     size_t mRefCount;
     rx::ShareGroupImpl *mImplementation;
+    rx::SerialFactory mFramebufferSerialFactory;
 };
 
 // Constant coded here as a sanity limit.
@@ -151,7 +154,7 @@ class Display final : public LabeledObject,
                      const AttributeMap &attribs,
                      Sync **outSync);
 
-    Error makeCurrent(const Thread *thread,
+    Error makeCurrent(gl::Context *previousContext,
                       Surface *drawSurface,
                       Surface *readSurface,
                       gl::Context *context);
@@ -234,6 +237,7 @@ class Display final : public LabeledObject,
     const ContextSet &getContextSet() { return mContextSet; }
 
     const angle::FrontendFeatures &getFrontendFeatures() { return mFrontendFeatures; }
+    void overrideFrontendFeatures(const std::vector<std::string> &featureNames, bool enabled);
 
     const angle::FeatureList &getFeatures() const { return mFeatures; }
 
@@ -259,6 +263,7 @@ class Display final : public LabeledObject,
     void updateAttribsFromEnvironment(const AttributeMap &attribMap);
 
     Error restoreLostDevice();
+    Error releaseContext(gl::Context *context);
 
     void initDisplayExtensions();
     void initVendorString();
