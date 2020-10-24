@@ -104,7 +104,6 @@ void TransformationAddLoopPreheader::Apply(
       loop_header->id(),
       [this, &ir_context, &dominator_analysis, &loop_header,
        &back_edge_block_id](opt::Instruction* use_inst, uint32_t use_index) {
-
         if (dominator_analysis->Dominates(loop_header->GetLabelInst(),
                                           use_inst)) {
           // If |use_inst| is a branch instruction dominated by the header, the
@@ -144,7 +143,6 @@ void TransformationAddLoopPreheader::Apply(
   loop_header->ForEachPhiInst([this, &ir_context, &preheader,
                                &back_edge_block_id,
                                &phi_ids_used](opt::Instruction* phi_inst) {
-
     // The loop header must have at least 2 incoming edges (the back edge, and
     // at least one from outside the loop).
     assert(phi_inst->NumInOperands() >= 4);
@@ -191,11 +189,10 @@ void TransformationAddLoopPreheader::Apply(
       // Update the OpPhi instruction in the header so that it refers to the
       // back edge block and the preheader as the predecessors, and it uses the
       // newly-defined OpPhi in the preheader for the corresponding value.
-      phi_inst->SetInOperands(
-          {{SPV_OPERAND_TYPE_RESULT_ID, {fresh_phi_id}},
-           {SPV_OPERAND_TYPE_RESULT_ID, {preheader->id()}},
-           {SPV_OPERAND_TYPE_RESULT_ID, {back_edge_val}},
-           {SPV_OPERAND_TYPE_RESULT_ID, {back_edge_block_id}}});
+      phi_inst->SetInOperands({{SPV_OPERAND_TYPE_ID, {fresh_phi_id}},
+                               {SPV_OPERAND_TYPE_ID, {preheader->id()}},
+                               {SPV_OPERAND_TYPE_ID, {back_edge_val}},
+                               {SPV_OPERAND_TYPE_ID, {back_edge_block_id}}});
     }
   });
 
@@ -203,11 +200,11 @@ void TransformationAddLoopPreheader::Apply(
   fuzzerutil::UpdateModuleIdBound(ir_context, message_.fresh_id());
 
   // Add an unconditional branch from the preheader to the header.
-  preheader->AddInstruction(std::unique_ptr<opt::Instruction>(
-      new opt::Instruction(ir_context, SpvOpBranch, 0, 0,
-                           std::initializer_list<opt::Operand>{opt::Operand(
-                               spv_operand_type_t::SPV_OPERAND_TYPE_RESULT_ID,
-                               {loop_header->id()})})));
+  preheader->AddInstruction(
+      std::unique_ptr<opt::Instruction>(new opt::Instruction(
+          ir_context, SpvOpBranch, 0, 0,
+          std::initializer_list<opt::Operand>{opt::Operand(
+              spv_operand_type_t::SPV_OPERAND_TYPE_ID, {loop_header->id()})})));
 
   // Insert the preheader in the module.
   loop_header->GetParent()->InsertBasicBlockBefore(std::move(preheader),
@@ -220,6 +217,15 @@ void TransformationAddLoopPreheader::Apply(
 protobufs::Transformation TransformationAddLoopPreheader::ToMessage() const {
   protobufs::Transformation result;
   *result.mutable_add_loop_preheader() = message_;
+  return result;
+}
+
+std::unordered_set<uint32_t> TransformationAddLoopPreheader::GetFreshIds()
+    const {
+  std::unordered_set<uint32_t> result = {message_.fresh_id()};
+  for (auto id : message_.phi_id()) {
+    result.insert(id);
+  }
   return result;
 }
 

@@ -14,6 +14,7 @@
 
 #include "source/fuzz/transformation_mutate_pointer.h"
 
+#include "gtest/gtest.h"
 #include "source/fuzz/fuzzer_util.h"
 #include "source/fuzz/instruction_descriptor.h"
 #include "test/fuzz/fuzz_test_util.h"
@@ -77,15 +78,13 @@ TEST(TransformationMutatePointerTest, BasicTest) {
   const auto env = SPV_ENV_UNIVERSAL_1_3;
   const auto consumer = nullptr;
   const auto context = BuildModule(env, consumer, shader, kFuzzAssembleOption);
-  ASSERT_TRUE(IsValid(env, context.get()));
-
-  FactManager fact_manager;
   spvtools::ValidatorOptions validator_options;
-  TransformationContext transformation_context(&fact_manager,
-                                               validator_options);
-
-  fact_manager.AddFactIdIsIrrelevant(35);
-  fact_manager.AddFactIdIsIrrelevant(39);
+  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
+                                               kConsoleMessageConsumer));
+  TransformationContext transformation_context(
+      MakeUnique<FactManager>(context.get()), validator_options);
+  transformation_context.GetFactManager()->AddFactIdIsIrrelevant(35);
+  transformation_context.GetFactManager()->AddFactIdIsIrrelevant(39);
 
   const auto insert_before = MakeInstructionDescriptor(26, SpvOpReturn, 0);
 
@@ -140,7 +139,7 @@ TEST(TransformationMutatePointerTest, BasicTest) {
                    26, 70, MakeInstructionDescriptor(26, SpvOpAccessChain, 0))
                    .IsApplicable(context.get(), transformation_context));
 
-  fact_manager.AddFactIdIsIrrelevant(40);
+  transformation_context.GetFactManager()->AddFactIdIsIrrelevant(40);
 
   uint32_t fresh_id = 70;
   uint32_t pointer_ids[] = {
@@ -156,8 +155,10 @@ TEST(TransformationMutatePointerTest, BasicTest) {
                                                insert_before);
     ASSERT_TRUE(
         transformation.IsApplicable(context.get(), transformation_context));
-    transformation.Apply(context.get(), &transformation_context);
-    ASSERT_TRUE(IsValid(env, context.get()));
+    ApplyAndCheckFreshIds(transformation, context.get(),
+                          &transformation_context);
+    ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(
+        context.get(), validator_options, kConsoleMessageConsumer));
   }
 
   std::string after_transformation = R"(
@@ -267,30 +268,25 @@ TEST(TransformationMutatePointerTest, HandlesUnreachableBlocks) {
   const auto env = SPV_ENV_UNIVERSAL_1_3;
   const auto consumer = nullptr;
   const auto context = BuildModule(env, consumer, shader, kFuzzAssembleOption);
-  ASSERT_TRUE(IsValid(env, context.get()));
-
-  FactManager fact_manager;
   spvtools::ValidatorOptions validator_options;
-  TransformationContext transformation_context(&fact_manager,
-                                               validator_options);
-
-  fact_manager.AddFactIdIsIrrelevant(7);
+  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
+                                               kConsoleMessageConsumer));
+  TransformationContext transformation_context(
+      MakeUnique<FactManager>(context.get()), validator_options);
+  transformation_context.GetFactManager()->AddFactIdIsIrrelevant(7);
 
   ASSERT_FALSE(
       context->GetDominatorAnalysis(context->GetFunction(4))->IsReachable(10));
 
   const auto insert_before = MakeInstructionDescriptor(10, SpvOpReturn, 0);
 
-  // Local variable doesn't dominate an unreachable block.
-  ASSERT_FALSE(TransformationMutatePointer(9, 50, insert_before)
-                   .IsApplicable(context.get(), transformation_context));
-
   // Can mutate a global variable in an unreachable block.
   TransformationMutatePointer transformation(12, 50, insert_before);
   ASSERT_TRUE(
       transformation.IsApplicable(context.get(), transformation_context));
-  transformation.Apply(context.get(), &transformation_context);
-  ASSERT_TRUE(IsValid(env, context.get()));
+  ApplyAndCheckFreshIds(transformation, context.get(), &transformation_context);
+  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
+                                               kConsoleMessageConsumer));
 
   std::string after_transformation = R"(
                OpCapability Shader

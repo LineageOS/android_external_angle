@@ -120,7 +120,8 @@ angle::Result OverlayVk::createFont(ContextVk *contextVk)
 
     // Copy font data from staging buffer.
     ANGLE_TRY(contextVk->onBufferTransferRead(&fontDataBuffer.get()));
-    ANGLE_TRY(contextVk->onImageTransferWrite(VK_IMAGE_ASPECT_COLOR_BIT, &mFontImage));
+    ANGLE_TRY(contextVk->onImageTransferWrite(gl::LevelIndex(0), 1, 0, gl::overlay::kFontCount,
+                                              VK_IMAGE_ASPECT_COLOR_BIT, &mFontImage));
     vk::CommandBuffer &fontDataUpload = contextVk->getOutsideRenderPassCommandBuffer();
 
     VkBufferImageCopy copy           = {};
@@ -144,7 +145,7 @@ angle::Result OverlayVk::cullWidgets(ContextVk *contextVk)
     RendererVk *renderer = contextVk->getRenderer();
 
     // Release old culledWidgets image
-    mCulledWidgets.releaseImage(renderer);
+    mCulledWidgets.releaseImageFromShareContexts(renderer, contextVk);
     contextVk->addGarbage(&mCulledWidgetsView);
 
     // Create a buffer to contain coordinates of enabled text and graph widgets.  This buffer will

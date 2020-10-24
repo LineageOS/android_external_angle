@@ -170,11 +170,11 @@ const char *GetColorName(GLColor color)
 }
 
 // Always re-use displays when using --bot-mode in the test runner.
-bool gBotModeEnabled = false;
+bool gReuseDisplays = false;
 
 bool ShouldAlwaysForceNewDisplay()
 {
-    if (gBotModeEnabled)
+    if (gReuseDisplays)
         return false;
 
     // We prefer to reuse config displays. This is faster and solves a driver issue where creating
@@ -313,8 +313,9 @@ TestPlatformContext gPlatformContext;
 constexpr uint32_t kWindowReuseLimit = 50;
 
 constexpr char kUseConfig[]                      = "--use-config=";
-constexpr char kBotMode[]                        = "--bot-mode";
+constexpr char kReuseDisplays[]                  = "--reuse-displays";
 constexpr char kEnableANGLEPerTestCaptureLabel[] = "--angle-per-test-capture-label";
+constexpr char kBatchId[]                        = "--batch-id=";
 
 void SetupEnvironmentVarsForCaptureReplay()
 {
@@ -365,10 +366,13 @@ ANGLETestBase::ANGLETestBase(const PlatformParameters &params)
     PlatformParameters withMethods            = params;
     withMethods.eglParameters.platformMethods = &gDefaultPlatformMethods;
 
-    // We don't build vulkan debug layers on Mac (http://anglebug.com/4376)
-    if (IsOSX() && withMethods.getRenderer() == EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE)
+    if (withMethods.getRenderer() == EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE)
     {
+#if defined(ANGLE_ENABLE_VULKAN_VALIDATION_LAYERS)
+        withMethods.eglParameters.debugLayersEnabled = true;
+#else
         withMethods.eglParameters.debugLayersEnabled = false;
+#endif
     }
 
     auto iter = gFixtures.find(withMethods);
@@ -1355,12 +1359,17 @@ void ANGLEProcessTestArgs(int *argc, char *argv[])
         {
             SetSelectedConfig(argv[argIndex] + strlen(kUseConfig));
         }
-        if (strncmp(argv[argIndex], kBotMode, strlen(kBotMode)) == 0)
+        else if (strncmp(argv[argIndex], kReuseDisplays, strlen(kReuseDisplays)) == 0)
         {
-            gBotModeEnabled = true;
+            gReuseDisplays = true;
         }
-        if (strncmp(argv[argIndex], kEnableANGLEPerTestCaptureLabel,
-                    strlen(kEnableANGLEPerTestCaptureLabel)) == 0)
+        else if (strncmp(argv[argIndex], kBatchId, strlen(kBatchId)) == 0)
+        {
+            // Enable display reuse when running under --bot-mode.
+            gReuseDisplays = true;
+        }
+        else if (strncmp(argv[argIndex], kEnableANGLEPerTestCaptureLabel,
+                         strlen(kEnableANGLEPerTestCaptureLabel)) == 0)
         {
             gEnableANGLEPerTestCaptureLabel = true;
         }

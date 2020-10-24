@@ -36,6 +36,10 @@ declare_args() {
 
   # Enable generating current commit information using git
   angle_enable_commit_id = true
+
+  # Abseil has trouble supporting MSVC, particularly regarding component builds.
+  # http://crbug.com/1126524
+  angle_enable_abseil = angle_has_build && is_clang
 }
 
 if (angle_build_all) {
@@ -49,12 +53,6 @@ if (angle_build_all) {
       "$angle_root/samples:angle_samples",
       "$angle_root/src/tests:angle_tests",
     ]
-  }
-}
-
-if (ozone_platform_gbm) {
-  pkg_config("libdrm") {
-    packages = [ "libdrm" ]
   }
 }
 
@@ -304,6 +302,7 @@ angle_static_library("angle_common") {
   deps = [ ":xxhash" ]
 
   public_deps = [
+    ":angle_abseil",
     ":angle_system_utils",
     ":angle_version",
     ":includes",
@@ -311,6 +310,16 @@ angle_static_library("angle_common") {
   public_configs += [ ":angle_common_config" ]
   if (angle_has_build && use_fuzzing_engine) {
     all_dependent_configs = [ ":angle_disable_pool_alloc" ]
+  }
+
+  if (is_android && (angle_enable_gl || angle_enable_vulkan)) {
+    # In API level 26 ANativeWindow APIs were moved from libandroid.so
+    # into a separate library, libnativewindow.so
+    if (ndk_api_level_at_least_26) {
+      libs = [ "nativewindow" ]
+    } else {
+      libs = [ "android" ]
+    }
   }
 }
 
@@ -364,7 +373,7 @@ angle_static_library("angle_gpu_info_util") {
   libs = []
   defines = []
 
-  if (is_android || is_fuchsia) {
+  if (!is_chromeos && angle_has_build) {
     sources += libangle_gpu_info_util_vulkan_sources
     deps += [ "$angle_root/third_party/vulkan-headers/src:vulkan_headers" ]
   }
@@ -490,15 +499,15 @@ angle_source_set("translator_fuzzer") {
   deps = [ ":translator" ]
 }
 
-config("commit_id_config") {
+config("angle_commit_id_config") {
   include_dirs = [ "$root_gen_dir/angle" ]
-  visibility = [ ":commit_id" ]
+  visibility = [ ":angle_commit_id" ]
 }
 
-commit_id_output_file = "$root_gen_dir/angle/commit.h"
-action("commit_id") {
+_commit_id_output_file = "$root_gen_dir/angle/angle_commit.h"
+action("angle_commit_id") {
   script = "src/commit_id.py"
-  outputs = [ commit_id_output_file ]
+  outputs = [ _commit_id_output_file ]
 
   # Add git as a dependency if it is available.
   if (angle_enable_commit_id &&
@@ -514,37 +523,46 @@ action("commit_id") {
 
   args = [
     "gen",
-    rebase_path(commit_id_output_file, root_build_dir),
+    rebase_path(_commit_id_output_file, root_build_dir),
   ]
 
-  public_configs = [ ":commit_id_config" ]
+  public_configs = [ ":angle_commit_id_config" ]
+}
+
+# TODO(jmadill): Remove this. http://b/168736059
+group("commit_id") {
+  data_deps = [ ":angle_commit_id" ]
 }
 
 angle_source_set("angle_version") {
-  sources = [ "src/common/version.h" ]
-  public_deps = [ ":commit_id" ]
+  # TODO(jmadill): Remove version.h. http://b/168736059
+  sources = [
+    "src/common/angle_version.h",
+    "src/common/version.h",
+  ]
+  public_deps = [ ":angle_commit_id" ]
 }
 
 config("angle_backend_config") {
   defines = []
 
-  if (angle_enable_d3d9) {
-    defines += [ "ANGLE_ENABLE_D3D9" ]
-  }
-  if (angle_enable_d3d11) {
-    defines += [ "ANGLE_ENABLE_D3D11" ]
-  }
-  if (angle_enable_gl) {
-    defines += [ "ANGLE_ENABLE_OPENGL" ]
-    if (angle_enable_gl_null) {
-      defines += [ "ANGLE_ENABLE_OPENGL_NULL" ]
-    }
-  }
   if (angle_delegate_workers) {
     defines += [ "ANGLE_DELEGATE_WORKERS" ]
   }
 
   configs = []
+
+  if (angle_enable_d3d11) {
+    configs += [ "src/libANGLE/renderer/d3d:angle_d3d11_backend_config" ]
+  }
+
+  if (angle_enable_d3d9) {
+    configs += [ "src/libANGLE/renderer/d3d:angle_d3d9_backend_config" ]
+  }
+
+  if (angle_enable_gl) {
+    configs += [ "src/libANGLE/renderer/gl:angle_gl_backend_config" ]
+  }
 
   if (angle_enable_null) {
     configs += [ "src/libANGLE/renderer/null:angle_null_backend_config" ]
@@ -564,9 +582,6 @@ config("libANGLE_config") {
   defines = []
   libs = []
   ldflags = []
-  if (angle_enable_d3d9) {
-    ldflags += [ "/DELAYLOAD:d3d9.dll" ]
-  }
   defines += [ "LIBANGLE_IMPLEMENTATION" ]
 
   if (is_win) {
@@ -619,6 +634,27 @@ if (angle_enable_vulkan || angle_enable_metal) {
   }
 }
 
+if (is_win) {
+  angle_source_set("angle_d3d_format_tables") {
+    sources = [
+      "src/libANGLE/renderer/dxgi_format_map.h",
+      "src/libANGLE/renderer/dxgi_format_map_autogen.cpp",
+      "src/libANGLE/renderer/dxgi_support_table.h",
+      "src/libANGLE/renderer/dxgi_support_table_autogen.cpp",
+    ]
+
+    if (!angle_is_winuwp) {
+      sources += [
+        "src/libANGLE/renderer/d3d_format.cpp",
+        "src/libANGLE/renderer/d3d_format.h",
+      ]
+    }
+
+    public_deps = [ ":libANGLE_headers" ]
+    configs += [ ":angle_backend_config" ]
+  }
+}
+
 angle_source_set("libANGLE_base") {
   sources = libangle_sources
 
@@ -643,13 +679,22 @@ angle_source_set("libANGLE_base") {
   ]
 
   if (is_win) {
-    if (angle_enable_d3d9) {
-      libs += [ "delayimp.lib" ]
-    }
     libs += [
       "gdi32.lib",
       "user32.lib",
     ]
+  }
+
+  if (angle_enable_d3d11) {
+    public_deps += [ "src/libANGLE/renderer/d3d:angle_d3d11_backend" ]
+  }
+
+  if (angle_enable_d3d9) {
+    public_deps += [ "src/libANGLE/renderer/d3d:angle_d3d9_backend" ]
+  }
+
+  if (angle_enable_gl) {
+    public_deps += [ "src/libANGLE/renderer/gl:angle_gl_backend" ]
   }
 
   if (angle_enable_null) {
@@ -667,84 +712,6 @@ angle_source_set("libANGLE_base") {
   # Enable extra Chromium style warnings for libANGLE.
   if (is_clang && angle_has_build) {
     suppressed_configs -= [ "//build/config/clang:find_bad_constructs" ]
-  }
-
-  # Shared D3D sources.
-  if (angle_enable_d3d9 || angle_enable_d3d11) {
-    sources += libangle_d3d_shared_sources
-
-    defines += [ "ANGLE_PRELOADED_D3DCOMPILER_MODULE_NAMES={ " + "\"d3dcompiler_47.dll\", \"d3dcompiler_46.dll\", \"d3dcompiler_43.dll\" }" ]
-  }
-
-  if (angle_enable_d3d9) {
-    sources += libangle_d3d9_sources
-    libs += [ "d3d9.lib" ]
-  }
-
-  if (angle_enable_d3d11) {
-    sources += libangle_d3d11_sources
-
-    if (angle_is_winuwp) {
-      sources += libangle_d3d11_winuwp_sources
-    } else {
-      sources += libangle_d3d11_win32_sources
-    }
-
-    libs += [ "dxguid.lib" ]
-    import("src/libANGLE/renderer/d3d/d3d11/d3d11_blit_shaders_autogen.gni")
-    sources += libangle_d3d11_blit_shaders
-  }
-
-  if (!angle_is_winuwp && (angle_enable_d3d11 || angle_enable_d3d9)) {
-    sources += libangle_d3d_win32_sources
-  }
-
-  if (is_win && (angle_enable_gl || angle_enable_d3d11)) {
-    sources += libangle_gl_wgl_d3d11_common_sources
-  }
-
-  if (angle_enable_gl) {
-    sources += libangle_gl_sources
-    include_dirs += [ "src/third_party/khronos" ]
-
-    if (angle_enable_gl_null) {
-      sources += libangle_gl_null_sources
-    }
-    if (is_win) {
-      sources += libangle_gl_wgl_sources
-    }
-    if (angle_use_x11) {
-      sources += libangle_gl_glx_sources
-      libs += [
-        "X11",
-        "Xi",
-        "Xext",
-      ]
-    }
-    if (is_mac) {
-      sources += libangle_gl_cgl_sources
-      frameworks = [
-        "Cocoa.framework",
-        "IOSurface.framework",
-        "OpenGL.framework",
-        "QuartzCore.framework",
-      ]
-    }
-    if (is_android) {
-      sources += libangle_gl_egl_sources
-      sources += libangle_gl_egl_dl_sources
-      sources += libangle_gl_egl_android_sources
-    }
-    if (is_linux || is_chromeos) {
-      sources += libangle_gl_egl_sources
-      sources += libangle_gl_egl_dl_sources
-    }
-    if (ozone_platform_gbm) {
-      configs += [ ":libdrm" ]
-      defines += [ "ANGLE_USE_GBM" ]
-      deps += [ "//third_party/minigbm" ]
-      sources += libangle_gl_gbm_sources
-    }
   }
 
   if (is_mac) {
@@ -794,6 +761,35 @@ angle_source_set("angle_gl_enum_utils") {
     "src/libANGLE/gl_enum_utils.cpp",
     "src/libANGLE/gl_enum_utils_autogen.cpp",
   ]
+}
+
+if (!defined(angle_abseil_cpp_dir)) {
+  angle_abseil_cpp_dir = "//third_party/abseil-cpp"
+}
+
+config("angle_abseil_config") {
+  if (angle_enable_abseil) {
+    defines = [ "ANGLE_USE_ABSEIL" ]
+
+    configs = [
+      "$angle_abseil_cpp_dir:absl_define_config",
+      "$angle_abseil_cpp_dir:absl_include_config",
+    ]
+  }
+}
+
+group("angle_abseil") {
+  if (angle_enable_abseil) {
+    # When build_with_chromium=true we need to include "//third_party/abseil-cpp:absl" while
+    # we can be more specific when building standalone ANGLE.
+    if (build_with_chromium || is_component_build) {
+      public_deps = [ "$angle_abseil_cpp_dir:absl" ]
+    } else {
+      public_deps = [ "$angle_abseil_cpp_dir/absl/container:flat_hash_map" ]
+    }
+
+    public_configs = [ ":angle_abseil_config" ]
+  }
 }
 
 config("angle_compression_config") {
@@ -1181,6 +1177,14 @@ if (build_with_chromium && !is_component_build && is_android &&
   angle_apk("angle_chromium_apk") {
     package_name = "org.chromium.angle"
     apk_name = "AngleLibraries"
+    version_name = "ANGLE Developer Build"
+
+    if (angle_enable_commit_id) {
+      version_code =
+          exec_script("src/commit_id.py", [ "position" ], "trim string")
+    } else {
+      version_code = "0"
+    }
   }
 
   group("angle_apks") {

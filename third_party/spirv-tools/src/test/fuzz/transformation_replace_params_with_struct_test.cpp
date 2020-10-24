@@ -14,6 +14,8 @@
 
 #include "source/fuzz/transformation_replace_params_with_struct.h"
 
+#include "gtest/gtest.h"
+#include "source/fuzz/fuzzer_util.h"
 #include "test/fuzz/fuzz_test_util.h"
 
 namespace spvtools {
@@ -122,13 +124,11 @@ TEST(TransformationReplaceParamsWithStructTest, BasicTest) {
   const auto env = SPV_ENV_UNIVERSAL_1_3;
   const auto consumer = nullptr;
   const auto context = BuildModule(env, consumer, shader, kFuzzAssembleOption);
-  ASSERT_TRUE(IsValid(env, context.get()));
-
-  FactManager fact_manager;
   spvtools::ValidatorOptions validator_options;
-  TransformationContext transformation_context(&fact_manager,
-                                               validator_options);
-
+  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
+                                               kConsoleMessageConsumer));
+  TransformationContext transformation_context(
+      MakeUnique<FactManager>(context.get()), validator_options);
   // |parameter_id| is empty.
   ASSERT_FALSE(
       TransformationReplaceParamsWithStruct({}, 90, 91, {{33, 92}, {90, 93}})
@@ -163,9 +163,9 @@ TEST(TransformationReplaceParamsWithStructTest, BasicTest) {
                    .IsApplicable(context.get(), transformation_context));
 
   // |caller_id_to_fresh_composite_id| misses values.
-  ASSERT_FALSE(TransformationReplaceParamsWithStruct({16, 17}, 90, 91,
-                                                     {{33, 92}, {90, 93}})
-                   .IsApplicable(context.get(), transformation_context));
+  ASSERT_FALSE(
+      TransformationReplaceParamsWithStruct({16, 17}, 90, 91, {{90, 93}})
+          .IsApplicable(context.get(), transformation_context));
 
   // All fresh ids must be unique.
   ASSERT_FALSE(TransformationReplaceParamsWithStruct({16, 17}, 90, 90,
@@ -194,42 +194,49 @@ TEST(TransformationReplaceParamsWithStructTest, BasicTest) {
                                                          {{33, 92}, {90, 93}});
     ASSERT_TRUE(
         transformation.IsApplicable(context.get(), transformation_context));
-    transformation.Apply(context.get(), &transformation_context);
+    ApplyAndCheckFreshIds(transformation, context.get(),
+                          &transformation_context);
   }
   {
     TransformationReplaceParamsWithStruct transformation({43}, 93, 94,
                                                          {{33, 95}});
     ASSERT_TRUE(
         transformation.IsApplicable(context.get(), transformation_context));
-    transformation.Apply(context.get(), &transformation_context);
+    ApplyAndCheckFreshIds(transformation, context.get(),
+                          &transformation_context);
   }
   {
     TransformationReplaceParamsWithStruct transformation({17, 91, 94}, 96, 97,
                                                          {{33, 98}});
     ASSERT_TRUE(
         transformation.IsApplicable(context.get(), transformation_context));
-    transformation.Apply(context.get(), &transformation_context);
+    ApplyAndCheckFreshIds(transformation, context.get(),
+                          &transformation_context);
   }
   {
     TransformationReplaceParamsWithStruct transformation({55}, 99, 100, {{}});
     ASSERT_TRUE(
         transformation.IsApplicable(context.get(), transformation_context));
-    transformation.Apply(context.get(), &transformation_context);
+    ApplyAndCheckFreshIds(transformation, context.get(),
+                          &transformation_context);
   }
   {
     TransformationReplaceParamsWithStruct transformation({61}, 101, 102, {{}});
     ASSERT_TRUE(
         transformation.IsApplicable(context.get(), transformation_context));
-    transformation.Apply(context.get(), &transformation_context);
+    ApplyAndCheckFreshIds(transformation, context.get(),
+                          &transformation_context);
   }
   {
     TransformationReplaceParamsWithStruct transformation({73}, 103, 104, {{}});
     ASSERT_TRUE(
         transformation.IsApplicable(context.get(), transformation_context));
-    transformation.Apply(context.get(), &transformation_context);
+    ApplyAndCheckFreshIds(transformation, context.get(),
+                          &transformation_context);
   }
 
-  ASSERT_TRUE(IsValid(env, context.get()));
+  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
+                                               kConsoleMessageConsumer));
 
   std::string expected_shader = R"(
                OpCapability Shader
@@ -371,21 +378,21 @@ TEST(TransformationReplaceParamsWithStructTest, ParametersRemainValid) {
   const auto env = SPV_ENV_UNIVERSAL_1_3;
   const auto consumer = nullptr;
   const auto context = BuildModule(env, consumer, shader, kFuzzAssembleOption);
-  ASSERT_TRUE(IsValid(env, context.get()));
-
-  FactManager fact_manager;
   spvtools::ValidatorOptions validator_options;
-  TransformationContext transformation_context(&fact_manager,
-                                               validator_options);
-
+  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
+                                               kConsoleMessageConsumer));
+  TransformationContext transformation_context(
+      MakeUnique<FactManager>(context.get()), validator_options);
   {
     // Try to replace parameters in "increasing" order of their declaration.
     TransformationReplaceParamsWithStruct transformation({16, 17, 19}, 70, 71,
                                                          {{}});
     ASSERT_TRUE(
         transformation.IsApplicable(context.get(), transformation_context));
-    transformation.Apply(context.get(), &transformation_context);
-    ASSERT_TRUE(IsValid(env, context.get()));
+    ApplyAndCheckFreshIds(transformation, context.get(),
+                          &transformation_context);
+    ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(
+        context.get(), validator_options, kConsoleMessageConsumer));
   }
 
   std::string after_transformation = R"(
@@ -431,8 +438,10 @@ TEST(TransformationReplaceParamsWithStructTest, ParametersRemainValid) {
                                                          {{}});
     ASSERT_TRUE(
         transformation.IsApplicable(context.get(), transformation_context));
-    transformation.Apply(context.get(), &transformation_context);
-    ASSERT_TRUE(IsValid(env, context.get()));
+    ApplyAndCheckFreshIds(transformation, context.get(),
+                          &transformation_context);
+    ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(
+        context.get(), validator_options, kConsoleMessageConsumer));
   }
 
   after_transformation = R"(
@@ -472,6 +481,45 @@ TEST(TransformationReplaceParamsWithStructTest, ParametersRemainValid) {
   )";
 
   ASSERT_TRUE(IsEqual(env, after_transformation, context.get()));
+}
+
+TEST(TransformationReplaceParamsWithStructTest, IsomorphicStructs) {
+  std::string shader = R"(
+               OpCapability Shader
+          %1 = OpExtInstImport "GLSL.std.450"
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %16 "main"
+               OpExecutionMode %16 OriginUpperLeft
+               OpSource ESSL 310
+          %2 = OpTypeVoid
+          %6 = OpTypeInt 32 1
+          %7 = OpTypeStruct %6
+          %8 = OpTypeStruct %6
+          %9 = OpTypeStruct %8
+         %10 = OpTypeFunction %2 %7
+         %15 = OpTypeFunction %2
+         %16 = OpFunction %2 None %15
+         %17 = OpLabel
+               OpReturn
+               OpFunctionEnd
+         %11 = OpFunction %2 None %10
+         %12 = OpFunctionParameter %7
+         %13 = OpLabel
+               OpReturn
+               OpFunctionEnd
+  )";
+
+  const auto env = SPV_ENV_UNIVERSAL_1_3;
+  const auto consumer = nullptr;
+  const auto context = BuildModule(env, consumer, shader, kFuzzAssembleOption);
+  spvtools::ValidatorOptions validator_options;
+  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
+                                               kConsoleMessageConsumer));
+  TransformationContext transformation_context(
+      MakeUnique<FactManager>(context.get()), validator_options);
+
+  ASSERT_FALSE(TransformationReplaceParamsWithStruct({12}, 100, 101, {{}})
+                   .IsApplicable(context.get(), transformation_context));
 }
 
 }  // namespace
