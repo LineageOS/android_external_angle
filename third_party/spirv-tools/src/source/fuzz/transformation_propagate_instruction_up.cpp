@@ -346,6 +346,12 @@ TransformationPropagateInstructionUp::GetInstructionToPropagate(
     const auto* inst_type = ir_context->get_type_mgr()->GetType(inst.type_id());
     assert(inst_type && "|inst| has invalid type");
 
+    if (inst_type->AsSampledImage()) {
+      // OpTypeSampledImage cannot be used as an argument to OpPhi instructions,
+      // thus we cannot support this type.
+      continue;
+    }
+
     if (!ir_context->get_feature_mgr()->HasCapability(
             SpvCapabilityVariablePointersStorageBuffer) &&
         ContainsPointers(*inst_type)) {
@@ -396,6 +402,15 @@ bool TransformationPropagateInstructionUp::IsApplicableToBlock(
                                   ir_context, predecessor_id,
                                   inst_to_propagate->opcode()) != nullptr;
                      });
+}
+
+std::unordered_set<uint32_t> TransformationPropagateInstructionUp::GetFreshIds()
+    const {
+  std::unordered_set<uint32_t> result;
+  for (auto& pair : message_.predecessor_id_to_fresh_id()) {
+    result.insert(pair.second());
+  }
+  return result;
 }
 
 }  // namespace fuzz

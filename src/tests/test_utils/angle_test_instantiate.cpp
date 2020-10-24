@@ -213,6 +213,16 @@ bool IsOSX()
 #endif
 }
 
+bool IsARM64()
+{
+// _M_ARM64 is Windows-specific, while __aarch64__ is for other platforms.
+#if defined(_M_ARM64) || defined(__aarch64__)
+    return true;
+#else
+    return false;
+#endif
+}
+
 bool IsOzone()
 {
 #if defined(USE_OZONE) && defined(USE_X11)
@@ -332,16 +342,7 @@ bool IsNVIDIA()
     return HasSystemVendorID(kVendorID_NVIDIA);
 }
 
-bool IsARM64()
-{
-#if defined(_M_ARM64)
-    return true;
-#else
-    return false;
-#endif
-}
-
-bool IsConfigWhitelisted(const SystemInfo &systemInfo, const PlatformParameters &param)
+bool IsConfigAllowlisted(const SystemInfo &systemInfo, const PlatformParameters &param)
 {
     VendorID vendorID =
         systemInfo.gpus.empty() ? 0 : systemInfo.gpus[systemInfo.activeGPUIndex].vendorId;
@@ -377,8 +378,11 @@ bool IsConfigWhitelisted(const SystemInfo &systemInfo, const PlatformParameters 
                 {
                     case EGL_PLATFORM_ANGLE_TYPE_D3D9_ANGLE:
                     case EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE:
-                    case EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE:
                         return true;
+                    case EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE:
+                        // Note we disable AMD OpenGL testing on Windows due to using a very old and
+                        // outdated card with many driver bugs. See http://anglebug.com/5123
+                        return !IsAMD();
                     case EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE:
                         if (IsARM64())
                         {
@@ -652,7 +656,7 @@ bool IsPlatformAvailable(const PlatformParameters &param)
 
             if (systemInfo)
             {
-                result = IsConfigWhitelisted(*systemInfo, param);
+                result = IsConfigAllowlisted(*systemInfo, param);
             }
             else
             {

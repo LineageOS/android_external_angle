@@ -60,6 +60,7 @@
     void getTexImage(TextureTarget targetPacked, GLint level, GLenum format, GLenum type,          \
                      void *pixels);                                                                \
     void getRenderbufferImage(GLenum target, GLenum format, GLenum type, void *pixels);            \
+    /* GL_ANGLE_get_tex_level_parameter */                                                         \
     /* GL_ANGLE_program_binary */                                                                  \
     /* GL_ANGLE_request_extension */                                                               \
     void requestExtension(const GLchar *name);                                                     \
@@ -298,7 +299,11 @@
     GLint getFragDataIndex(ShaderProgramID programPacked, const GLchar *name);                     \
     GLint getProgramResourceLocationIndex(ShaderProgramID programPacked, GLenum programInterface,  \
                                           const GLchar *name);                                     \
+    /* GL_EXT_buffer_storage */                                                                    \
+    void bufferStorage(BufferBinding targetPacked, GLsizeiptr size, const void *data,              \
+                       GLbitfield flags);                                                          \
     /* GL_EXT_compressed_ETC1_RGB8_sub_texture */                                                  \
+    /* GL_EXT_copy_image */                                                                        \
     /* GL_EXT_debug_marker */                                                                      \
     void insertEventMarker(GLsizei length, const GLchar *marker);                                  \
     void popGroupMarker();                                                                         \
@@ -401,12 +406,14 @@
     void eGLImageTargetRenderbufferStorage(GLenum target, GLeglImageOES image);                    \
     void eGLImageTargetTexture2D(TextureType targetPacked, GLeglImageOES image);                   \
     /* GL_OES_compressed_ETC1_RGB8_texture */                                                      \
+    /* GL_OES_copy_image */                                                                        \
     /* GL_OES_depth32 */                                                                           \
     /* GL_OES_draw_buffers_indexed */                                                              \
     /* GL_OES_draw_elements_base_vertex */                                                         \
     /* GL_OES_get_program_binary */                                                                \
     /* GL_OES_mapbuffer */                                                                         \
     void *mapBuffer(BufferBinding targetPacked, GLenum access);                                    \
+    /* GL_OES_sample_shading */                                                                    \
     /* GL_OES_texture_3D */                                                                        \
     void framebufferTexture3D(GLenum target, GLenum attachment, TextureTarget textargetPacked,     \
                               TextureID texturePacked, GLint level, GLint zoffset);                \
@@ -414,6 +421,7 @@
     /* GL_OES_texture_buffer */                                                                    \
     /* GL_OES_texture_cube_map_array */                                                            \
     /* GL_OES_texture_half_float */                                                                \
+    /* GL_OES_texture_stencil8 */                                                                  \
     /* GL_OES_texture_storage_multisample_2d_array */                                              \
     /* GL_OES_vertex_array_object */                                                               \
     /* GL_OVR_multiview */                                                                         \

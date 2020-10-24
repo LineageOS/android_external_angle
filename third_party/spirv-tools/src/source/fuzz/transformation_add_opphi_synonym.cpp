@@ -34,9 +34,11 @@ TransformationAddOpPhiSynonym::TransformationAddOpPhiSynonym(
 bool TransformationAddOpPhiSynonym::IsApplicable(
     opt::IRContext* ir_context,
     const TransformationContext& transformation_context) const {
-  // Check that |message_.block_id| is a block label id.
+  // Check that |message_.block_id| is a block label id, and that it is not
+  // dead.
   auto block = fuzzerutil::MaybeFindBlock(ir_context, message_.block_id());
-  if (!block) {
+  if (!block ||
+      transformation_context.GetFactManager()->BlockIsDead(block->id())) {
     return false;
   }
 
@@ -110,9 +112,6 @@ bool TransformationAddOpPhiSynonym::IsApplicable(
     // the predecessors list of |block|.
     assert(pred_block && "Could not find one of the predecessor blocks.");
 
-    // TODO(https://github.com/KhronosGroup/SPIRV-Tools/issues/3722): This
-    //  function always returns false if the block is unreachable, so it may
-    //  need to be refactored.
     if (!fuzzerutil::IdIsAvailableBeforeInstruction(
             ir_context, pred_block->terminator(), id)) {
       return false;
@@ -158,7 +157,7 @@ void TransformationAddOpPhiSynonym::Apply(
   // that it is a synonym of the first one.
   transformation_context->GetFactManager()->AddFactDataSynonym(
       MakeDataDescriptor(message_.fresh_id(), {}),
-      MakeDataDescriptor(first_id, {}), ir_context);
+      MakeDataDescriptor(first_id, {}));
 }
 
 protobufs::Transformation TransformationAddOpPhiSynonym::ToMessage() const {
@@ -194,6 +193,11 @@ bool TransformationAddOpPhiSynonym::CheckTypeIsAllowed(
 
   // We do not allow other types.
   return false;
+}
+
+std::unordered_set<uint32_t> TransformationAddOpPhiSynonym::GetFreshIds()
+    const {
+  return {message_.fresh_id()};
 }
 
 }  // namespace fuzz

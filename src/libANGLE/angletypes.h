@@ -33,6 +33,7 @@ class Texture;
 enum class Command
 {
     Blit,
+    Clear,
     CopyImage,
     Dispatch,
     Draw,
@@ -40,6 +41,12 @@ enum class Command
     ReadPixels,
     TexImage,
     Other
+};
+
+enum class InitState
+{
+    MayNeedInit,
+    Initialized,
 };
 
 struct Rectangle
@@ -153,6 +160,7 @@ struct RasterizerState final
     GLfloat polygonOffsetFactor;
     GLfloat polygonOffsetUnits;
 
+    // pointDrawMode/multiSample are only used in the D3D back-end right now.
     bool pointDrawMode;
     bool multiSample;
 
@@ -187,8 +195,6 @@ struct BlendState final
 bool operator==(const BlendState &a, const BlendState &b);
 bool operator!=(const BlendState &a, const BlendState &b);
 
-using BlendStateArray = std::array<BlendState, IMPLEMENTATION_MAX_DRAW_BUFFERS>;
-
 struct DepthStencilState final
 {
     // This will zero-initialize the struct, including padding.
@@ -197,6 +203,8 @@ struct DepthStencilState final
 
     bool isDepthMaskedOut() const;
     bool isStencilMaskedOut() const;
+    bool isStencilNoOp() const;
+    bool isStencilBackNoOp() const;
 
     bool depthTest;
     GLenum depthFunc;
@@ -430,6 +438,7 @@ class BlendStateExt final
 
         static constexpr Type GetMask(const size_t drawBuffers)
         {
+            ASSERT(drawBuffers > 0);
             ASSERT(drawBuffers <= IMPLEMENTATION_MAX_DRAW_BUFFERS);
             return static_cast<Type>(0xFFFFFFFFFFFFFFFFull >> (64 - drawBuffers * kBits));
         }
@@ -759,6 +768,9 @@ using ShaderVector = angle::FixedVector<T, static_cast<size_t>(ShaderType::EnumC
 
 template <typename T>
 using AttachmentArray = std::array<T, IMPLEMENTATION_MAX_FRAMEBUFFER_ATTACHMENTS>;
+
+template <typename T>
+using AttachmentVector = angle::FixedVector<T, IMPLEMENTATION_MAX_FRAMEBUFFER_ATTACHMENTS>;
 
 using AttachmentsMask = angle::BitSet<IMPLEMENTATION_MAX_FRAMEBUFFER_ATTACHMENTS>;
 

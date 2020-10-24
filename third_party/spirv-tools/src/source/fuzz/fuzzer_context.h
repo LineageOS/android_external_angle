@@ -106,14 +106,23 @@ class FuzzerContext {
 
   // Probabilities associated with applying various transformations.
   // Keep them in alphabetical order.
+  uint32_t GetChanceOfAcceptingRepeatedPassRecommendation() {
+    return chance_of_accepting_repeated_pass_recommendation_;
+  }
   uint32_t GetChanceOfAddingAccessChain() {
     return chance_of_adding_access_chain_;
+  }
+  uint32_t GetChanceOfAddingAnotherPassToPassLoop() {
+    return chance_of_adding_another_pass_to_pass_loop_;
   }
   uint32_t GetChanceOfAddingAnotherStructField() {
     return chance_of_adding_another_struct_field_;
   }
   uint32_t GetChanceOfAddingArrayOrStructType() {
     return chance_of_adding_array_or_struct_type_;
+  }
+  uint32_t GetChanceOfAddingBitInstructionSynonym() {
+    return chance_of_adding_bit_instruction_synonym_;
   }
   uint32_t GetChanceOfAddingBothBranchesWhenReplacingOpSelect() {
     return chance_of_adding_both_branches_when_replacing_opselect_;
@@ -195,17 +204,26 @@ class FuzzerContext {
     return chance_of_constructing_composite_;
   }
   uint32_t GetChanceOfCopyingObject() { return chance_of_copying_object_; }
+  uint32_t GetChanceOfCreatingIntSynonymsUsingLoops() {
+    return chance_of_creating_int_synonyms_using_loops_;
+  }
   uint32_t GetChanceOfDonatingAdditionalModule() {
     return chance_of_donating_additional_module_;
   }
   uint32_t GetChanceOfDuplicatingRegionWithSelection() {
     return chance_of_duplicating_region_with_selection_;
   }
+  uint32_t GetChanceOfFlatteningConditionalBranch() {
+    return chance_of_flattening_conditional_branch_;
+  }
   uint32_t GetChanceOfGoingDeeperToInsertInComposite() {
     return chance_of_going_deeper_to_insert_in_composite_;
   }
   uint32_t GetChanceOfGoingDeeperWhenMakingAccessChain() {
     return chance_of_going_deeper_when_making_access_chain_;
+  }
+  uint32_t GetChanceOfHavingTwoBlocksInLoopToCreateIntSynonym() {
+    return chance_of_having_two_blocks_in_loop_to_create_int_synonym_;
   }
   uint32_t GetChanceOfInliningFunction() {
     return chance_of_inlining_function_;
@@ -226,6 +244,9 @@ class FuzzerContext {
     return chance_of_making_vector_operation_dynamic_;
   }
   uint32_t GetChanceOfMergingBlocks() { return chance_of_merging_blocks_; }
+  uint32_t GetChanceOfMergingFunctionReturns() {
+    return chance_of_merging_function_returns_;
+  }
   uint32_t GetChanceOfMovingBlockDown() { return chance_of_moving_block_down_; }
   uint32_t GetChanceOfMutatingPointer() { return chance_of_mutating_pointer_; }
   uint32_t GetChanceOfObfuscatingConstant() {
@@ -243,6 +264,9 @@ class FuzzerContext {
   uint32_t GetChanceOfPermutingPhiOperands() {
     return chance_of_permuting_phi_operands_;
   }
+  uint32_t GetChanceOfPropagatingInstructionsDown() {
+    return chance_of_propagating_instructions_down_;
+  }
   uint32_t GetChanceOfPropagatingInstructionsUp() {
     return chance_of_propagating_instructions_up_;
   }
@@ -251,6 +275,9 @@ class FuzzerContext {
   }
   uint32_t GetChanceOfReplacingAddSubMulWithCarryingExtended() {
     return chance_of_replacing_add_sub_mul_with_carrying_extended_;
+  }
+  uint32_t GetChanceOfReplacingBranchFromDeadBlockWithExit() {
+    return chance_of_replacing_branch_from_dead_block_with_exit_;
   }
   uint32_t GetChanceOfReplacingCopyMemoryWithLoadStore() {
     return chance_of_replacing_copy_memory_with_load_store_;
@@ -288,6 +315,9 @@ class FuzzerContext {
   }
   uint32_t GetChanceOfTogglingAccessChainInstruction() {
     return chance_of_toggling_access_chain_instruction_;
+  }
+  uint32_t GetChanceOfWrappingRegionInSelection() {
+    return chance_of_wrapping_region_in_selection_;
   }
 
   // Other functions to control transformations. Keep them in alphabetical
@@ -330,6 +360,9 @@ class FuzzerContext {
   uint32_t GetRandomIndexForCompositeInsert(uint32_t number_of_components) {
     return random_generator_->RandomUint32(number_of_components);
   }
+  int64_t GetRandomValueForStepConstantInLoop() {
+    return random_generator_->RandomUint64(UINT64_MAX);
+  }
   uint32_t GetRandomLoopControlPartialCount() {
     return random_generator_->RandomUint32(max_loop_control_partial_count_);
   }
@@ -338,6 +371,9 @@ class FuzzerContext {
   }
   uint32_t GetRandomLoopLimit() {
     return random_generator_->RandomUint32(max_loop_limit_);
+  }
+  uint32_t GetRandomNumberOfLoopIterations(uint32_t max_num_iterations) {
+    return ChooseBetweenMinAndMax({1, max_num_iterations});
   }
   uint32_t GetRandomNumberOfNewParameters(uint32_t num_of_params) {
     assert(num_of_params < GetMaximumNumberOfFunctionParameters());
@@ -373,9 +409,12 @@ class FuzzerContext {
 
   // Probabilities associated with applying various transformations.
   // Keep them in alphabetical order.
+  uint32_t chance_of_accepting_repeated_pass_recommendation_;
   uint32_t chance_of_adding_access_chain_;
+  uint32_t chance_of_adding_another_pass_to_pass_loop_;
   uint32_t chance_of_adding_another_struct_field_;
   uint32_t chance_of_adding_array_or_struct_type_;
+  uint32_t chance_of_adding_bit_instruction_synonym_;
   uint32_t chance_of_adding_both_branches_when_replacing_opselect_;
   uint32_t chance_of_adding_composite_insert_;
   uint32_t chance_of_adding_copy_memory_;
@@ -408,10 +447,13 @@ class FuzzerContext {
   uint32_t chance_of_choosing_workgroup_storage_class_;
   uint32_t chance_of_constructing_composite_;
   uint32_t chance_of_copying_object_;
+  uint32_t chance_of_creating_int_synonyms_using_loops_;
   uint32_t chance_of_donating_additional_module_;
   uint32_t chance_of_duplicating_region_with_selection_;
+  uint32_t chance_of_flattening_conditional_branch_;
   uint32_t chance_of_going_deeper_to_insert_in_composite_;
   uint32_t chance_of_going_deeper_when_making_access_chain_;
+  uint32_t chance_of_having_two_blocks_in_loop_to_create_int_synonym_;
   uint32_t chance_of_inlining_function_;
   uint32_t chance_of_interchanging_signedness_of_integer_operands_;
   uint32_t chance_of_interchanging_zero_like_constants_;
@@ -419,6 +461,7 @@ class FuzzerContext {
   uint32_t chance_of_making_donor_livesafe_;
   uint32_t chance_of_making_vector_operation_dynamic_;
   uint32_t chance_of_merging_blocks_;
+  uint32_t chance_of_merging_function_returns_;
   uint32_t chance_of_moving_block_down_;
   uint32_t chance_of_mutating_pointer_;
   uint32_t chance_of_obfuscating_constant_;
@@ -426,9 +469,11 @@ class FuzzerContext {
   uint32_t chance_of_permuting_instructions_;
   uint32_t chance_of_permuting_parameters_;
   uint32_t chance_of_permuting_phi_operands_;
+  uint32_t chance_of_propagating_instructions_down_;
   uint32_t chance_of_propagating_instructions_up_;
   uint32_t chance_of_pushing_id_through_variable_;
   uint32_t chance_of_replacing_add_sub_mul_with_carrying_extended_;
+  uint32_t chance_of_replacing_branch_from_dead_block_with_exit_;
   uint32_t chance_of_replacing_copy_memory_with_load_store_;
   uint32_t chance_of_replacing_copyobject_with_store_load_;
   uint32_t chance_of_replacing_id_with_synonym_;
@@ -442,6 +487,7 @@ class FuzzerContext {
   uint32_t chance_of_splitting_block_;
   uint32_t chance_of_swapping_conditional_branch_operands_;
   uint32_t chance_of_toggling_access_chain_instruction_;
+  uint32_t chance_of_wrapping_region_in_selection_;
 
   // Limits associated with various quantities for which random values are
   // chosen during fuzzing.

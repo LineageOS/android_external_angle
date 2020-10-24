@@ -367,8 +367,10 @@ TEST_P(ClearTest, ChangeFramebufferAttachmentFromRGBAtoRGB)
 {
     // http://anglebug.com/2689
     ANGLE_SKIP_TEST_IF(IsD3D9() || IsD3D11() || (IsOzone() && IsOpenGLES()));
-    ANGLE_SKIP_TEST_IF(IsOSX() && (IsNVIDIA() || IsIntel()) && IsDesktopOpenGL());
     ANGLE_SKIP_TEST_IF(IsAndroid() && IsAdreno() && IsOpenGLES());
+
+    // http://anglebug.com/5165
+    ANGLE_SKIP_TEST_IF(IsOSX() && IsDesktopOpenGL());
 
     ANGLE_GL_PROGRAM(program, angle::essl1_shaders::vs::Simple(),
                      angle::essl1_shaders::fs::UniformColor());
@@ -1693,6 +1695,382 @@ TEST_P(ClearTestES3, ClearDisabledNonZeroAttachmentNoAssert)
     glClearBufferiv(GL_COLOR, 1, clearColori);
 
     EXPECT_GL_NO_ERROR();
+}
+
+// Test that having a framebuffer with maximum number of attachments and clearing color, depth and
+// stencil works.
+TEST_P(ClearTestES3, ClearMaxAttachments)
+{
+    // http://anglebug.com/4612
+    ANGLE_SKIP_TEST_IF(IsOSX() && IsDesktopOpenGL());
+
+    constexpr GLsizei kSize = 16;
+
+    GLint maxDrawBuffers = 0;
+    glGetIntegerv(GL_MAX_DRAW_BUFFERS, &maxDrawBuffers);
+    ASSERT_GE(maxDrawBuffers, 4);
+
+    // Setup framebuffer.
+    GLFramebuffer fb;
+    glBindFramebuffer(GL_FRAMEBUFFER, fb);
+
+    std::vector<GLRenderbuffer> color(maxDrawBuffers);
+    std::vector<GLenum> drawBuffers(maxDrawBuffers);
+
+    for (GLint colorIndex = 0; colorIndex < maxDrawBuffers; ++colorIndex)
+    {
+        glBindRenderbuffer(GL_RENDERBUFFER, color[colorIndex]);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, kSize, kSize);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + colorIndex,
+                                  GL_RENDERBUFFER, color[colorIndex]);
+
+        drawBuffers[colorIndex] = GL_COLOR_ATTACHMENT0 + colorIndex;
+    }
+
+    GLRenderbuffer depthStencil;
+    glBindRenderbuffer(GL_RENDERBUFFER, depthStencil);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, kSize, kSize);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER,
+                              depthStencil);
+
+    EXPECT_GL_NO_ERROR();
+    ASSERT_GL_FRAMEBUFFER_COMPLETE(GL_FRAMEBUFFER);
+
+    glDrawBuffers(maxDrawBuffers, drawBuffers.data());
+
+    glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
+    glClearDepthf(1.0f);
+    glClearStencil(0x55);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+    EXPECT_GL_NO_ERROR();
+
+    // Verify that every color attachment is cleared correctly.
+    for (GLint colorIndex = 0; colorIndex < maxDrawBuffers; ++colorIndex)
+    {
+        glReadBuffer(GL_COLOR_ATTACHMENT0 + colorIndex);
+
+        EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::red);
+        EXPECT_PIXEL_COLOR_EQ(0, kSize - 1, GLColor::red);
+        EXPECT_PIXEL_COLOR_EQ(kSize - 1, 0, GLColor::red);
+        EXPECT_PIXEL_COLOR_EQ(kSize - 1, kSize - 1, GLColor::red);
+    }
+
+    // Verify that depth and stencil attachments are cleared correctly.
+    GLFramebuffer fbVerify;
+    glBindFramebuffer(GL_FRAMEBUFFER, fbVerify);
+
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, color[0]);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER,
+                              depthStencil);
+
+    // If depth is not cleared to 1, rendering would fail.
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+
+    // If stencil is not cleared to 0x55, rendering would fail.
+    glEnable(GL_STENCIL_TEST);
+    glStencilFunc(GL_EQUAL, 0x55, 0xFF);
+    glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+    glStencilMask(0xFF);
+
+    // Draw green.
+    ANGLE_GL_PROGRAM(drawGreen, essl1_shaders::vs::Simple(), essl1_shaders::fs::Green());
+    drawQuad(drawGreen, essl1_shaders::PositionAttrib(), 0.95f);
+
+    // Verify that green was drawn.
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green);
+    EXPECT_PIXEL_COLOR_EQ(0, kSize - 1, GLColor::green);
+    EXPECT_PIXEL_COLOR_EQ(kSize - 1, 0, GLColor::green);
+    EXPECT_PIXEL_COLOR_EQ(kSize - 1, kSize - 1, GLColor::green);
+}
+
+// Test that having a framebuffer with maximum number of attachments and clearing color, depth and
+// stencil after a draw call works.
+TEST_P(ClearTestES3, ClearMaxAttachmentsAfterDraw)
+{
+    // http://anglebug.com/4612
+    ANGLE_SKIP_TEST_IF(IsOSX() && IsDesktopOpenGL());
+
+    constexpr GLsizei kSize = 16;
+
+    GLint maxDrawBuffers = 0;
+    glGetIntegerv(GL_MAX_DRAW_BUFFERS, &maxDrawBuffers);
+    ASSERT_GE(maxDrawBuffers, 4);
+
+    // Setup framebuffer.
+    GLFramebuffer fb;
+    glBindFramebuffer(GL_FRAMEBUFFER, fb);
+
+    std::vector<GLRenderbuffer> color(maxDrawBuffers);
+    std::vector<GLenum> drawBuffers(maxDrawBuffers);
+
+    for (GLint colorIndex = 0; colorIndex < maxDrawBuffers; ++colorIndex)
+    {
+        glBindRenderbuffer(GL_RENDERBUFFER, color[colorIndex]);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, kSize, kSize);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + colorIndex,
+                                  GL_RENDERBUFFER, color[colorIndex]);
+
+        drawBuffers[colorIndex] = GL_COLOR_ATTACHMENT0 + colorIndex;
+    }
+
+    GLRenderbuffer depthStencil;
+    glBindRenderbuffer(GL_RENDERBUFFER, depthStencil);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, kSize, kSize);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER,
+                              depthStencil);
+
+    EXPECT_GL_NO_ERROR();
+    ASSERT_GL_FRAMEBUFFER_COMPLETE(GL_FRAMEBUFFER);
+
+    glDrawBuffers(maxDrawBuffers, drawBuffers.data());
+
+    // Issue a draw call to render blue, depth=0 and stencil 0x3C to the attachments.
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_ALWAYS);
+
+    glEnable(GL_STENCIL_TEST);
+    glStencilFunc(GL_ALWAYS, 0x3C, 0xFF);
+    glStencilOp(GL_REPLACE, GL_REPLACE, GL_REPLACE);
+    glStencilMask(0xFF);
+
+    // Generate shader for this framebuffer.
+    std::stringstream strstr;
+    strstr << "#version 300 es\n"
+              "precision highp float;\n";
+    for (GLint colorIndex = 0; colorIndex < maxDrawBuffers; ++colorIndex)
+    {
+        strstr << "layout(location = " << colorIndex << ") out vec4 value" << colorIndex << ";\n";
+    }
+    strstr << "void main()\n"
+              "{\n";
+    for (GLint colorIndex = 0; colorIndex < maxDrawBuffers; ++colorIndex)
+    {
+        strstr << "value" << colorIndex << " = vec4(0.0f, 0.0f, 1.0f, 1.0f);\n";
+    }
+    strstr << "}\n";
+
+    ANGLE_GL_PROGRAM(drawMRT, essl3_shaders::vs::Simple(), strstr.str().c_str());
+    drawQuad(drawMRT, essl3_shaders::PositionAttrib(), 0.0f);
+    ASSERT_GL_NO_ERROR();
+
+    glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
+    glClearDepthf(1.0f);
+    glClearStencil(0x55);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+    EXPECT_GL_NO_ERROR();
+
+    // Verify that every color attachment is cleared correctly.
+    for (GLint colorIndex = 0; colorIndex < maxDrawBuffers; ++colorIndex)
+    {
+        glReadBuffer(GL_COLOR_ATTACHMENT0 + colorIndex);
+
+        EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::red);
+        EXPECT_PIXEL_COLOR_EQ(0, kSize - 1, GLColor::red);
+        EXPECT_PIXEL_COLOR_EQ(kSize - 1, 0, GLColor::red);
+        EXPECT_PIXEL_COLOR_EQ(kSize - 1, kSize - 1, GLColor::red);
+    }
+
+    // Verify that depth and stencil attachments are cleared correctly.
+    GLFramebuffer fbVerify;
+    glBindFramebuffer(GL_FRAMEBUFFER, fbVerify);
+
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, color[0]);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER,
+                              depthStencil);
+
+    // If depth is not cleared to 1, rendering would fail.
+    glDepthFunc(GL_LESS);
+
+    // If stencil is not cleared to 0x55, rendering would fail.
+    glStencilFunc(GL_EQUAL, 0x55, 0xFF);
+    glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+
+    // Draw green.
+    ANGLE_GL_PROGRAM(drawGreen, essl1_shaders::vs::Simple(), essl1_shaders::fs::Green());
+    drawQuad(drawGreen, essl1_shaders::PositionAttrib(), 0.95f);
+
+    // Verify that green was drawn.
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green);
+    EXPECT_PIXEL_COLOR_EQ(0, kSize - 1, GLColor::green);
+    EXPECT_PIXEL_COLOR_EQ(kSize - 1, 0, GLColor::green);
+    EXPECT_PIXEL_COLOR_EQ(kSize - 1, kSize - 1, GLColor::green);
+}
+
+// Test that mixed masked clear works after clear.
+TEST_P(ClearTestES3, ClearThenMixedMaskedClear)
+{
+    constexpr GLsizei kSize = 16;
+
+    GLint maxDrawBuffers = 0;
+    glGetIntegerv(GL_MAX_DRAW_BUFFERS, &maxDrawBuffers);
+    ASSERT_GE(maxDrawBuffers, 4);
+
+    // Setup framebuffer.
+    GLRenderbuffer color;
+
+    glBindRenderbuffer(GL_RENDERBUFFER, color);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, kSize, kSize);
+
+    GLRenderbuffer depthStencil;
+    glBindRenderbuffer(GL_RENDERBUFFER, depthStencil);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, kSize, kSize);
+
+    GLFramebuffer fb;
+    glBindFramebuffer(GL_FRAMEBUFFER, fb);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, color);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER,
+                              depthStencil);
+    EXPECT_GL_NO_ERROR();
+    ASSERT_GL_FRAMEBUFFER_COMPLETE(GL_FRAMEBUFFER);
+
+    // Clear color and depth/stencil
+    glClearColor(0.1f, 1.0f, 0.0f, 0.7f);
+    glClearDepthf(0.0f);
+    glClearStencil(0x55);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+
+    // Clear again, but with color and stencil masked
+    glClearColor(1.0f, 0.2f, 0.6f, 1.0f);
+    glClearDepthf(1.0f);
+    glClearStencil(0x3C);
+    glColorMask(GL_TRUE, GL_FALSE, GL_FALSE, GL_TRUE);
+    glStencilMask(0xF0);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+
+    // Issue a draw call to verify color, depth and stencil.
+
+    // If depth is not cleared to 1, rendering would fail.
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+
+    // If stencil is not cleared to 0x35, rendering would fail.
+    glEnable(GL_STENCIL_TEST);
+    glStencilFunc(GL_EQUAL, 0x35, 0xFF);
+    glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+    glStencilMask(0xFF);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+
+    ANGLE_GL_PROGRAM(drawColor, essl1_shaders::vs::Simple(), essl1_shaders::fs::UniformColor());
+    glUseProgram(drawColor);
+    GLint colorUniformLocation =
+        glGetUniformLocation(drawColor, angle::essl1_shaders::ColorUniform());
+    ASSERT_NE(colorUniformLocation, -1);
+
+    // Blend half-transparent blue into the color buffer.
+    glUniform4f(colorUniformLocation, 0.0f, 0.0f, 1.0f, 0.5f);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    drawQuad(drawColor, essl1_shaders::PositionAttrib(), 0.95f);
+    ASSERT_GL_NO_ERROR();
+
+    // Verify that the color buffer is now gray
+    const GLColor kExpected(127, 127, 127, 191);
+    EXPECT_PIXEL_COLOR_NEAR(0, 0, kExpected, 1);
+    EXPECT_PIXEL_COLOR_NEAR(0, kSize - 1, kExpected, 1);
+    EXPECT_PIXEL_COLOR_NEAR(kSize - 1, 0, kExpected, 1);
+    EXPECT_PIXEL_COLOR_NEAR(kSize - 1, kSize - 1, kExpected, 1);
+}
+
+// Test that clear stencil value is correctly masked to 8 bits.
+TEST_P(ClearTest, ClearStencilMask)
+{
+    GLint stencilBits = 0;
+    glGetIntegerv(GL_STENCIL_BITS, &stencilBits);
+    EXPECT_EQ(stencilBits, 8);
+
+    ANGLE_GL_PROGRAM(drawColor, essl1_shaders::vs::Simple(), essl1_shaders::fs::Green());
+    glUseProgram(drawColor);
+
+    glClearColor(0, 0, 0, 1);
+    glClear(GL_COLOR_BUFFER_BIT);
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::black);
+
+    // Clear stencil value must be masked to 0x42
+    glClearStencil(0x142);
+    glClear(GL_STENCIL_BUFFER_BIT);
+
+    // Check that the stencil test works as expected
+    glEnable(GL_STENCIL_TEST);
+
+    // Negative case
+    glStencilFunc(GL_NOTEQUAL, 0x42, 0xFF);
+    drawQuad(drawColor, essl1_shaders::PositionAttrib(), 0.5f);
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::black);
+
+    // Positive case
+    glStencilFunc(GL_EQUAL, 0x42, 0xFF);
+    drawQuad(drawColor, essl1_shaders::PositionAttrib(), 0.5f);
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green);
+
+    ASSERT_GL_NO_ERROR();
+}
+
+// Test that glClearBufferiv correctly masks the clear stencil value.
+TEST_P(ClearTestES3, ClearBufferivStencilMask)
+{
+    GLint stencilBits = 0;
+    glGetIntegerv(GL_STENCIL_BITS, &stencilBits);
+    EXPECT_EQ(stencilBits, 8);
+
+    ANGLE_GL_PROGRAM(drawColor, essl1_shaders::vs::Simple(), essl1_shaders::fs::Green());
+    glUseProgram(drawColor);
+
+    glClearColor(0, 0, 0, 1);
+    glClear(GL_COLOR_BUFFER_BIT);
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::black);
+
+    // Clear stencil value must be masked to 0x42
+    const GLint kStencilClearValue = 0x142;
+    glClearBufferiv(GL_STENCIL, 0, &kStencilClearValue);
+
+    // Check that the stencil test works as expected
+    glEnable(GL_STENCIL_TEST);
+
+    // Negative case
+    glStencilFunc(GL_NOTEQUAL, 0x42, 0xFF);
+    drawQuad(drawColor, essl1_shaders::PositionAttrib(), 0.5f);
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::black);
+
+    // Positive case
+    glStencilFunc(GL_EQUAL, 0x42, 0xFF);
+    drawQuad(drawColor, essl1_shaders::PositionAttrib(), 0.5f);
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green);
+
+    ASSERT_GL_NO_ERROR();
+}
+
+// Test that glClearBufferfi correctly masks the clear stencil value.
+TEST_P(ClearTestES3, ClearBufferfiStencilMask)
+{
+    GLint stencilBits = 0;
+    glGetIntegerv(GL_STENCIL_BITS, &stencilBits);
+    EXPECT_EQ(stencilBits, 8);
+
+    ANGLE_GL_PROGRAM(drawColor, essl1_shaders::vs::Simple(), essl1_shaders::fs::Green());
+    glUseProgram(drawColor);
+
+    glClearColor(0, 0, 0, 1);
+    glClear(GL_COLOR_BUFFER_BIT);
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::black);
+
+    // Clear stencil value must be masked to 0x42
+    glClearBufferfi(GL_DEPTH_STENCIL, 0, 0.5f, 0x142);
+
+    // Check that the stencil test works as expected
+    glEnable(GL_STENCIL_TEST);
+
+    // Negative case
+    glStencilFunc(GL_NOTEQUAL, 0x42, 0xFF);
+    drawQuad(drawColor, essl1_shaders::PositionAttrib(), 0.5f);
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::black);
+
+    // Positive case
+    glStencilFunc(GL_EQUAL, 0x42, 0xFF);
+    drawQuad(drawColor, essl1_shaders::PositionAttrib(), 0.5f);
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green);
+
+    ASSERT_GL_NO_ERROR();
 }
 
 #ifdef Bool

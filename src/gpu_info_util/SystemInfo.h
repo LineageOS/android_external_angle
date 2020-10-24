@@ -41,7 +41,7 @@ struct GPUDeviceInfo
     std::string driverVersion;
     std::string driverDate;
 
-    // Only available on Android
+    // Only available via GetSystemInfoVulkan currently.
     VersionInfo detailedDriverVersion;
 };
 
@@ -82,6 +82,9 @@ struct SystemInfo
 // Returns true if all info was gathered, false otherwise. Even when false is returned, `info` will
 // be filled with partial information.
 bool GetSystemInfo(SystemInfo *info);
+
+// Vulkan-specific info collection.
+bool GetSystemInfoVulkan(SystemInfo *info);
 
 // Known PCI vendor IDs
 constexpr VendorID kVendorID_AMD      = 0x1002;

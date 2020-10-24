@@ -64,22 +64,31 @@ bool TransformationReplaceIrrelevantId::IsApplicable(
     return false;
   }
 
+  // The replacement id must not be the result of an OpFunction instruction.
+  if (replacement_id_def->opcode() == SpvOpFunction) {
+    return false;
+  }
+
   // Consistency check: an irrelevant id cannot be a pointer.
   assert(
       !ir_context->get_type_mgr()->GetType(type_id_of_interest)->AsPointer() &&
       "An irrelevant id cannot be a pointer");
 
+  uint32_t use_in_operand_index =
+      message_.id_use_descriptor().in_operand_index();
+
   // The id use must be replaceable with any other id of the same type.
-  if (!fuzzerutil::IdUseCanBeReplaced(
-          ir_context, use_instruction,
-          message_.id_use_descriptor().in_operand_index())) {
+  if (!fuzzerutil::IdUseCanBeReplaced(ir_context, use_instruction,
+                                      use_in_operand_index)) {
+    return false;
+  }
+
+  if (AttemptsToReplaceVariableInitializerWithNonConstant(
+          *use_instruction, *replacement_id_def)) {
     return false;
   }
 
   // The id must be available to use at the use point.
-  // TODO(https://github.com/KhronosGroup/SPIRV-Tools/issues/3722):
-  //  IdIsAvailable at use always returns false if the instruction is in an
-  //  unreachable block, so it might need to be fixed.
   return fuzzerutil::IdIsAvailableAtUse(
       ir_context, use_instruction,
       message_.id_use_descriptor().in_operand_index(),
@@ -107,6 +116,19 @@ protobufs::Transformation TransformationReplaceIrrelevantId::ToMessage() const {
   protobufs::Transformation result;
   *result.mutable_replace_irrelevant_id() = message_;
   return result;
+}
+
+std::unordered_set<uint32_t> TransformationReplaceIrrelevantId::GetFreshIds()
+    const {
+  return std::unordered_set<uint32_t>();
+}
+
+bool TransformationReplaceIrrelevantId::
+    AttemptsToReplaceVariableInitializerWithNonConstant(
+        const opt::Instruction& use_instruction,
+        const opt::Instruction& replacement_for_use) {
+  return use_instruction.opcode() == SpvOpVariable &&
+         !spvOpcodeIsConstant(replacement_for_use.opcode());
 }
 
 }  // namespace fuzz

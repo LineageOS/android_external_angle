@@ -480,6 +480,10 @@ EXPORTS
     glGetRenderbufferImageANGLE
     glGetTexImageANGLE
 
+    ; GL_ANGLE_get_tex_level_parameter
+    glGetTexLevelParameterfvANGLE
+    glGetTexLevelParameterivANGLE
+
     ; GL_ANGLE_instanced_arrays
     glDrawArraysInstancedANGLE
     glDrawElementsInstancedANGLE
@@ -584,8 +588,6 @@ EXPORTS
 
     ; GL_ANGLE_texture_multisample
     glGetMultisamplefvANGLE
-    glGetTexLevelParameterfvANGLE
-    glGetTexLevelParameterivANGLE
     glSampleMaskiANGLE
     glTexStorage2DMultisampleANGLE
 
@@ -615,6 +617,12 @@ EXPORTS
     glBindFragDataLocationIndexedEXT
     glGetFragDataIndexEXT
     glGetProgramResourceLocationIndexEXT
+
+    ; GL_EXT_buffer_storage
+    glBufferStorageEXT
+
+    ; GL_EXT_copy_image
+    glCopyImageSubDataEXT
 
     ; GL_EXT_debug_marker
     glInsertEventMarkerEXT
@@ -772,6 +780,9 @@ EXPORTS
 
     ; GL_OES_compressed_ETC1_RGB8_texture
 
+    ; GL_OES_copy_image
+    glCopyImageSubDataOES
+
     ; GL_OES_depth32
 
     ; GL_OES_draw_buffers_indexed
@@ -837,6 +848,9 @@ EXPORTS
     ; GL_OES_query_matrix
     glQueryMatrixxOES
 
+    ; GL_OES_sample_shading
+    glMinSampleShadingOES
+
     ; GL_OES_texture_3D
     glCompressedTexImage3DOES
     glCompressedTexSubImage3DOES
@@ -873,6 +887,8 @@ EXPORTS
     ; GL_OES_texture_cube_map_array
 
     ; GL_OES_texture_half_float
+
+    ; GL_OES_texture_stencil8
 
     ; GL_OES_texture_storage_multisample_2d_array
     glTexStorage3DMultisampleOES
@@ -937,6 +953,7 @@ EXPORTS
     glBlitFramebufferContextANGLE
     glBlitFramebufferANGLEContextANGLE
     glBufferDataContextANGLE
+    glBufferStorageEXTContextANGLE
     glBufferStorageMemEXTContextANGLE
     glBufferSubDataContextANGLE
     glCheckFramebufferStatusContextANGLE
@@ -977,6 +994,8 @@ EXPORTS
     glCompressedTexSubImage3DRobustANGLEContextANGLE
     glCopyBufferSubDataContextANGLE
     glCopyImageSubDataContextANGLE
+    glCopyImageSubDataEXTContextANGLE
+    glCopyImageSubDataOESContextANGLE
     glCopySubTexture3DANGLEContextANGLE
     glCopySubTextureCHROMIUMContextANGLE
     glCopyTexImage2DContextANGLE
@@ -1346,6 +1365,7 @@ EXPORTS
     glMemoryBarrierByRegionContextANGLE
     glMemoryObjectParameterivEXTContextANGLE
     glMinSampleShadingContextANGLE
+    glMinSampleShadingOESContextANGLE
     glMultMatrixfContextANGLE
     glMultMatrixxContextANGLE
     glMultiDrawArraysANGLEContextANGLE
@@ -1662,6 +1682,9 @@ EXPORTS
     ; EGL_ANDROID_blob_cache
     EGL_SetBlobCacheFuncsANDROID
 
+    ; EGL_ANDROID_create_native_client_buffer
+    EGL_CreateNativeClientBufferANDROID
+
     ; EGL_ANDROID_get_frame_timestamps
     EGL_GetCompositorTimingANDROID
     EGL_GetCompositorTimingSupportedANDROID
@@ -1737,6 +1760,9 @@ EXPORTS
     ; EGL_KHR_image
     EGL_CreateImageKHR
     EGL_DestroyImageKHR
+
+    ; EGL_KHR_reusable_sync
+    EGL_SignalSyncKHR
 
     ; EGL_KHR_stream
     EGL_CreateStreamKHR

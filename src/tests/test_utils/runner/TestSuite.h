@@ -108,6 +108,7 @@ struct ProcessInfo : angle::NonCopyable
     std::string resultsFileName;
     std::string filterFileName;
     std::string commandLine;
+    std::string filterString;
 };
 
 using TestQueue = std::queue<std::vector<TestIdentifier>>;
@@ -123,7 +124,7 @@ class TestSuite
 
   private:
     bool parseSingleArg(const char *argument);
-    bool launchChildTestProcess(const std::vector<TestIdentifier> &testsInBatch);
+    bool launchChildTestProcess(uint32_t batchId, const std::vector<TestIdentifier> &testsInBatch);
     bool finishProcess(ProcessInfo *processInfo);
     int printFailuresAndReturnCount() const;
     void startWatchdog();
@@ -142,13 +143,16 @@ class TestSuite
     TestResults mTestResults;
     bool mBotMode;
     bool mDebugTestGroups;
+    bool mListTests;
+    bool mPrintTestStdout;
     int mBatchSize;
     int mCurrentResultCount;
     int mTotalResultCount;
     int mMaxProcesses;
     int mTestTimeout;
     int mBatchTimeout;
-    std::vector<std::string> mGoogleTestCommandLineArgs;
+    int mBatchId;
+    std::vector<std::string> mChildProcessArgs;
     std::map<TestIdentifier, FileLine> mTestFileLines;
     std::vector<ProcessInfo> mCurrentProcesses;
     std::thread mWatchdogThread;

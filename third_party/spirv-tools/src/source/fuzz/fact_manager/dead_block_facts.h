@@ -18,6 +18,7 @@
 #include <unordered_set>
 
 #include "source/fuzz/protobufs/spirvfuzz_protobufs.h"
+#include "source/opt/ir_context.h"
 
 namespace spvtools {
 namespace fuzz {
@@ -27,14 +28,22 @@ namespace fact_manager {
 // facts about data blocks.
 class DeadBlockFacts {
  public:
-  // See method in FactManager which delegates to this method.
-  void AddFact(const protobufs::FactBlockIsDead& fact);
+  explicit DeadBlockFacts(opt::IRContext* ir_context);
+
+  // Marks |fact.block_id()| as being dead. Returns true if |fact.block_id()|
+  // represents a result id of some OpLabel instruction in |ir_context_|.
+  // Returns false otherwise.
+  bool MaybeAddFact(const protobufs::FactBlockIsDead& fact);
 
   // See method in FactManager which delegates to this method.
   bool BlockIsDead(uint32_t block_id) const;
 
+  // Returns a set of all the block ids that have been declared dead.
+  const std::unordered_set<uint32_t>& GetDeadBlocks() const;
+
  private:
   std::unordered_set<uint32_t> dead_block_ids_;
+  opt::IRContext* ir_context_;
 };
 
 }  // namespace fact_manager

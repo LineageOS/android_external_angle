@@ -62,7 +62,8 @@ namespace
     PROC(DrawIndexed)                    \
     PROC(DrawIndexedInstanced)           \
     PROC(DrawIndexedInstancedBaseVertex) \
-    PROC(SetVisibilityResultMode)
+    PROC(SetVisibilityResultMode)        \
+    PROC(UseResource)
 
 #define ANGLE_MTL_TYPE_DECL(CMD) CMD,
 
@@ -325,6 +326,25 @@ void SetVisibilityResultModeCmd(id<MTLRenderCommandEncoder> encoder,
     [encoder setVisibilityResultMode:mode offset:offset];
 }
 
+void UseResourceCmd(id<MTLRenderCommandEncoder> encoder, IntermediateCommandStream *stream)
+{
+    id<MTLResource> resource = stream->fetch<id<MTLResource>>();
+    MTLResourceUsage usage   = stream->fetch<MTLResourceUsage>();
+    mtl::RenderStages stages = stream->fetch<mtl::RenderStages>();
+    ANGLE_UNUSED_VARIABLE(stages);
+#if defined(__IPHONE_13_0) || defined(__MAC_10_15)
+    if (ANGLE_APPLE_AVAILABLE_XCI(10.15, 13.0, 13.0))
+    {
+        [encoder useResource:resource usage:usage stages:stages];
+    }
+    else
+#endif
+    {
+        [encoder useResource:resource usage:usage];
+    }
+    [resource ANGLE_MTL_RELEASE];
+}
+
 // Command encoder mapping
 #define ANGLE_MTL_CMD_MAP(CMD) CMD##Cmd,
 
@@ -576,6 +596,32 @@ void CommandBuffer::restart()
     ASSERT(metalCmdBuffer);
 }
 
+void CommandBuffer::queueEventSignal(const mtl::SharedEventRef &event, uint64_t value)
+{
+    std::lock_guard<std::mutex> lg(mLock);
+
+    ASSERT(readyImpl());
+
+    if (mActiveCommandEncoder && mActiveCommandEncoder->getType() == CommandEncoder::RENDER)
+    {
+        // We cannot set event when there is an active render pass, defer the setting until the
+        // pass end.
+        mPendingSignalEvents.push_back({event, value});
+    }
+    else
+    {
+        setEventImpl(event, value);
+    }
+}
+
+void CommandBuffer::serverWaitEvent(const mtl::SharedEventRef &event, uint64_t value)
+{
+    std::lock_guard<std::mutex> lg(mLock);
+    ASSERT(readyImpl());
+
+    waitEventImpl(event, value);
+}
+
 /** private use only */
 void CommandBuffer::set(id<MTLCommandBuffer> metalBuffer)
 {
@@ -592,6 +638,9 @@ void CommandBuffer::invalidateActiveCommandEncoder(CommandEncoder *encoder)
     if (mActiveCommandEncoder == encoder)
     {
         mActiveCommandEncoder = nullptr;
+
+        // No active command encoder, we can safely encode event signalling now.
+        setPendingEvents();
     }
 }
 
@@ -622,6 +671,9 @@ void CommandBuffer::commitImpl()
     // End the current encoder
     forceEndingCurrentEncoder();
 
+    // Encoding any pending event's signalling.
+    setPendingEvents();
+
     // Notify command queue
     mCmdQueue.onCommandBufferCommitted(get(), mQueueSerial);
 
@@ -638,6 +690,47 @@ void CommandBuffer::forceEndingCurrentEncoder()
         mActiveCommandEncoder->endEncoding();
         mActiveCommandEncoder = nullptr;
     }
+}
+
+void CommandBuffer::setPendingEvents()
+{
+    for (const std::pair<mtl::SharedEventRef, uint64_t> &eventEntry : mPendingSignalEvents)
+    {
+        setEventImpl(eventEntry.first, eventEntry.second);
+    }
+    mPendingSignalEvents.clear();
+}
+
+void CommandBuffer::setEventImpl(const mtl::SharedEventRef &event, uint64_t value)
+{
+#if ANGLE_MTL_EVENT_AVAILABLE
+    ASSERT(!mActiveCommandEncoder || mActiveCommandEncoder->getType() != CommandEncoder::RENDER);
+    // For non-render command encoder, we can safely end it, so that we can encode a signal
+    // event.
+    forceEndingCurrentEncoder();
+
+    [get() encodeSignalEvent:event value:value];
+#else
+    UNIMPLEMENTED();
+    UNREACHABLE();
+#endif  // #if ANGLE_MTL_EVENT_AVAILABLE
+}
+
+void CommandBuffer::waitEventImpl(const mtl::SharedEventRef &event, uint64_t value)
+{
+#if ANGLE_MTL_EVENT_AVAILABLE
+    ASSERT(!mActiveCommandEncoder || mActiveCommandEncoder->getType() != CommandEncoder::RENDER);
+
+    forceEndingCurrentEncoder();
+
+    // Encoding any pending event's signalling.
+    setPendingEvents();
+
+    [get() encodeWaitForEvent:event value:value];
+#else
+    UNIMPLEMENTED();
+    UNREACHABLE();
+#endif  // #if ANGLE_MTL_EVENT_AVAILABLE
 }
 
 // CommandEncoder implementation
@@ -882,7 +975,7 @@ inline void RenderCommandEncoder::initAttachmentWriteDependencyAndScissorRect(
     {
         cmdBuffer().setWriteDependency(texture);
 
-        uint32_t mipLevel = attachment.level;
+        const MipmapNativeLevel &mipLevel = attachment.level;
 
         mRenderPassMaxScissorRect.width =
             std::min<NSUInteger>(mRenderPassMaxScissorRect.width, texture->width(mipLevel));
@@ -905,6 +998,11 @@ void RenderCommandEncoder::encodeMetalEncoder()
 
         // Verify that it was created successfully
         ASSERT(metalCmdEncoder);
+
+        if (mLabel)
+        {
+            metalCmdEncoder.label = mLabel;
+        }
 
         while (mCommands.good())
         {
@@ -936,6 +1034,8 @@ RenderCommandEncoder &RenderCommandEncoder::restart(const RenderPassDesc &desc)
         reset();
         return *this;
     }
+
+    mLabel.reset();
 
     mRenderPassDesc           = desc;
     mRecording                = true;
@@ -1422,6 +1522,25 @@ RenderCommandEncoder &RenderCommandEncoder::setVisibilityResultMode(MTLVisibilit
     return *this;
 }
 
+RenderCommandEncoder &RenderCommandEncoder::useResource(const BufferRef &resource,
+                                                        MTLResourceUsage usage,
+                                                        mtl::RenderStages states)
+{
+    if (!resource)
+    {
+        return *this;
+    }
+
+    cmdBuffer().setReadDependency(resource);
+
+    mCommands.push(CmdType::UseResource)
+        .push([resource->get() ANGLE_MTL_RETAIN])
+        .push(usage)
+        .push(states);
+
+    return *this;
+}
+
 RenderCommandEncoder &RenderCommandEncoder::setColorStoreAction(MTLStoreAction action,
                                                                 uint32_t colorAttachmentIndex)
 {
@@ -1517,6 +1636,11 @@ RenderCommandEncoder &RenderCommandEncoder::setStencilLoadAction(MTLLoadAction a
     return *this;
 }
 
+void RenderCommandEncoder::setLabel(NSString *label)
+{
+    mLabel.retainAssign(label);
+}
+
 // BlitCommandEncoder
 BlitCommandEncoder::BlitCommandEncoder(CommandBuffer *cmdBuffer) : CommandEncoder(cmdBuffer, BLIT)
 {}
@@ -1579,7 +1703,7 @@ BlitCommandEncoder &BlitCommandEncoder::copyBufferToTexture(const BufferRef &src
                                                             MTLSize srcSize,
                                                             const TextureRef &dst,
                                                             uint32_t dstSlice,
-                                                            uint32_t dstLevel,
+                                                            MipmapNativeLevel dstLevel,
                                                             MTLOrigin dstOrigin,
                                                             MTLBlitOption blitOption)
 {
@@ -1598,19 +1722,53 @@ BlitCommandEncoder &BlitCommandEncoder::copyBufferToTexture(const BufferRef &src
                  sourceSize:srcSize
                   toTexture:dst->get()
            destinationSlice:dstSlice
-           destinationLevel:dstLevel
+           destinationLevel:dstLevel.get()
           destinationOrigin:dstOrigin
                     options:blitOption];
 
     return *this;
 }
 
+BlitCommandEncoder &BlitCommandEncoder::copyTextureToBuffer(const TextureRef &src,
+                                                            uint32_t srcSlice,
+                                                            MipmapNativeLevel srcLevel,
+                                                            MTLOrigin srcOrigin,
+                                                            MTLSize srcSize,
+                                                            const BufferRef &dst,
+                                                            size_t dstOffset,
+                                                            size_t dstBytesPerRow,
+                                                            size_t dstBytesPerImage,
+                                                            MTLBlitOption blitOption)
+{
+
+    if (!src || !dst)
+    {
+        return *this;
+    }
+
+    cmdBuffer().setReadDependency(src);
+    cmdBuffer().setWriteDependency(dst);
+
+    [get() copyFromTexture:src->get()
+                     sourceSlice:srcSlice
+                     sourceLevel:srcLevel.get()
+                    sourceOrigin:srcOrigin
+                      sourceSize:srcSize
+                        toBuffer:dst->get()
+               destinationOffset:dstOffset
+          destinationBytesPerRow:dstBytesPerRow
+        destinationBytesPerImage:dstBytesPerImage
+                         options:blitOption];
+
+    return *this;
+}
+
 BlitCommandEncoder &BlitCommandEncoder::copyTexture(const TextureRef &src,
                                                     uint32_t srcStartSlice,
-                                                    uint32_t srcStartLevel,
+                                                    MipmapNativeLevel srcStartLevel,
                                                     const TextureRef &dst,
                                                     uint32_t dstStartSlice,
-                                                    uint32_t dstStartLevel,
+                                                    MipmapNativeLevel dstStartLevel,
                                                     uint32_t sliceCount,
                                                     uint32_t levelCount)
 {
@@ -1629,19 +1787,19 @@ BlitCommandEncoder &BlitCommandEncoder::copyTexture(const TextureRef &src,
         uint32_t dstSlice = dstStartSlice + slice;
         for (uint32_t level = 0; level < levelCount; ++level)
         {
-            uint32_t srcLevel = srcStartLevel + level;
-            uint32_t dstLevel = dstStartLevel + level;
+            MipmapNativeLevel srcLevel = srcStartLevel + level;
+            MipmapNativeLevel dstLevel = dstStartLevel + level;
             MTLSize srcSize =
                 MTLSizeMake(src->width(srcLevel), src->height(srcLevel), src->depth(srcLevel));
 
             [get() copyFromTexture:src->get()
                        sourceSlice:srcSlice
-                       sourceLevel:srcLevel
+                       sourceLevel:srcLevel.get()
                       sourceOrigin:origin
                         sourceSize:srcSize
                          toTexture:dst->get()
                   destinationSlice:dstSlice
-                  destinationLevel:dstLevel
+                  destinationLevel:dstLevel.get()
                  destinationOrigin:origin];
         }
     }
