@@ -85,8 +85,6 @@ class ShaderState final : angle::NonCopyable
         return mActiveOutputVariables;
     }
 
-    bool isEarlyFragmentTeststOptimization() const { return mEarlyFragmentTestsOptimization; }
-
     bool compilePending() const { return mCompileStatus == CompileStatus::COMPILE_REQUESTED; }
 
     const sh::WorkGroupSize &getLocalSize() const { return mLocalSize; }
@@ -228,6 +226,7 @@ class Shader final : angle::NonCopyable, public LabeledObject
     }
 
     unsigned int getMaxComputeSharedMemory() const { return mMaxComputeSharedMemory; }
+    bool hasBeenDeleted() const { return mDeleteStatus; }
 
   private:
     struct CompilingState;

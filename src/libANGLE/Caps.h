@@ -644,6 +644,21 @@ struct Extensions
 
     // GL_EXT_shadow_samplers
     bool shadowSamplersEXT = false;
+
+    // GL_EXT_buffer_storage
+    bool bufferStorageEXT = false;
+
+    // GL_OES_texture_stencil8
+    bool stencilIndex8 = false;
+
+    // GL_OES_sample_shading
+    bool sampleShadingOES = false;
+
+    // GL_NV_robustness_video_memory_purge
+    bool robustnessVideoMemoryPurgeNV = false;
+
+    // GL_ANGLE_get_tex_level_parameter
+    bool getTexLevelParameterANGLE = false;
 };
 
 // Pointer to a boolean memeber of the Extensions struct
@@ -889,6 +904,9 @@ struct Caps
 
     // Support for NPOT surfaces
     bool textureNPOT;
+
+    // Support for Stencil8 configs
+    bool stencil8;
 };
 
 struct DisplayExtensions
@@ -1051,6 +1069,9 @@ struct DisplayExtensions
     // EGL_ANDROID_get_native_client_buffer
     bool getNativeClientBufferANDROID = false;
 
+    // EGL_ANDROID_create_native_client_buffer
+    bool createNativeClientBufferANDROID = false;
+
     // EGL_ANDROID_native_fence_sync
     bool nativeFenceSyncANDROID = false;
 
@@ -1101,6 +1122,12 @@ struct DisplayExtensions
 
     // EGL_NOK_texture_from_pixmap
     bool textureFromPixmapNOK = false;
+
+    // EGL_NV_robustness_video_memory_purge
+    bool robustnessVideoMemoryPurgeNV = false;
+
+    // EGL_KHR_reusable_sync
+    bool reusableSyncKHR = false;
 };
 
 struct DeviceExtensions

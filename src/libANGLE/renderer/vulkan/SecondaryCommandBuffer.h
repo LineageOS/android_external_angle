@@ -78,6 +78,7 @@ enum class CommandID : uint16_t
     ResetQueryPool,
     ResolveImage,
     SetEvent,
+    SetScissor,
     WaitEvents,
     WriteTimestamp,
 };
@@ -416,6 +417,12 @@ struct SetEventParams
 };
 VERIFY_4_BYTE_ALIGNMENT(SetEventParams)
 
+struct SetScissorParams
+{
+    VkRect2D scissor;
+};
+VERIFY_4_BYTE_ALIGNMENT(SetScissorParams)
+
 struct WaitEventsParams
 {
     uint32_t eventCount;
@@ -641,6 +648,8 @@ class SecondaryCommandBuffer final : angle::NonCopyable
 
     void setEvent(VkEvent event, VkPipelineStageFlags stageMask);
 
+    void setScissor(uint32_t firstScissor, uint32_t scissorCount, const VkRect2D *scissors);
+
     void waitEvents(uint32_t eventCount,
                     const VkEvent *events,
                     VkPipelineStageFlags srcStageMask,
@@ -688,6 +697,9 @@ class SecondaryCommandBuffer final : angle::NonCopyable
         reinterpret_cast<CommandHeader *>(mCurrentWritePointer)->id = CommandID::Invalid;
     }
 
+    void open() { mIsOpen = true; }
+    void close() { mIsOpen = false; }
+
     void reset()
     {
         mCommands.clear();
@@ -703,7 +715,7 @@ class SecondaryCommandBuffer final : angle::NonCopyable
     static bool CanKnowIfEmpty() { return true; }
     bool empty() const { return mCommands.size() == 0 || mCommands[0]->id == CommandID::Invalid; }
     // The following is used to give the size of the command buffer in bytes
-    uint32_t getCommandBufferSize() const
+    uint32_t getCommandSize() const
     {
         ASSERT(mCommands.size() > 0 || mCurrentBytesRemaining == 0);
         uint32_t rtn =
@@ -716,6 +728,7 @@ class SecondaryCommandBuffer final : angle::NonCopyable
     template <class StructType>
     ANGLE_INLINE StructType *commonInit(CommandID cmdID, size_t allocationSize)
     {
+        ASSERT(mIsOpen);
         mCurrentBytesRemaining -= allocationSize;
 
         CommandHeader *header = reinterpret_cast<CommandHeader *>(mCurrentWritePointer);
@@ -797,6 +810,9 @@ class SecondaryCommandBuffer final : angle::NonCopyable
         memcpy(writePointer, paramData, sizeInBytes);
         return writePointer + sizeInBytes;
     }
+
+    // flag to indicate that commandBuffer is open for new commands
+    bool mIsOpen;
 
     std::vector<CommandHeader *> mCommands;
 
@@ -1380,6 +1396,17 @@ ANGLE_INLINE void SecondaryCommandBuffer::setEvent(VkEvent event, VkPipelineStag
     SetEventParams *paramStruct = initCommand<SetEventParams>(CommandID::SetEvent);
     paramStruct->event          = event;
     paramStruct->stageMask      = stageMask;
+}
+
+ANGLE_INLINE void SecondaryCommandBuffer::setScissor(uint32_t firstScissor,
+                                                     uint32_t scissorCount,
+                                                     const VkRect2D *scissors)
+{
+    ASSERT(firstScissor == 0);
+    ASSERT(scissorCount == 1);
+    ASSERT(scissors != nullptr);
+    SetScissorParams *paramStruct = initCommand<SetScissorParams>(CommandID::SetScissor);
+    paramStruct->scissor          = scissors[0];
 }
 
 ANGLE_INLINE void SecondaryCommandBuffer::waitEvents(

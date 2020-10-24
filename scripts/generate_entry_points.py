@@ -90,8 +90,8 @@ template_entry_points_enum_header = """// GENERATED FILE - DO NOT EDIT.
 // entry_points_enum_autogen.h:
 //   Defines the {lib} entry points enumeration.
 
-#ifndef LIBANGLE_ENTRYPOINTSENUM_AUTOGEN_H_
-#define LIBANGLE_ENTRYPOINTSENUM_AUTOGEN_H_
+#ifndef COMMON_ENTRYPOINTSENUM_AUTOGEN_H_
+#define COMMON_ENTRYPOINTSENUM_AUTOGEN_H_
 
 namespace gl
 {{
@@ -102,7 +102,7 @@ enum class EntryPoint
 
 const char *GetEntryPointName(EntryPoint ep);
 }}  // namespace gl
-#endif  // LIBANGLE_ENTRY_POINTS_ENUM_AUTOGEN_H_
+#endif  // COMMON_ENTRY_POINTS_ENUM_AUTOGEN_H_
 """
 
 template_entry_points_name_case = """        case EntryPoint::{enum}:
@@ -118,7 +118,7 @@ template_entry_points_enum_source = """// GENERATED FILE - DO NOT EDIT.
 // entry_points_enum_autogen.cpp:
 //   Helper methods for the {lib} entry points enumeration.
 
-#include "libANGLE/entry_points_enum_autogen.h"
+#include "common/entry_points_enum_autogen.h"
 
 #include "common/debug.h"
 
@@ -157,9 +157,9 @@ template_entry_point_decl = """ANGLE_EXPORT {return_type}GL_APIENTRY {name}{expl
 template_entry_point_no_return = """void GL_APIENTRY {name}{explicit_context_suffix}({explicit_context_param}{explicit_context_comma}{params})
 {{
     Context *context = {context_getter};
-    {event_comment}EVENT("gl{name}", "context = %d{comma_if_needed}{format_params}", CID(context){comma_if_needed}{pass_params});
+    {event_comment}EVENT(context, gl::EntryPoint::{name}, "gl{name}", "context = %d{comma_if_needed}{format_params}", CID(context){comma_if_needed}{pass_params});
 
-    if (context)
+    if ({valid_context_check})
     {{{assert_explicit_context}{packed_gl_enum_conversions}
         std::unique_lock<angle::GlobalMutex> shareContextLock = GetShareGroupLock(context);
         bool isCallValid = (context->skipValidation() || Validate{name}({validate_params}));
@@ -169,16 +169,20 @@ template_entry_point_no_return = """void GL_APIENTRY {name}{explicit_context_suf
         }}
         ANGLE_CAPTURE({name}, isCallValid, {validate_params});
     }}
+    else
+    {{
+        {constext_lost_error_generator}
+    }}
 }}
 """
 
 template_entry_point_with_return = """{return_type}GL_APIENTRY {name}{explicit_context_suffix}({explicit_context_param}{explicit_context_comma}{params})
 {{
     Context *context = {context_getter};
-    {event_comment}EVENT("gl{name}", "context = %d{comma_if_needed}{format_params}", CID(context){comma_if_needed}{pass_params});
+    {event_comment}EVENT(context, gl::EntryPoint::{name}, "gl{name}", "context = %d{comma_if_needed}{format_params}", CID(context){comma_if_needed}{pass_params});
 
     {return_type} returnValue;
-    if (context)
+    if ({valid_context_check})
     {{{assert_explicit_context}{packed_gl_enum_conversions}
         std::unique_lock<angle::GlobalMutex> shareContextLock = GetShareGroupLock(context);
         bool isCallValid = (context->skipValidation() || Validate{name}({validate_params}));
@@ -194,6 +198,7 @@ template_entry_point_with_return = """{return_type}GL_APIENTRY {name}{explicit_c
     }}
     else
     {{
+        {constext_lost_error_generator}
         returnValue = GetDefaultReturnValue<EntryPoint::{name}, {return_type}>();
     }}
     return returnValue;
@@ -463,6 +468,7 @@ template_header_includes = """#include <GLES{major}/gl{major}{minor}.h>
 
 template_sources_includes = """#include "libGLESv2/entry_points_{header_version}_autogen.h"
 
+#include "common/entry_points_enum_autogen.h"
 #include "libANGLE/Context.h"
 #include "libANGLE/Context.inl.h"
 #include "libANGLE/capture_{header_version}_autogen.h"
@@ -791,10 +797,7 @@ def default_return_value(cmd_name, return_type):
     return "GetDefaultReturnValue<EntryPoint::" + cmd_name[2:] + ", " + return_type + ">()"
 
 
-def get_context_getter_function(cmd_name, is_explicit_context):
-    if is_explicit_context:
-        return "static_cast<gl::Context *>(ctx)"
-
+def is_context_lost_acceptable_cmd(cmd_name):
     lost_context_acceptable_cmds = [
         "glGetError",
         "glGetSync",
@@ -803,10 +806,42 @@ def get_context_getter_function(cmd_name, is_explicit_context):
         "glGetGraphicsResetStatus",
         "glGetShaderiv",
     ]
+
     for context_lost_entry_pont in lost_context_acceptable_cmds:
         if cmd_name.startswith(context_lost_entry_pont):
-            return "GetGlobalContext()"
+            return True
+    return False
+
+
+def get_context_getter_function(cmd_name, is_explicit_context):
+    if is_explicit_context:
+        return "static_cast<gl::Context *>(ctx)"
+
+    if is_context_lost_acceptable_cmd(cmd_name):
+        return "GetGlobalContext()"
+
     return "GetValidGlobalContext()"
+
+
+def get_valid_context_check(cmd_name, is_explicit_context):
+    if is_explicit_context:
+        if is_context_lost_acceptable_cmd(cmd_name):
+            return "context"
+        else:
+            return "context && !context->isContextLost()"
+
+    return "context"
+
+
+def get_constext_lost_error_generator(cmd_name, is_explicit_context):
+    # Don't generate context lost errors on commands that accept lost contexts
+    if is_context_lost_acceptable_cmd(cmd_name):
+        return ""
+
+    if is_explicit_context:
+        return "GenerateContextLostErrorOnContext(context);"
+    else:
+        return "GenerateContextLostErrorOnCurrentGlobalContext();"
 
 
 def strip_suffix(name, is_gles):
@@ -883,6 +918,10 @@ def format_entry_point_def(command_node, cmd_name, proto, params, is_explicit_co
             ", ".join(format_params),
         "context_getter":
             get_context_getter_function(cmd_name, is_explicit_context),
+        "valid_context_check":
+            get_valid_context_check(cmd_name, is_explicit_context),
+        "constext_lost_error_generator":
+            get_constext_lost_error_generator(cmd_name, is_explicit_context),
         "event_comment":
             event_comment,
         "explicit_context_suffix":
@@ -1651,6 +1690,8 @@ def main():
     if len(sys.argv) > 1:
         inputs = ['entry_point_packed_gl_enums.json'] + registry_xml.xml_inputs
         outputs = [
+            '../src/common/entry_points_enum_autogen.cpp',
+            '../src/common/entry_points_enum_autogen.h',
             '../src/libANGLE/Context_gl_1_0_autogen.h',
             '../src/libANGLE/Context_gl_1_1_autogen.h',
             '../src/libANGLE/Context_gl_1_2_autogen.h',
@@ -1691,8 +1732,6 @@ def main():
             '../src/libANGLE/frame_capture_replay_autogen.cpp',
             '../src/libANGLE/frame_capture_utils_autogen.cpp',
             '../src/libANGLE/frame_capture_utils_autogen.h',
-            '../src/libANGLE/entry_points_enum_autogen.cpp',
-            '../src/libANGLE/entry_points_enum_autogen.h',
             '../src/libANGLE/validationES1_autogen.h',
             '../src/libANGLE/validationES2_autogen.h',
             '../src/libANGLE/validationES31_autogen.h',
@@ -2139,7 +2178,7 @@ def main():
         lib="GL/GLES",
         entry_points_list=",\n".join(["    " + cmd for cmd in sorted_cmd_names]))
 
-    entry_points_enum_header_path = path_to("libANGLE", "entry_points_enum_autogen.h")
+    entry_points_enum_header_path = path_to("common", "entry_points_enum_autogen.h")
     with open(entry_points_enum_header_path, "w") as out:
         out.write(entry_points_enum_header)
         out.close()
@@ -2154,7 +2193,7 @@ def main():
         lib="GL/GLES",
         entry_points_name_cases="\n".join(entry_points_cases))
 
-    entry_points_enum_source_path = path_to("libANGLE", "entry_points_enum_autogen.cpp")
+    entry_points_enum_source_path = path_to("common", "entry_points_enum_autogen.cpp")
     with open(entry_points_enum_source_path, "w") as out:
         out.write(entry_points_enum_source)
         out.close()

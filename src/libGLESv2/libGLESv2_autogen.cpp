@@ -2843,6 +2843,23 @@ void GL_APIENTRY glGetRenderbufferImageANGLE(GLenum target,
     return gl::GetRenderbufferImageANGLE(target, format, type, pixels);
 }
 
+// GL_ANGLE_get_tex_level_parameter
+void GL_APIENTRY glGetTexLevelParameterivANGLE(GLenum target,
+                                               GLint level,
+                                               GLenum pname,
+                                               GLint *params)
+{
+    return gl::GetTexLevelParameterivANGLE(target, level, pname, params);
+}
+
+void GL_APIENTRY glGetTexLevelParameterfvANGLE(GLenum target,
+                                               GLint level,
+                                               GLenum pname,
+                                               GLfloat *params)
+{
+    return gl::GetTexLevelParameterfvANGLE(target, level, pname, params);
+}
+
 // GL_ANGLE_instanced_arrays
 void GL_APIENTRY glDrawArraysInstancedANGLE(GLenum mode,
                                             GLint first,
@@ -3674,22 +3691,6 @@ void GL_APIENTRY glTexStorage2DMultisampleANGLE(GLenum target,
                                             fixedsamplelocations);
 }
 
-void GL_APIENTRY glGetTexLevelParameterivANGLE(GLenum target,
-                                               GLint level,
-                                               GLenum pname,
-                                               GLint *params)
-{
-    return gl::GetTexLevelParameterivANGLE(target, level, pname, params);
-}
-
-void GL_APIENTRY glGetTexLevelParameterfvANGLE(GLenum target,
-                                               GLint level,
-                                               GLenum pname,
-                                               GLfloat *params)
-{
-    return gl::GetTexLevelParameterfvANGLE(target, level, pname, params);
-}
-
 void GL_APIENTRY glGetMultisamplefvANGLE(GLenum pname, GLuint index, GLfloat *val)
 {
     return gl::GetMultisamplefvANGLE(pname, index, val);
@@ -3796,6 +3797,37 @@ GLint GL_APIENTRY glGetProgramResourceLocationIndexEXT(GLuint program,
                                                        const GLchar *name)
 {
     return gl::GetProgramResourceLocationIndexEXT(program, programInterface, name);
+}
+
+// GL_EXT_buffer_storage
+void GL_APIENTRY glBufferStorageEXT(GLenum target,
+                                    GLsizeiptr size,
+                                    const void *data,
+                                    GLbitfield flags)
+{
+    return gl::BufferStorageEXT(target, size, data, flags);
+}
+
+// GL_EXT_copy_image
+void GL_APIENTRY glCopyImageSubDataEXT(GLuint srcName,
+                                       GLenum srcTarget,
+                                       GLint srcLevel,
+                                       GLint srcX,
+                                       GLint srcY,
+                                       GLint srcZ,
+                                       GLuint dstName,
+                                       GLenum dstTarget,
+                                       GLint dstLevel,
+                                       GLint dstX,
+                                       GLint dstY,
+                                       GLint dstZ,
+                                       GLsizei srcWidth,
+                                       GLsizei srcHeight,
+                                       GLsizei srcDepth)
+{
+    return gl::CopyImageSubDataEXT(srcName, srcTarget, srcLevel, srcX, srcY, srcZ, dstName,
+                                   dstTarget, dstLevel, dstX, dstY, dstZ, srcWidth, srcHeight,
+                                   srcDepth);
 }
 
 // GL_EXT_debug_marker
@@ -4436,6 +4468,28 @@ void GL_APIENTRY glEGLImageTargetTexture2DOES(GLenum target, GLeglImageOES image
 
 // GL_OES_compressed_ETC1_RGB8_texture
 
+// GL_OES_copy_image
+void GL_APIENTRY glCopyImageSubDataOES(GLuint srcName,
+                                       GLenum srcTarget,
+                                       GLint srcLevel,
+                                       GLint srcX,
+                                       GLint srcY,
+                                       GLint srcZ,
+                                       GLuint dstName,
+                                       GLenum dstTarget,
+                                       GLint dstLevel,
+                                       GLint dstX,
+                                       GLint dstY,
+                                       GLint dstZ,
+                                       GLsizei srcWidth,
+                                       GLsizei srcHeight,
+                                       GLsizei srcDepth)
+{
+    return gl::CopyImageSubDataOES(srcName, srcTarget, srcLevel, srcX, srcY, srcZ, dstName,
+                                   dstTarget, dstLevel, dstX, dstY, dstZ, srcWidth, srcHeight,
+                                   srcDepth);
+}
+
 // GL_OES_depth32
 
 // GL_OES_draw_buffers_indexed
@@ -4712,6 +4766,12 @@ GLbitfield GL_APIENTRY glQueryMatrixxOES(GLfixed *mantissa, GLint *exponent)
     return gl::QueryMatrixxOES(mantissa, exponent);
 }
 
+// GL_OES_sample_shading
+void GL_APIENTRY glMinSampleShadingOES(GLfloat value)
+{
+    return gl::MinSampleShadingOES(value);
+}
+
 // GL_OES_texture_3D
 void GL_APIENTRY glCompressedTexImage3DOES(GLenum target,
                                            GLint level,
@@ -4902,6 +4962,8 @@ void GL_APIENTRY glTexGenxvOES(GLenum coord, GLenum pname, const GLfixed *params
 // GL_OES_texture_cube_map_array
 
 // GL_OES_texture_half_float
+
+// GL_OES_texture_stencil8
 
 // GL_OES_texture_storage_multisample_2d_array
 void GL_APIENTRY glTexStorage3DMultisampleOES(GLenum target,
@@ -5283,6 +5345,15 @@ void GL_APIENTRY glBufferDataContextANGLE(GLeglContext ctx,
     return gl::BufferDataContextANGLE(ctx, target, size, data, usage);
 }
 
+void GL_APIENTRY glBufferStorageEXTContextANGLE(GLeglContext ctx,
+                                                GLenum target,
+                                                GLsizeiptr size,
+                                                const void *data,
+                                                GLbitfield flags)
+{
+    return gl::BufferStorageEXTContextANGLE(ctx, target, size, data, flags);
+}
+
 void GL_APIENTRY glBufferStorageMemEXTContextANGLE(GLeglContext ctx,
                                                    GLenum target,
                                                    GLsizeiptr size,
@@ -5595,6 +5666,50 @@ void GL_APIENTRY glCopyImageSubDataContextANGLE(GLeglContext ctx,
     return gl::CopyImageSubDataContextANGLE(ctx, srcName, srcTarget, srcLevel, srcX, srcY, srcZ,
                                             dstName, dstTarget, dstLevel, dstX, dstY, dstZ,
                                             srcWidth, srcHeight, srcDepth);
+}
+
+void GL_APIENTRY glCopyImageSubDataEXTContextANGLE(GLeglContext ctx,
+                                                   GLuint srcName,
+                                                   GLenum srcTarget,
+                                                   GLint srcLevel,
+                                                   GLint srcX,
+                                                   GLint srcY,
+                                                   GLint srcZ,
+                                                   GLuint dstName,
+                                                   GLenum dstTarget,
+                                                   GLint dstLevel,
+                                                   GLint dstX,
+                                                   GLint dstY,
+                                                   GLint dstZ,
+                                                   GLsizei srcWidth,
+                                                   GLsizei srcHeight,
+                                                   GLsizei srcDepth)
+{
+    return gl::CopyImageSubDataEXTContextANGLE(ctx, srcName, srcTarget, srcLevel, srcX, srcY, srcZ,
+                                               dstName, dstTarget, dstLevel, dstX, dstY, dstZ,
+                                               srcWidth, srcHeight, srcDepth);
+}
+
+void GL_APIENTRY glCopyImageSubDataOESContextANGLE(GLeglContext ctx,
+                                                   GLuint srcName,
+                                                   GLenum srcTarget,
+                                                   GLint srcLevel,
+                                                   GLint srcX,
+                                                   GLint srcY,
+                                                   GLint srcZ,
+                                                   GLuint dstName,
+                                                   GLenum dstTarget,
+                                                   GLint dstLevel,
+                                                   GLint dstX,
+                                                   GLint dstY,
+                                                   GLint dstZ,
+                                                   GLsizei srcWidth,
+                                                   GLsizei srcHeight,
+                                                   GLsizei srcDepth)
+{
+    return gl::CopyImageSubDataOESContextANGLE(ctx, srcName, srcTarget, srcLevel, srcX, srcY, srcZ,
+                                               dstName, dstTarget, dstLevel, dstX, dstY, dstZ,
+                                               srcWidth, srcHeight, srcDepth);
 }
 
 void GL_APIENTRY glCopyTexImage2DContextANGLE(GLeglContext ctx,
@@ -7842,6 +7957,11 @@ void GL_APIENTRY glMemoryObjectParameterivEXTContextANGLE(GLeglContext ctx,
 void GL_APIENTRY glMinSampleShadingContextANGLE(GLeglContext ctx, GLfloat value)
 {
     return gl::MinSampleShadingContextANGLE(ctx, value);
+}
+
+void GL_APIENTRY glMinSampleShadingOESContextANGLE(GLeglContext ctx, GLfloat value)
+{
+    return gl::MinSampleShadingOESContextANGLE(ctx, value);
 }
 
 void GL_APIENTRY glMultMatrixfContextANGLE(GLeglContext ctx, const GLfloat *m)

@@ -181,9 +181,14 @@ VulkanExternalHelper::~VulkanExternalHelper()
 
 void VulkanExternalHelper::initialize(bool useSwiftshader, bool enableValidationLayers)
 {
+    bool enableValidationLayersOverride = enableValidationLayers;
+#if !defined(ANGLE_ENABLE_VULKAN_VALIDATION_LAYERS)
+    enableValidationLayersOverride = false;
+#endif
+
     vk::ICD icd = useSwiftshader ? vk::ICD::SwiftShader : vk::ICD::Default;
 
-    vk::ScopedVkLoaderEnvironment scopedEnvironment(enableValidationLayers, icd);
+    vk::ScopedVkLoaderEnvironment scopedEnvironment(enableValidationLayersOverride, icd);
 
     ASSERT(mInstance == VK_NULL_HANDLE);
     VkResult result = VK_SUCCESS;
@@ -223,7 +228,7 @@ void VulkanExternalHelper::initialize(bool useSwiftshader, bool enableValidation
         static_cast<uint32_t>(enabledInstanceExtensions.size());
 
     std::vector<const char *> enabledLayerNames;
-    if (enableValidationLayers)
+    if (enableValidationLayersOverride)
     {
         enabledLayerNames.push_back("VK_LAYER_KHRONOS_validation");
     }
@@ -233,7 +238,7 @@ void VulkanExternalHelper::initialize(bool useSwiftshader, bool enableValidation
         /* .pNext = */ nullptr,
         /* .flags = */ 0,
         /* .pApplicationInfo = */ &applicationInfo,
-        /* .enabledLayerCount = */ enabledLayerNames.size(),
+        /* .enabledLayerCount = */ static_cast<uint32_t>(enabledLayerNames.size()),
         /* .ppEnabledLayerNames = */ enabledLayerNames.data(),
         /* .enabledExtensionCount = */ enabledInstanceExtensionCount,
         /* .ppEnabledExtensionName = */ enabledInstanceExtensions.data(),

@@ -79,6 +79,7 @@ class FramebufferState final : angle::NonCopyable
     {
         return mColorAttachments;
     }
+    const DrawBufferMask getColorAttachmentsMask() const { return mColorAttachmentsMask; }
 
     bool attachmentsHaveSameDimensions() const;
     bool hasSeparateDepthAndStencilAttachments() const;
@@ -136,6 +137,9 @@ class FramebufferState final : angle::NonCopyable
     std::vector<FramebufferAttachment> mColorAttachments;
     FramebufferAttachment mDepthAttachment;
     FramebufferAttachment mStencilAttachment;
+
+    // Tracks all the color buffers attached to this FramebufferDesc
+    gl::DrawBufferMask mColorAttachmentsMask;
 
     std::vector<GLenum> mDrawBufferStates;
     GLenum mReadBufferState;
@@ -351,12 +355,12 @@ class Framebuffer final : public angle::ObserverInterface,
     {
         DIRTY_BIT_COLOR_ATTACHMENT_0,
         DIRTY_BIT_COLOR_ATTACHMENT_MAX =
-            DIRTY_BIT_COLOR_ATTACHMENT_0 + IMPLEMENTATION_MAX_FRAMEBUFFER_ATTACHMENTS,
+            DIRTY_BIT_COLOR_ATTACHMENT_0 + IMPLEMENTATION_MAX_DRAW_BUFFERS,
         DIRTY_BIT_DEPTH_ATTACHMENT = DIRTY_BIT_COLOR_ATTACHMENT_MAX,
         DIRTY_BIT_STENCIL_ATTACHMENT,
         DIRTY_BIT_COLOR_BUFFER_CONTENTS_0,
         DIRTY_BIT_COLOR_BUFFER_CONTENTS_MAX =
-            DIRTY_BIT_COLOR_BUFFER_CONTENTS_0 + IMPLEMENTATION_MAX_FRAMEBUFFER_ATTACHMENTS,
+            DIRTY_BIT_COLOR_BUFFER_CONTENTS_0 + IMPLEMENTATION_MAX_DRAW_BUFFERS,
         DIRTY_BIT_DEPTH_BUFFER_CONTENTS = DIRTY_BIT_COLOR_BUFFER_CONTENTS_MAX,
         DIRTY_BIT_STENCIL_BUFFER_CONTENTS,
         DIRTY_BIT_DRAW_BUFFERS,

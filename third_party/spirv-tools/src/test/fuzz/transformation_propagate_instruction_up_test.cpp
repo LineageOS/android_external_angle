@@ -14,6 +14,8 @@
 
 #include "source/fuzz/transformation_propagate_instruction_up.h"
 
+#include "gtest/gtest.h"
+#include "source/fuzz/fuzzer_util.h"
 #include "test/fuzz/fuzz_test_util.h"
 
 namespace spvtools {
@@ -71,13 +73,11 @@ TEST(TransformationPropagateInstructionUpTest, BasicTest) {
   const auto env = SPV_ENV_UNIVERSAL_1_3;
   const auto consumer = nullptr;
   const auto context = BuildModule(env, consumer, shader, kFuzzAssembleOption);
-  ASSERT_TRUE(IsValid(env, context.get()));
-
-  FactManager fact_manager;
   spvtools::ValidatorOptions validator_options;
-  TransformationContext transformation_context(&fact_manager,
-                                               validator_options);
-
+  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
+                                               kConsoleMessageConsumer));
+  TransformationContext transformation_context(
+      MakeUnique<FactManager>(context.get()), validator_options);
   // |block_id| is invalid.
   ASSERT_FALSE(TransformationPropagateInstructionUp(40, {{}}).IsApplicable(
       context.get(), transformation_context));
@@ -114,15 +114,19 @@ TEST(TransformationPropagateInstructionUpTest, BasicTest) {
     TransformationPropagateInstructionUp transformation(14, {{{5, 40}}});
     ASSERT_TRUE(
         transformation.IsApplicable(context.get(), transformation_context));
-    transformation.Apply(context.get(), &transformation_context);
-    ASSERT_TRUE(IsValid(env, context.get()));
+    ApplyAndCheckFreshIds(transformation, context.get(),
+                          &transformation_context);
+    ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(
+        context.get(), validator_options, kConsoleMessageConsumer));
   }
   {
     TransformationPropagateInstructionUp transformation(19, {{{5, 41}}});
     ASSERT_TRUE(
         transformation.IsApplicable(context.get(), transformation_context));
-    transformation.Apply(context.get(), &transformation_context);
-    ASSERT_TRUE(IsValid(env, context.get()));
+    ApplyAndCheckFreshIds(transformation, context.get(),
+                          &transformation_context);
+    ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(
+        context.get(), validator_options, kConsoleMessageConsumer));
   }
 
   std::string after_transformation = R"(
@@ -181,8 +185,10 @@ TEST(TransformationPropagateInstructionUpTest, BasicTest) {
                                                         {{{14, 43}, {19, 44}}});
     ASSERT_TRUE(
         transformation.IsApplicable(context.get(), transformation_context));
-    transformation.Apply(context.get(), &transformation_context);
-    ASSERT_TRUE(IsValid(env, context.get()));
+    ApplyAndCheckFreshIds(transformation, context.get(),
+                          &transformation_context);
+    ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(
+        context.get(), validator_options, kConsoleMessageConsumer));
   }
 
   after_transformation = R"(
@@ -243,8 +249,10 @@ TEST(TransformationPropagateInstructionUpTest, BasicTest) {
                                                         {{{14, 45}, {19, 46}}});
     ASSERT_TRUE(
         transformation.IsApplicable(context.get(), transformation_context));
-    transformation.Apply(context.get(), &transformation_context);
-    ASSERT_TRUE(IsValid(env, context.get()));
+    ApplyAndCheckFreshIds(transformation, context.get(),
+                          &transformation_context);
+    ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(
+        context.get(), validator_options, kConsoleMessageConsumer));
   }
 
   after_transformation = R"(
@@ -355,19 +363,18 @@ TEST(TransformationPropagateInstructionUpTest, BlockDominatesPredecessor1) {
   const auto env = SPV_ENV_UNIVERSAL_1_3;
   const auto consumer = nullptr;
   const auto context = BuildModule(env, consumer, shader, kFuzzAssembleOption);
-  ASSERT_TRUE(IsValid(env, context.get()));
-
-  FactManager fact_manager;
   spvtools::ValidatorOptions validator_options;
-  TransformationContext transformation_context(&fact_manager,
-                                               validator_options);
-
+  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
+                                               kConsoleMessageConsumer));
+  TransformationContext transformation_context(
+      MakeUnique<FactManager>(context.get()), validator_options);
   TransformationPropagateInstructionUp transformation(
       15, {{{14, 40}, {19, 41}, {26, 42}}});
   ASSERT_TRUE(
       transformation.IsApplicable(context.get(), transformation_context));
-  transformation.Apply(context.get(), &transformation_context);
-  ASSERT_TRUE(IsValid(env, context.get()));
+  ApplyAndCheckFreshIds(transformation, context.get(), &transformation_context);
+  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
+                                               kConsoleMessageConsumer));
 
   std::string after_transformation = R"(
                OpCapability Shader
@@ -474,19 +481,18 @@ TEST(TransformationPropagateInstructionUpTest, BlockDominatesPredecessor2) {
   const auto env = SPV_ENV_UNIVERSAL_1_3;
   const auto consumer = nullptr;
   const auto context = BuildModule(env, consumer, shader, kFuzzAssembleOption);
-  ASSERT_TRUE(IsValid(env, context.get()));
-
-  FactManager fact_manager;
   spvtools::ValidatorOptions validator_options;
-  TransformationContext transformation_context(&fact_manager,
-                                               validator_options);
-
+  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
+                                               kConsoleMessageConsumer));
+  TransformationContext transformation_context(
+      MakeUnique<FactManager>(context.get()), validator_options);
   TransformationPropagateInstructionUp transformation(
       15, {{{14, 40}, {19, 41}, {26, 42}}});
   ASSERT_TRUE(
       transformation.IsApplicable(context.get(), transformation_context));
-  transformation.Apply(context.get(), &transformation_context);
-  ASSERT_TRUE(IsValid(env, context.get()));
+  ApplyAndCheckFreshIds(transformation, context.get(), &transformation_context);
+  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
+                                               kConsoleMessageConsumer));
 
   std::string after_transformation = R"(
                OpCapability Shader
@@ -589,19 +595,18 @@ TEST(TransformationPropagateInstructionUpTest, BlockDominatesPredecessor3) {
   const auto env = SPV_ENV_UNIVERSAL_1_3;
   const auto consumer = nullptr;
   const auto context = BuildModule(env, consumer, shader, kFuzzAssembleOption);
-  ASSERT_TRUE(IsValid(env, context.get()));
-
-  FactManager fact_manager;
   spvtools::ValidatorOptions validator_options;
-  TransformationContext transformation_context(&fact_manager,
-                                               validator_options);
-
+  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
+                                               kConsoleMessageConsumer));
+  TransformationContext transformation_context(
+      MakeUnique<FactManager>(context.get()), validator_options);
   TransformationPropagateInstructionUp transformation(
       15, {{{14, 40}, {19, 41}, {15, 42}}});
   ASSERT_TRUE(
       transformation.IsApplicable(context.get(), transformation_context));
-  transformation.Apply(context.get(), &transformation_context);
-  ASSERT_TRUE(IsValid(env, context.get()));
+  ApplyAndCheckFreshIds(transformation, context.get(), &transformation_context);
+  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
+                                               kConsoleMessageConsumer));
 
   std::string after_transformation = R"(
                OpCapability Shader
@@ -684,13 +689,11 @@ TEST(TransformationPropagateInstructionUpTest,
   const auto env = SPV_ENV_UNIVERSAL_1_3;
   const auto consumer = nullptr;
   const auto context = BuildModule(env, consumer, shader, kFuzzAssembleOption);
-  ASSERT_TRUE(IsValid(env, context.get()));
-
-  FactManager fact_manager;
   spvtools::ValidatorOptions validator_options;
-  TransformationContext transformation_context(&fact_manager,
-                                               validator_options);
-
+  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
+                                               kConsoleMessageConsumer));
+  TransformationContext transformation_context(
+      MakeUnique<FactManager>(context.get()), validator_options);
   // Required capabilities haven't yet been specified.
   TransformationPropagateInstructionUp transformation(9, {{{5, 40}}});
   ASSERT_FALSE(
@@ -700,8 +703,9 @@ TEST(TransformationPropagateInstructionUpTest,
 
   ASSERT_TRUE(
       transformation.IsApplicable(context.get(), transformation_context));
-  transformation.Apply(context.get(), &transformation_context);
-  ASSERT_TRUE(IsValid(env, context.get()));
+  ApplyAndCheckFreshIds(transformation, context.get(), &transformation_context);
+  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
+                                               kConsoleMessageConsumer));
 
   std::string after_transformation = R"(
                OpCapability Shader
@@ -765,13 +769,11 @@ TEST(TransformationPropagateInstructionUpTest,
   const auto env = SPV_ENV_UNIVERSAL_1_3;
   const auto consumer = nullptr;
   const auto context = BuildModule(env, consumer, shader, kFuzzAssembleOption);
-  ASSERT_TRUE(IsValid(env, context.get()));
-
-  FactManager fact_manager;
   spvtools::ValidatorOptions validator_options;
-  TransformationContext transformation_context(&fact_manager,
-                                               validator_options);
-
+  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
+                                               kConsoleMessageConsumer));
+  TransformationContext transformation_context(
+      MakeUnique<FactManager>(context.get()), validator_options);
   // Required capabilities haven't yet been specified
   TransformationPropagateInstructionUp transformation(9, {{{5, 40}}});
   ASSERT_FALSE(
@@ -781,8 +783,9 @@ TEST(TransformationPropagateInstructionUpTest,
 
   ASSERT_TRUE(
       transformation.IsApplicable(context.get(), transformation_context));
-  transformation.Apply(context.get(), &transformation_context);
-  ASSERT_TRUE(IsValid(env, context.get()));
+  ApplyAndCheckFreshIds(transformation, context.get(), &transformation_context);
+  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
+                                               kConsoleMessageConsumer));
 
   std::string after_transformation = R"(
                OpCapability Shader
@@ -846,18 +849,17 @@ TEST(TransformationPropagateInstructionUpTest, MultipleIdenticalPredecessors) {
   const auto env = SPV_ENV_UNIVERSAL_1_3;
   const auto consumer = nullptr;
   const auto context = BuildModule(env, consumer, shader, kFuzzAssembleOption);
-  ASSERT_TRUE(IsValid(env, context.get()));
-
-  FactManager fact_manager;
   spvtools::ValidatorOptions validator_options;
-  TransformationContext transformation_context(&fact_manager,
-                                               validator_options);
-
+  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
+                                               kConsoleMessageConsumer));
+  TransformationContext transformation_context(
+      MakeUnique<FactManager>(context.get()), validator_options);
   TransformationPropagateInstructionUp transformation(9, {{{5, 40}}});
   ASSERT_TRUE(
       transformation.IsApplicable(context.get(), transformation_context));
-  transformation.Apply(context.get(), &transformation_context);
-  ASSERT_TRUE(IsValid(env, context.get()));
+  ApplyAndCheckFreshIds(transformation, context.get(), &transformation_context);
+  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
+                                               kConsoleMessageConsumer));
 
   std::string after_transformation = R"(
                OpCapability Shader
@@ -888,6 +890,61 @@ TEST(TransformationPropagateInstructionUpTest, MultipleIdenticalPredecessors) {
   )";
 
   ASSERT_TRUE(IsEqual(env, after_transformation, context.get()));
+}
+
+TEST(TransformationPropagateInstructionUpTest,
+     InapplicableDueToOpTypeSampledImage) {
+  std::string shader = R"(
+               OpCapability Shader
+          %1 = OpExtInstImport "GLSL.std.450"
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %4 "main" %10
+               OpExecutionMode %4 OriginUpperLeft
+               OpSource ESSL 320
+               OpDecorate %10 RelaxedPrecision
+               OpDecorate %10 DescriptorSet 0
+               OpDecorate %10 Binding 0
+          %2 = OpTypeVoid
+          %3 = OpTypeFunction %2
+          %6 = OpTypeFloat 32
+          %7 = OpTypeImage %6 2D 0 0 0 1 Unknown
+          %8 = OpTypeSampledImage %7
+          %9 = OpTypePointer UniformConstant %8
+         %10 = OpVariable %9 UniformConstant
+         %12 = OpTypeVector %6 2
+         %13 = OpConstant %6 0
+         %14 = OpConstantComposite %12 %13 %13
+         %15 = OpTypeVector %6 4
+         %30 = OpTypeBool
+         %31 = OpConstantTrue %30
+          %4 = OpFunction %2 None %3
+          %5 = OpLabel
+         %11 = OpLoad %8 %10
+               OpSelectionMerge %20 None
+               OpBranchConditional %31 %40 %41
+         %40 = OpLabel
+               OpBranch %20
+         %41 = OpLabel
+               OpBranch %20
+         %20 = OpLabel
+         %50 = OpCopyObject %8 %11
+         %16 = OpImageSampleImplicitLod %15 %50 %14
+               OpReturn
+               OpFunctionEnd
+)";
+
+  const auto env = SPV_ENV_UNIVERSAL_1_5;
+  const auto consumer = nullptr;
+  const auto context = BuildModule(env, consumer, shader, kFuzzAssembleOption);
+  spvtools::ValidatorOptions validator_options;
+  ASSERT_TRUE(fuzzerutil::IsValidAndWellFormed(context.get(), validator_options,
+                                               kConsoleMessageConsumer));
+  TransformationContext transformation_context(
+      MakeUnique<FactManager>(context.get()), validator_options);
+
+  ASSERT_FALSE(
+      TransformationPropagateInstructionUp(20, {{{40, 100}, {41, 101}}})
+          .IsApplicable(context.get(), transformation_context));
 }
 
 }  // namespace

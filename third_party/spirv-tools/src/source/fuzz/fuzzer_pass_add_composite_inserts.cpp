@@ -81,8 +81,7 @@ void FuzzerPassAddCompositeInserts::Apply() {
                   }
 
                   // No components of the composite can be pointers.
-                  // TODO:
-                  // (https://github.com/KhronosGroup/SPIRV-Tools/issues/3658)
+                  // TODO(https://github.com/KhronosGroup/SPIRV-Tools/issues/3658):
                   //       Structs can have components of pointer type.
                   //       FindOrCreateZeroConstant cannot be called on a
                   //       pointer. We ignore pointers for now. Consider adding
@@ -167,9 +166,8 @@ void FuzzerPassAddCompositeInserts::Apply() {
         // this type.
         uint32_t available_object_id;
         if (available_objects.empty()) {
-          auto current_node_type =
-              GetIRContext()->get_type_mgr()->GetType(current_node_type_id);
-          if (!fuzzerutil::CanCreateConstant(*current_node_type)) {
+          if (!fuzzerutil::CanCreateConstant(GetIRContext(),
+                                             current_node_type_id)) {
             return;
           }
           available_object_id =

@@ -128,6 +128,20 @@ angle::CallCapture CaptureGetRenderbufferImageANGLE(const State &glState,
                                                     GLenum type,
                                                     void *pixels);
 
+// GL_ANGLE_get_tex_level_parameter
+angle::CallCapture CaptureGetTexLevelParameterivANGLE(const State &glState,
+                                                      bool isCallValid,
+                                                      TextureTarget targetPacked,
+                                                      GLint level,
+                                                      GLenum pname,
+                                                      GLint *params);
+angle::CallCapture CaptureGetTexLevelParameterfvANGLE(const State &glState,
+                                                      bool isCallValid,
+                                                      TextureTarget targetPacked,
+                                                      GLint level,
+                                                      GLenum pname,
+                                                      GLfloat *params);
+
 // GL_ANGLE_instanced_arrays
 angle::CallCapture CaptureDrawArraysInstancedANGLE(const State &glState,
                                                    bool isCallValid,
@@ -780,18 +794,6 @@ angle::CallCapture CaptureTexStorage2DMultisampleANGLE(const State &glState,
                                                        GLsizei width,
                                                        GLsizei height,
                                                        GLboolean fixedsamplelocations);
-angle::CallCapture CaptureGetTexLevelParameterivANGLE(const State &glState,
-                                                      bool isCallValid,
-                                                      TextureTarget targetPacked,
-                                                      GLint level,
-                                                      GLenum pname,
-                                                      GLint *params);
-angle::CallCapture CaptureGetTexLevelParameterfvANGLE(const State &glState,
-                                                      bool isCallValid,
-                                                      TextureTarget targetPacked,
-                                                      GLint level,
-                                                      GLenum pname,
-                                                      GLfloat *params);
 angle::CallCapture CaptureGetMultisamplefvANGLE(const State &glState,
                                                 bool isCallValid,
                                                 GLenum pname,
@@ -889,6 +891,33 @@ angle::CallCapture CaptureGetProgramResourceLocationIndexEXT(const State &glStat
                                                              GLenum programInterface,
                                                              const GLchar *name,
                                                              GLint returnValue);
+
+// GL_EXT_buffer_storage
+angle::CallCapture CaptureBufferStorageEXT(const State &glState,
+                                           bool isCallValid,
+                                           BufferBinding targetPacked,
+                                           GLsizeiptr size,
+                                           const void *data,
+                                           GLbitfield flags);
+
+// GL_EXT_copy_image
+angle::CallCapture CaptureCopyImageSubDataEXT(const State &glState,
+                                              bool isCallValid,
+                                              GLuint srcName,
+                                              GLenum srcTarget,
+                                              GLint srcLevel,
+                                              GLint srcX,
+                                              GLint srcY,
+                                              GLint srcZ,
+                                              GLuint dstName,
+                                              GLenum dstTarget,
+                                              GLint dstLevel,
+                                              GLint dstX,
+                                              GLint dstY,
+                                              GLint dstZ,
+                                              GLsizei srcWidth,
+                                              GLsizei srcHeight,
+                                              GLsizei srcDepth);
 
 // GL_EXT_debug_marker
 angle::CallCapture CaptureInsertEventMarkerEXT(const State &glState,
@@ -1440,6 +1469,25 @@ angle::CallCapture CaptureEGLImageTargetTexture2DOES(const State &glState,
 
 // GL_OES_compressed_ETC1_RGB8_texture
 
+// GL_OES_copy_image
+angle::CallCapture CaptureCopyImageSubDataOES(const State &glState,
+                                              bool isCallValid,
+                                              GLuint srcName,
+                                              GLenum srcTarget,
+                                              GLint srcLevel,
+                                              GLint srcX,
+                                              GLint srcY,
+                                              GLint srcZ,
+                                              GLuint dstName,
+                                              GLenum dstTarget,
+                                              GLint dstLevel,
+                                              GLint dstX,
+                                              GLint dstY,
+                                              GLint dstZ,
+                                              GLsizei srcWidth,
+                                              GLsizei srcHeight,
+                                              GLsizei srcDepth);
+
 // GL_OES_depth32
 
 // GL_OES_draw_buffers_indexed
@@ -1685,6 +1733,11 @@ angle::CallCapture CaptureQueryMatrixxOES(const State &glState,
                                           GLint *exponent,
                                           GLbitfield returnValue);
 
+// GL_OES_sample_shading
+angle::CallCapture CaptureMinSampleShadingOES(const State &glState,
+                                              bool isCallValid,
+                                              GLfloat value);
+
 // GL_OES_texture_3D
 angle::CallCapture CaptureCompressedTexImage3DOES(const State &glState,
                                                   bool isCallValid,
@@ -1862,6 +1915,8 @@ angle::CallCapture CaptureTexGenxvOES(const State &glState,
 
 // GL_OES_texture_half_float
 
+// GL_OES_texture_stencil8
+
 // GL_OES_texture_storage_multisample_2d_array
 angle::CallCapture CaptureTexStorage3DMultisampleOES(const State &glState,
                                                      bool isCallValid,
@@ -2028,6 +2083,20 @@ void CaptureGetRenderbufferImageANGLE_pixels(const State &glState,
                                              GLenum type,
                                              void *pixels,
                                              angle::ParamCapture *paramCapture);
+void CaptureGetTexLevelParameterivANGLE_params(const State &glState,
+                                               bool isCallValid,
+                                               TextureTarget targetPacked,
+                                               GLint level,
+                                               GLenum pname,
+                                               GLint *params,
+                                               angle::ParamCapture *paramCapture);
+void CaptureGetTexLevelParameterfvANGLE_params(const State &glState,
+                                               bool isCallValid,
+                                               TextureTarget targetPacked,
+                                               GLint level,
+                                               GLenum pname,
+                                               GLfloat *params,
+                                               angle::ParamCapture *paramCapture);
 void CaptureDrawElementsInstancedANGLE_indices(const State &glState,
                                                bool isCallValid,
                                                PrimitiveMode modePacked,
@@ -3141,20 +3210,6 @@ void CaptureGetQueryObjectui64vRobustANGLE_params(const State &glState,
                                                   GLsizei *length,
                                                   GLuint64 *params,
                                                   angle::ParamCapture *paramCapture);
-void CaptureGetTexLevelParameterivANGLE_params(const State &glState,
-                                               bool isCallValid,
-                                               TextureTarget targetPacked,
-                                               GLint level,
-                                               GLenum pname,
-                                               GLint *params,
-                                               angle::ParamCapture *paramCapture);
-void CaptureGetTexLevelParameterfvANGLE_params(const State &glState,
-                                               bool isCallValid,
-                                               TextureTarget targetPacked,
-                                               GLint level,
-                                               GLenum pname,
-                                               GLfloat *params,
-                                               angle::ParamCapture *paramCapture);
 void CaptureGetMultisamplefvANGLE_val(const State &glState,
                                       bool isCallValid,
                                       GLenum pname,
@@ -3205,6 +3260,13 @@ void CaptureGetProgramResourceLocationIndexEXT_name(const State &glState,
                                                     GLenum programInterface,
                                                     const GLchar *name,
                                                     angle::ParamCapture *paramCapture);
+void CaptureBufferStorageEXT_data(const State &glState,
+                                  bool isCallValid,
+                                  BufferBinding targetPacked,
+                                  GLsizeiptr size,
+                                  const void *data,
+                                  GLbitfield flags,
+                                  angle::ParamCapture *paramCapture);
 void CaptureInsertEventMarkerEXT_marker(const State &glState,
                                         bool isCallValid,
                                         GLsizei length,

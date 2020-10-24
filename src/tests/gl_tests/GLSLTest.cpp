@@ -824,6 +824,8 @@ TEST_P(GLSLTest_ES3, GLVertexIDIntegerTextureDrawArrays)
 {
     // http://anglebug.com/4092
     ANGLE_SKIP_TEST_IF(isSwiftshader());
+    // TODO(crbug.com/1132295): Failing on ARM-based Apple DTKs.
+    ANGLE_SKIP_TEST_IF(IsOSX() && IsARM64() && IsDesktopOpenGL());
     // Have to set a large point size because the window size is much larger than the texture
     constexpr char kVS[] = R"(#version 300 es
 flat out highp int vVertexID;
@@ -1559,6 +1561,9 @@ TEST_P(GLSLTest, MaxVaryingVec3AndOneFloat)
 // Only fails on D3D9 because of packing limitations.
 TEST_P(GLSLTest, MaxVaryingVec3ArrayAndOneFloatArray)
 {
+    // TODO(crbug.com/1132295): Failing on Apple DTK.
+    ANGLE_SKIP_TEST_IF(IsOSX() && IsARM64() && IsMetal());
+
     GLint maxVaryings = 0;
     glGetIntegerv(GL_MAX_VARYING_VECTORS, &maxVaryings);
 
@@ -1593,6 +1598,9 @@ TEST_P(GLSLTest, MaxVaryingVec2Arrays)
     // TODO(geofflang): Find out why this doesn't compile on Apple AMD OpenGL drivers
     // (http://anglebug.com/1291)
     ANGLE_SKIP_TEST_IF(IsOSX() && IsAMD() && IsOpenGL());
+
+    // TODO(crbug.com/1132295): Failing on Apple DTK.
+    ANGLE_SKIP_TEST_IF(IsOSX() && IsARM64() && IsMetal());
 
     GLint maxVaryings = 0;
     glGetIntegerv(GL_MAX_VARYING_VECTORS, &maxVaryings);
@@ -2101,6 +2109,9 @@ void main()
 // can actually be used.
 TEST_P(GLSLTest, VerifyMaxVertexUniformVectors)
 {
+    // Times out on D3D11 on test infra. http://anglebug.com/5076
+    ANGLE_SKIP_TEST_IF(IsD3D11() && IsIntel());
+
     // crbug.com/680631
     ANGLE_SKIP_TEST_IF(IsOzone() && IsIntel());
 
@@ -2117,6 +2128,9 @@ TEST_P(GLSLTest, VerifyMaxVertexUniformVectors)
 TEST_P(GLSLTest, VerifyMaxVertexUniformVectorsWithSamplers)
 {
     ANGLE_SKIP_TEST_IF(IsOpenGL() || IsOpenGLES());
+
+    // Times out on D3D11 on test infra. http://anglebug.com/5076
+    ANGLE_SKIP_TEST_IF(IsD3D11() && IsIntel());
 
     int maxUniforms = 10000;
     glGetIntegerv(GL_MAX_VERTEX_UNIFORM_VECTORS, &maxUniforms);
@@ -2605,6 +2619,9 @@ TEST_P(GLSLTest, RenderTrisWithPointCoord)
 // Convers a bug with the integer pow statement workaround.
 TEST_P(GLSLTest, NestedPowStatements)
 {
+    // https://crbug.com/1127866 - possible NVIDIA driver issue
+    ANGLE_SKIP_TEST_IF(IsNVIDIA() && IsVulkan() && IsWindows());
+
     constexpr char kFS[] =
         "precision mediump float;\n"
         "float func(float v)\n"
@@ -2792,6 +2809,120 @@ void main(void)
 })";
 
     ANGLE_GL_PROGRAM(program, essl1_shaders::vs::Simple(), kFS);
+}
+
+// Test that using a varying matrix array is supported.
+TEST_P(GLSLTest, VaryingMatrixArray)
+{
+    constexpr char kVS[] =
+        "uniform vec2 u_a1;\n"
+        "uniform vec2 u_a2;\n"
+        "attribute vec4 a_position;\n"
+        "varying mat2 v_mat[2];\n"
+        "void main() {\n"
+        "    v_mat[0] = mat2(u_a1, u_a2);\n"
+        "    v_mat[1] = mat2(1.0 - u_a2, 1.0 - u_a1);\n"
+        "    gl_Position = a_position;\n"
+        "}";
+
+    constexpr char kFS[] =
+        "precision mediump float;\n"
+        "varying mat2 v_mat[2];\n"
+        "void main(void)\n"
+        "{\n"
+        "    gl_FragColor = vec4(v_mat[0][0].x, v_mat[0][0].y, v_mat[1][0].x, 1.0);\n"
+        "}";
+
+    ANGLE_GL_PROGRAM(program, kVS, kFS);
+
+    GLint oneIndex = glGetUniformLocation(program, "u_a1");
+    ASSERT_NE(-1, oneIndex);
+    GLint twoIndex = glGetUniformLocation(program, "u_a2");
+    ASSERT_NE(-1, twoIndex);
+    glUseProgram(program);
+    glUniform2f(oneIndex, 1, 0.5f);
+    glUniform2f(twoIndex, 0.25f, 0.125f);
+
+    drawQuad(program, "a_position", 0.5f);
+    EXPECT_PIXEL_COLOR_NEAR(0, 0, GLColor(255, 127, 255 - 63, 255), 1.0);
+}
+
+// Test that using a centroid varying matrix array is supported.
+TEST_P(GLSLTest_ES3, CentroidVaryingMatrixArray)
+{
+    constexpr char kVS[] =
+        "#version 300 es\n"
+        "uniform vec2 u_a1;\n"
+        "uniform vec2 u_a2;\n"
+        "in vec4 a_position;\n"
+        "centroid out mat3x2 v_mat[2];\n"
+        "void main() {\n"
+        "    v_mat[0] = mat3x2(u_a1, u_a2, vec2(0.0));\n"
+        "    v_mat[1] = mat3x2(vec2(0.0), 1.0 - u_a2, 1.0 - u_a1);\n"
+        "    gl_Position = a_position;\n"
+        "}";
+
+    constexpr char kFS[] =
+        "#version 300 es\n"
+        "precision mediump float;\n"
+        "centroid in mat3x2 v_mat[2];\n"
+        "layout(location = 0) out vec4 out_color;\n"
+        "void main(void)\n"
+        "{\n"
+        "    out_color = vec4(v_mat[0][0].x, v_mat[0][0].y, v_mat[1][1].x, 1.0);\n"
+        "}";
+
+    ANGLE_GL_PROGRAM(program, kVS, kFS);
+
+    GLint oneIndex = glGetUniformLocation(program, "u_a1");
+    ASSERT_NE(-1, oneIndex);
+    GLint twoIndex = glGetUniformLocation(program, "u_a2");
+    ASSERT_NE(-1, twoIndex);
+    glUseProgram(program);
+    glUniform2f(oneIndex, 1, 0.5f);
+    glUniform2f(twoIndex, 0.25f, 0.125f);
+
+    drawQuad(program, "a_position", 0.5f);
+    EXPECT_PIXEL_COLOR_NEAR(0, 0, GLColor(255, 127, 255 - 63, 255), 1.0);
+}
+
+// Test that using a flat varying matrix array is supported.
+TEST_P(GLSLTest_ES3, FlatVaryingMatrixArray)
+{
+    constexpr char kVS[] =
+        "#version 300 es\n"
+        "uniform vec2 u_a1;\n"
+        "uniform vec2 u_a2;\n"
+        "in vec4 a_position;\n"
+        "flat out mat2 v_mat[2];\n"
+        "void main() {\n"
+        "    v_mat[0] = mat2(u_a1, u_a2);\n"
+        "    v_mat[1] = mat2(u_a2, u_a1);\n"
+        "    gl_Position = a_position;\n"
+        "}";
+
+    constexpr char kFS[] =
+        "#version 300 es\n"
+        "precision mediump float;\n"
+        "flat in mat2 v_mat[2];\n"
+        "layout(location = 0) out vec4 out_color;\n"
+        "void main(void)\n"
+        "{\n"
+        "    out_color = vec4(v_mat[0][0].x, v_mat[0][0].y, v_mat[1][0].x, 1.0);\n"
+        "}";
+
+    ANGLE_GL_PROGRAM(program, kVS, kFS);
+
+    GLint oneIndex = glGetUniformLocation(program, "u_a1");
+    ASSERT_NE(-1, oneIndex);
+    GLint twoIndex = glGetUniformLocation(program, "u_a2");
+    ASSERT_NE(-1, twoIndex);
+    glUseProgram(program);
+    glUniform2f(oneIndex, 1, 0.5f);
+    glUniform2f(twoIndex, 0.25f, 0.125f);
+
+    drawQuad(program, "a_position", 0.5f);
+    EXPECT_PIXEL_COLOR_NEAR(0, 0, GLColor(255, 127, 63, 255), 1.0);
 }
 
 // Test that literal infinity can be written out from the shader translator.
@@ -3424,6 +3555,9 @@ TEST_P(GLSLTest_ES31, ArraysOfArraysSampler)
 // Test that arrays of arrays of images work as expected.
 TEST_P(GLSLTest_ES31, ArraysOfArraysImage)
 {
+    // http://anglebug.com/5072
+    ANGLE_SKIP_TEST_IF(IsIntel() && IsLinux() && IsOpenGL());
+
     // anglebug.com/2703 - QC doesn't support arrays of image as parameters,
     // so image array of array handling is disabled
     ANGLE_SKIP_TEST_IF(IsAndroid() && IsVulkan());
@@ -3638,7 +3772,7 @@ TEST_P(GLSLTest_ES31, ArrayStructArrayArraySampler)
         {
             for (int k = 0; k < 2; k++)
             {
-                for (size_t l = 0; l < 2; l++)
+                for (int l = 0; l < 2; l++)
                 {
                     // First generate the texture
                     int textureUnit = l + 2 * (k + 2 * (j + 2 * i));
@@ -3728,7 +3862,7 @@ TEST_P(GLSLTest_ES31, ComplexStructArraySampler)
                 GLTexture *array   = arrays[k];
                 size_t arrayLength = arrayLengths[k];
                 size_t arrayOffset = arrayOffsets[k];
-                for (size_t l = 0; l < arrayLength; l++)
+                for (int l = 0; l < static_cast<int>(arrayLength); l++)
                 {
                     // First generate the texture
                     int textureUnit = arrayOffset + l + totalArrayLength * (j + 3 * i);
@@ -5276,6 +5410,9 @@ TEST_P(GLSLTest, NestedStructsWithSamplersAsFunctionArg)
     // Shader failed to compile on Nexus devices. http://anglebug.com/2114
     ANGLE_SKIP_TEST_IF((IsNexus5X() || IsNexus6P()) && IsAdreno() && IsOpenGLES());
 
+    // TODO(crbug.com/1132295): Failing on Apple DTK.
+    ANGLE_SKIP_TEST_IF(IsOSX() && IsARM64() && IsDesktopOpenGL());
+
     const char kFragmentShader[] = R"(precision mediump float;
 struct S { sampler2D samplerMember; };
 struct T { S nest; };
@@ -5379,6 +5516,9 @@ TEST_P(GLSLTest, NestedCompoundStructsWithSamplersAsFunctionArg)
     // Shader failed to compile on Nexus devices. http://anglebug.com/2114
     ANGLE_SKIP_TEST_IF((IsNexus5X() || IsNexus6P()) && IsAdreno() && IsOpenGLES());
 
+    // TODO(crbug.com/1132295): Failing on Apple DTK.
+    ANGLE_SKIP_TEST_IF(IsOSX() && IsARM64() && IsDesktopOpenGL());
+
     const char kFragmentShader[] = R"(precision mediump float;
 struct S { sampler2D samplerMember; bool b; };
 struct T { S nest; bool b; };
@@ -5443,6 +5583,9 @@ TEST_P(GLSLTest, MoreNestedCompoundStructsWithSamplersAsFunctionArg)
 {
     // Shader failed to compile on Nexus devices. http://anglebug.com/2114
     ANGLE_SKIP_TEST_IF((IsNexus5X() || IsNexus6P()) && IsAdreno() && IsOpenGLES());
+
+    // TODO(crbug.com/1132295): Failing on Apple DTK.
+    ANGLE_SKIP_TEST_IF(IsOSX() && IsARM64() && IsDesktopOpenGL());
 
     const char kFragmentShader[] = R"(precision mediump float;
 struct S { bool b; sampler2D samplerMember; };
@@ -8166,6 +8309,9 @@ void main() {
 // be empty in the presence of other resources.
 TEST_P(GLSLTest_ES31, MixOfAllResources)
 {
+    // http://anglebug.com/5072
+    ANGLE_SKIP_TEST_IF(IsIntel() && IsLinux() && IsOpenGL());
+
     constexpr char kComputeShader[] = R"(#version 310 es
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 layout(binding = 1, std430) buffer Output {

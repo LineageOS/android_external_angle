@@ -3287,7 +3287,7 @@ void CaptureDeleteVertexArraysOES_arraysPacked(const State &glState,
                                                const VertexArrayID *arrays,
                                                ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    CaptureDeleteVertexArrays_arraysPacked(glState, isCallValid, n, arrays, paramCapture);
 }
 
 void CaptureGenVertexArraysOES_arraysPacked(const State &glState,
@@ -3296,7 +3296,7 @@ void CaptureGenVertexArraysOES_arraysPacked(const State &glState,
                                             VertexArrayID *arrays,
                                             ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    CaptureGenVertexArrays_arraysPacked(glState, isCallValid, n, arrays, paramCapture);
 }
 
 void CaptureGetTexImageANGLE_pixels(const State &glState,
@@ -3318,6 +3318,17 @@ void CaptureGetRenderbufferImageANGLE_pixels(const State &glState,
                                              GLenum type,
                                              void *pixels,
                                              angle::ParamCapture *paramCapture)
+{
+    UNIMPLEMENTED();
+}
+
+void CaptureBufferStorageEXT_data(const State &glState,
+                                  bool isCallValid,
+                                  BufferBinding targetPacked,
+                                  GLsizeiptr size,
+                                  const void *data,
+                                  GLbitfield flags,
+                                  angle::ParamCapture *paramCapture)
 {
     UNIMPLEMENTED();
 }
