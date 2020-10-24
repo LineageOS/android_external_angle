@@ -157,7 +157,7 @@ bool TransformationReplaceConstantWithUniform::IsApplicable(
   // by the uniform buffer element descriptor will hold a scalar value.
   auto constant_id_associated_with_uniform =
       transformation_context.GetFactManager()->GetConstantFromUniformDescriptor(
-          ir_context, message_.uniform_descriptor());
+          message_.uniform_descriptor());
   if (!constant_id_associated_with_uniform) {
     return false;
   }
@@ -283,6 +283,11 @@ protobufs::Transformation TransformationReplaceConstantWithUniform::ToMessage()
   protobufs::Transformation result;
   *result.mutable_replace_constant_with_uniform() = message_;
   return result;
+}
+
+std::unordered_set<uint32_t>
+TransformationReplaceConstantWithUniform::GetFreshIds() const {
+  return {message_.fresh_id_for_access_chain(), message_.fresh_id_for_load()};
 }
 
 }  // namespace fuzz

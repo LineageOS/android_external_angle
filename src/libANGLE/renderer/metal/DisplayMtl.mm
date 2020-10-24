@@ -15,8 +15,9 @@
 #include "libANGLE/renderer/glslang_wrapper_utils.h"
 #include "libANGLE/renderer/metal/ContextMtl.h"
 #include "libANGLE/renderer/metal/SurfaceMtl.h"
+#include "libANGLE/renderer/metal/SyncMtl.h"
 #include "libANGLE/renderer/metal/mtl_common.h"
-#include "libANGLE/renderer/metal/shaders/compiled/mtl_default_shaders_autogen.inc"
+#include "libANGLE/renderer/metal/shaders/mtl_default_shaders_src_autogen.inc"
 #include "platform/Platform.h"
 
 #include "EGL/eglext.h"
@@ -42,6 +43,18 @@ DisplayImpl *CreateMetalDisplay(const egl::DisplayState &state)
 {
     return new DisplayMtl(state);
 }
+
+struct DefaultShaderAsyncInfoMtl
+{
+    mtl::AutoObjCPtr<id<MTLLibrary>> defaultShaders;
+    mtl::AutoObjCPtr<NSError *> defaultShadersCompileError;
+
+    // Synchronization primitives for compiling default shaders in back-ground
+    std::condition_variable cv;
+    std::mutex lock;
+
+    bool compiled = false;
+};
 
 DisplayMtl::DisplayMtl(const egl::DisplayState &state)
     : DisplayImpl(state), mUtils(this), mGlslangInitialized(false)
@@ -99,8 +112,11 @@ void DisplayMtl::terminate()
 {
     mUtils.onDestroy();
     mCmdQueue.reset();
-    mDefaultShaders  = nil;
-    mMetalDevice     = nil;
+    mDefaultShadersAsyncInfo = nullptr;
+    mMetalDevice             = nil;
+#if ANGLE_MTL_EVENT_AVAILABLE
+    mSharedEventListener = nil;
+#endif
     mCapsInitialized = false;
 
     mMetalDeviceVendorId = 0;
@@ -158,7 +174,7 @@ egl::Error DisplayMtl::waitClient(const gl::Context *context)
 egl::Error DisplayMtl::waitNative(const gl::Context *context, EGLint engine)
 {
     UNIMPLEMENTED();
-    return egl::EglBadAccess();
+    return egl::NoError();
 }
 
 SurfaceImpl *DisplayMtl::createWindowSurface(const egl::SurfaceState &state,
@@ -241,11 +257,11 @@ gl::Version DisplayMtl::getMaxConformantESVersion() const
 
 EGLSyncImpl *DisplayMtl::createSync(const egl::AttributeMap &attribs)
 {
-    UNIMPLEMENTED();
-    return nullptr;
+    return new EGLSyncMtl(attribs);
 }
 
-egl::Error DisplayMtl::makeCurrent(egl::Surface *drawSurface,
+egl::Error DisplayMtl::makeCurrent(egl::Display *display,
+                                   egl::Surface *drawSurface,
                                    egl::Surface *readSurface,
                                    gl::Context *context)
 {
@@ -264,6 +280,13 @@ void DisplayMtl::generateExtensions(egl::DisplayExtensions *outExtensions) const
     outExtensions->surfacelessContext           = true;
     outExtensions->displayTextureShareGroup     = true;
     outExtensions->displaySemaphoreShareGroup   = true;
+
+    if (mFeatures.hasEvents.enabled)
+    {
+        // MTLSharedEvent is only available since Metal 2.1
+        outExtensions->fenceSync = true;
+        outExtensions->waitSync  = true;
+    }
 
     // Note that robust resource initialization is not yet implemented. We only expose
     // this extension so that ANGLE can be initialized in Chrome. WebGL will fail to use
@@ -521,21 +544,20 @@ void DisplayMtl::ensureCapsInitialized() const
     mNativeCaps.fragmentMediumpInt.setTwosComplementInt(32);
     mNativeCaps.fragmentLowpInt.setTwosComplementInt(32);
 
-    GLuint maxUniformVectors = mtl::kDefaultUniformsMaxSize / (sizeof(GLfloat) * 4);
+    GLuint maxDefaultUniformVectors = mtl::kDefaultUniformsMaxSize / (sizeof(GLfloat) * 4);
 
-    const GLuint maxUniformComponents = maxUniformVectors * 4;
+    const GLuint maxDefaultUniformComponents = maxDefaultUniformVectors * 4;
 
     // Uniforms are implemented using a uniform buffer, so the max number of uniforms we can
     // support is the max buffer range divided by the size of a single uniform (4X float).
-    mNativeCaps.maxVertexUniformVectors                              = maxUniformVectors;
-    mNativeCaps.maxShaderUniformComponents[gl::ShaderType::Vertex]   = maxUniformComponents;
-    mNativeCaps.maxFragmentUniformVectors                            = maxUniformVectors;
-    mNativeCaps.maxShaderUniformComponents[gl::ShaderType::Fragment] = maxUniformComponents;
+    mNativeCaps.maxVertexUniformVectors                              = maxDefaultUniformVectors;
+    mNativeCaps.maxShaderUniformComponents[gl::ShaderType::Vertex]   = maxDefaultUniformComponents;
+    mNativeCaps.maxFragmentUniformVectors                            = maxDefaultUniformVectors;
+    mNativeCaps.maxShaderUniformComponents[gl::ShaderType::Fragment] = maxDefaultUniformComponents;
 
-    // NOTE(hqle): support UBO (ES 3.0 feature)
-    mNativeCaps.maxShaderUniformBlocks[gl::ShaderType::Vertex]   = 0;
-    mNativeCaps.maxShaderUniformBlocks[gl::ShaderType::Fragment] = 0;
-    mNativeCaps.maxCombinedUniformBlocks                         = 0;
+    mNativeCaps.maxShaderUniformBlocks[gl::ShaderType::Vertex]   = mtl::kMaxShaderUBOs;
+    mNativeCaps.maxShaderUniformBlocks[gl::ShaderType::Fragment] = mtl::kMaxShaderUBOs;
+    mNativeCaps.maxCombinedUniformBlocks                         = mtl::kMaxGLUBOBindings;
 
     // Note that we currently implement textures as combined image+samplers, so the limit is
     // the minimum of supported samplers and sampled images.
@@ -550,18 +572,20 @@ void DisplayMtl::ensureCapsInitialized() const
     mNativeCaps.maxCombinedShaderStorageBlocks                   = maxPerStageStorageBuffers;
 
     // Fill in additional limits for UBOs and SSBOs.
-    mNativeCaps.maxUniformBufferBindings     = 0;
-    mNativeCaps.maxUniformBlockSize          = 0;
-    mNativeCaps.uniformBufferOffsetAlignment = 0;
+    mNativeCaps.maxUniformBufferBindings = mNativeCaps.maxCombinedUniformBlocks;
+    mNativeCaps.maxUniformBlockSize      = mtl::kMaxUBOSize;  // Default according to GLES 3.0 spec.
+    mNativeCaps.uniformBufferOffsetAlignment = 1;
 
     mNativeCaps.maxShaderStorageBufferBindings     = 0;
     mNativeCaps.maxShaderStorageBlockSize          = 0;
     mNativeCaps.shaderStorageBufferOffsetAlignment = 0;
 
     // NOTE(hqle): support UBO
+    const uint32_t maxCombinedUniformComponents =
+        maxDefaultUniformComponents + mtl::kMaxUBOSize * mtl::kMaxShaderUBOs / 4;
     for (gl::ShaderType shaderType : gl::kAllGraphicsShaderTypes)
     {
-        mNativeCaps.maxCombinedShaderUniformComponents[shaderType] = maxUniformComponents;
+        mNativeCaps.maxCombinedShaderUniformComponents[shaderType] = maxCombinedUniformComponents;
     }
 
     mNativeCaps.maxCombinedShaderOutputResources = 0;
@@ -588,7 +612,7 @@ void DisplayMtl::initializeExtensions() const
     // Enable this for simple buffer readback testing, but some functionality is missing.
     // NOTE(hqle): Support full mapBufferRange extension.
     mNativeExtensions.mapBufferOES           = true;
-    mNativeExtensions.mapBufferRange         = false;
+    mNativeExtensions.mapBufferRange         = true;
     mNativeExtensions.textureStorage         = true;
     mNativeExtensions.drawBuffers            = true;
     mNativeExtensions.fragDepth              = true;
@@ -646,6 +670,20 @@ void DisplayMtl::initializeExtensions() const
 
     // GL_APPLE_clip_distance
     mNativeExtensions.clipDistanceAPPLE = true;
+
+    // GL_NV_pixel_buffer_object
+    mNativeExtensions.pixelBufferObjectNV = true;
+
+    if (mFeatures.hasEvents.enabled)
+    {
+        // MTLSharedEvent is only available since Metal 2.1
+
+        // GL_NV_fence
+        mNativeExtensions.fenceNV = true;
+
+        // GL_OES_EGL_sync
+        mNativeExtensions.eglSyncOES = true;
+    }
 }
 
 void DisplayMtl::initializeTextureCaps() const
@@ -702,6 +740,10 @@ void DisplayMtl::initializeFeatures()
     ANGLE_FEATURE_CONDITION((&mFeatures), hasTextureSwizzle,
                             isMetal2_2 && supportsEitherGPUFamily(1, 2));
 
+    // http://crbug.com/1136673
+    // Fence sync is flaky on Nvidia
+    ANGLE_FEATURE_CONDITION((&mFeatures), hasEvents, isMetal2_1 && !isNVIDIA());
+
 #if !TARGET_OS_MACCATALYST && (TARGET_OS_IOS || TARGET_OS_TV)
     // Base Vertex drawing is only supported since GPU family 3.
     ANGLE_FEATURE_CONDITION((&mFeatures), hasBaseVertexInstancedDraw, supportsIOSGPUFamily(3));
@@ -721,48 +763,62 @@ void DisplayMtl::initializeFeatures()
 
 angle::Result DisplayMtl::initializeShaderLibrary()
 {
-    mtl::AutoObjCObj<NSError> err = nil;
+    mDefaultShadersAsyncInfo.reset(new DefaultShaderAsyncInfoMtl);
 
-    const uint8_t *compiled_shader_binary;
-    size_t compiled_shader_binary_len;
+    // Create references to async info struct since it might be released in terminate(), but the
+    // callback might still not be fired yet.
+    std::shared_ptr<DefaultShaderAsyncInfoMtl> asyncRef = mDefaultShadersAsyncInfo;
 
-#if !defined(NDEBUG)
-    if (getFeatures().hasStencilOutput.enabled)
+    // Compile the default shaders asynchronously
+    ANGLE_MTL_OBJC_SCOPE
     {
-        compiled_shader_binary     = compiled_default_metallib_2_1_debug;
-        compiled_shader_binary_len = compiled_default_metallib_2_1_debug_len;
-    }
-    else
-    {
-        compiled_shader_binary     = compiled_default_metallib_debug;
-        compiled_shader_binary_len = compiled_default_metallib_debug_len;
-    }
-#else
-    if (getFeatures().hasStencilOutput.enabled)
-    {
-        compiled_shader_binary     = compiled_default_metallib_2_1;
-        compiled_shader_binary_len = compiled_default_metallib_2_1_len;
-    }
-    else
-    {
-        compiled_shader_binary     = compiled_default_metallib;
-        compiled_shader_binary_len = compiled_default_metallib_len;
-    }
-#endif
+        auto nsSource = [[NSString alloc] initWithBytesNoCopy:gDefaultMetallibSrc
+                                                       length:sizeof(gDefaultMetallibSrc)
+                                                     encoding:NSUTF8StringEncoding
+                                                 freeWhenDone:NO];
+        auto options  = [[[MTLCompileOptions alloc] init] ANGLE_MTL_AUTORELEASE];
+        [getMetalDevice() newLibraryWithSource:nsSource
+                                       options:options
+                             completionHandler:^(id<MTLLibrary> library, NSError *error) {
+                               std::unique_lock<std::mutex> lg(asyncRef->lock);
 
-    mDefaultShaders = CreateShaderLibraryFromBinary(getMetalDevice(), compiled_shader_binary,
-                                                    compiled_shader_binary_len, &err);
+                               asyncRef->defaultShaders             = std::move(library);
+                               asyncRef->defaultShadersCompileError = std::move(error);
 
-    if (err && !mDefaultShaders)
-    {
-        ANGLE_MTL_OBJC_SCOPE
-        {
-            ERR() << "Internal error: " << err.get().localizedDescription.UTF8String;
-        }
-        return angle::Result::Stop;
+                               asyncRef->compiled = true;
+                               asyncRef->cv.notify_one();
+                             }];
+
+        [nsSource ANGLE_MTL_AUTORELEASE];
     }
 
     return angle::Result::Continue;
+}
+
+id<MTLLibrary> DisplayMtl::getDefaultShadersLib()
+{
+    std::unique_lock<std::mutex> lg(mDefaultShadersAsyncInfo->lock);
+    if (!mDefaultShadersAsyncInfo->compiled)
+    {
+        // Wait for async compilation
+        mDefaultShadersAsyncInfo->cv.wait(lg,
+                                          [this] { return mDefaultShadersAsyncInfo->compiled; });
+    }
+
+    if (mDefaultShadersAsyncInfo->defaultShadersCompileError &&
+        !mDefaultShadersAsyncInfo->defaultShaders)
+    {
+        ANGLE_MTL_OBJC_SCOPE
+        {
+            ERR() << "Internal error: "
+                  << mDefaultShadersAsyncInfo->defaultShadersCompileError.get()
+                         .localizedDescription.UTF8String;
+        }
+        // This is not supposed to happen
+        UNREACHABLE();
+    }
+
+    return mDefaultShadersAsyncInfo->defaultShaders;
 }
 
 bool DisplayMtl::supportsIOSGPUFamily(uint8_t iOSFamily) const
@@ -926,5 +982,19 @@ bool DisplayMtl::isNVIDIA() const
 {
     return angle::IsNVIDIA(mMetalDeviceVendorId);
 }
+
+#if ANGLE_MTL_EVENT_AVAILABLE
+mtl::AutoObjCObj<MTLSharedEventListener> DisplayMtl::getOrCreateSharedEventListener()
+{
+    if (!mSharedEventListener)
+    {
+        ANGLE_MTL_OBJC_SCOPE
+        {
+            mSharedEventListener = [[[MTLSharedEventListener alloc] init] ANGLE_MTL_AUTORELEASE];
+        }
+    }
+    return mSharedEventListener;
+}
+#endif
 
 }  // namespace rx

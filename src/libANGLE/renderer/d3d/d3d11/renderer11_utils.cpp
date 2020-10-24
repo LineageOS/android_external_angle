@@ -25,10 +25,10 @@
 #include "libANGLE/renderer/d3d/d3d11/Context11.h"
 #include "libANGLE/renderer/d3d/d3d11/RenderTarget11.h"
 #include "libANGLE/renderer/d3d/d3d11/Renderer11.h"
-#include "libANGLE/renderer/d3d/d3d11/dxgi_support_table.h"
 #include "libANGLE/renderer/d3d/d3d11/formatutils11.h"
 #include "libANGLE/renderer/d3d/d3d11/texture_format_table.h"
 #include "libANGLE/renderer/driver_utils.h"
+#include "libANGLE/renderer/dxgi_support_table.h"
 #include "platform/FeaturesD3D.h"
 #include "platform/PlatformMethods.h"
 
@@ -2454,7 +2454,7 @@ void InitializeFeatures(const Renderer11DeviceCaps &deviceCaps,
         features, rewriteUnaryMinusOperator,
         isIntel && (isBroadwell || isHaswell) && capsVersion < IntelDriverVersion(4624));
 
-    ANGLE_FEATURE_CONDITION(features, addDummyTextureNoRenderTarget,
+    ANGLE_FEATURE_CONDITION(features, addMockTextureNoRenderTarget,
                             isIntel && capsVersion < IntelDriverVersion(4815));
 
     // Haswell/Ivybridge drivers occasionally corrupt (small?) (vertex?) texture data uploads.

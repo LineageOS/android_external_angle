@@ -372,6 +372,8 @@ const char* BuiltInString(int builtIn)
     case 4424: return "BaseVertex";
     case 4425: return "BaseInstance";
     case 4426: return "DrawIndex";
+    case 4432: return "PrimitiveShadingRateKHR";
+    case 4444: return "ShadingRateKHR";
     case 5014: return "FragStencilRefEXT";
 
     case 4992: return "BaryCoordNoPerspAMD";
@@ -951,6 +953,8 @@ const char* CapabilityString(int info)
     case CapabilityFragmentShaderSampleInterlockEXT:        return "CapabilityFragmentShaderSampleInterlockEXT";
     case CapabilityFragmentShaderPixelInterlockEXT:         return "CapabilityFragmentShaderPixelInterlockEXT";
     case CapabilityFragmentShaderShadingRateInterlockEXT:   return "CapabilityFragmentShaderShadingRateInterlockEXT";
+
+    case CapabilityFragmentShadingRateKHR:                  return "FragmentShadingRateKHR";
 
     case CapabilityDemoteToHelperInvocationEXT:             return "DemoteToHelperInvocationEXT";
     case CapabilityShaderClockKHR:                          return "ShaderClockKHR";
@@ -1727,7 +1731,7 @@ void Parameterize()
 
     InstructionDesc[OpDecorateStringGOOGLE].operands.push(OperandId, "'Target'");
     InstructionDesc[OpDecorateStringGOOGLE].operands.push(OperandDecoration, "");
-    InstructionDesc[OpDecorateStringGOOGLE].operands.push(OperandLiteralString, "'Literal String'");
+    InstructionDesc[OpDecorateStringGOOGLE].operands.push(OperandVariableLiteralStrings, "'Literal Strings'");
 
     InstructionDesc[OpMemberDecorate].operands.push(OperandId, "'Structure Type'");
     InstructionDesc[OpMemberDecorate].operands.push(OperandLiteralNumber, "'Member'");
@@ -1737,7 +1741,7 @@ void Parameterize()
     InstructionDesc[OpMemberDecorateStringGOOGLE].operands.push(OperandId, "'Structure Type'");
     InstructionDesc[OpMemberDecorateStringGOOGLE].operands.push(OperandLiteralNumber, "'Member'");
     InstructionDesc[OpMemberDecorateStringGOOGLE].operands.push(OperandDecoration, "");
-    InstructionDesc[OpMemberDecorateStringGOOGLE].operands.push(OperandLiteralString, "'Literal String'");
+    InstructionDesc[OpMemberDecorateStringGOOGLE].operands.push(OperandVariableLiteralStrings, "'Literal Strings'");
 
     InstructionDesc[OpGroupDecorate].operands.push(OperandId, "'Decoration Group'");
     InstructionDesc[OpGroupDecorate].operands.push(OperandVariableIds, "'Targets'");

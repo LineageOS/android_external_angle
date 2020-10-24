@@ -14,16 +14,30 @@
 
 #include "source/fuzz/fact_manager/dead_block_facts.h"
 
+#include "source/fuzz/fuzzer_util.h"
+
 namespace spvtools {
 namespace fuzz {
 namespace fact_manager {
 
-void DeadBlockFacts::AddFact(const protobufs::FactBlockIsDead& fact) {
+DeadBlockFacts::DeadBlockFacts(opt::IRContext* ir_context)
+    : ir_context_(ir_context) {}
+
+bool DeadBlockFacts::MaybeAddFact(const protobufs::FactBlockIsDead& fact) {
+  if (!fuzzerutil::MaybeFindBlock(ir_context_, fact.block_id())) {
+    return false;
+  }
+
   dead_block_ids_.insert(fact.block_id());
+  return true;
 }
 
 bool DeadBlockFacts::BlockIsDead(uint32_t block_id) const {
   return dead_block_ids_.count(block_id) != 0;
+}
+
+const std::unordered_set<uint32_t>& DeadBlockFacts::GetDeadBlocks() const {
+  return dead_block_ids_;
 }
 
 }  // namespace fact_manager

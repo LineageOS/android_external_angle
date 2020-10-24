@@ -28,6 +28,11 @@
 #include "platform/Feature.h"
 #include "platform/FrontendFeatures.h"
 
+namespace angle
+{
+class FrameCaptureShared;
+}  // namespace angle
+
 namespace gl
 {
 class Context;
@@ -73,11 +78,13 @@ class ShareGroup final : angle::NonCopyable
 
     void addRef();
 
-    void release(const gl::Context *context);
+    void release(const egl::Display *display);
 
     rx::ShareGroupImpl *getImplementation() const { return mImplementation; }
 
     rx::Serial generateFramebufferSerial() { return mFramebufferSerialFactory.generate(); }
+
+    angle::FrameCaptureShared *getFrameCaptureShared() { return mFrameCaptureShared.get(); }
 
   protected:
     ~ShareGroup();
@@ -86,9 +93,12 @@ class ShareGroup final : angle::NonCopyable
     size_t mRefCount;
     rx::ShareGroupImpl *mImplementation;
     rx::SerialFactory mFramebufferSerialFactory;
+
+    // Note: we use a raw pointer here so we can exclude frame capture sources from the build.
+    std::unique_ptr<angle::FrameCaptureShared> mFrameCaptureShared;
 };
 
-// Constant coded here as a sanity limit.
+// Constant coded here as a reasonable limit.
 constexpr EGLAttrib kProgramCacheSizeAbsoluteMax = 0x4000000;
 
 class Display final : public LabeledObject,
@@ -199,6 +209,8 @@ class Display final : public LabeledObject,
     BlobCache &getBlobCache() { return mBlobCache; }
 
     static EGLClientBuffer GetNativeClientBuffer(const struct AHardwareBuffer *buffer);
+    static Error CreateNativeClientBuffer(const egl::AttributeMap &attribMap,
+                                          EGLClientBuffer *eglClientBuffer);
 
     Error waitClient(const gl::Context *context);
     Error waitNative(const gl::Context *context, EGLint engine);
@@ -252,6 +264,13 @@ class Display final : public LabeledObject,
     void returnZeroFilledBuffer(angle::ScratchBuffer zeroFilledBuffer);
 
     egl::Error handleGPUSwitch();
+
+    std::mutex &getDisplayGlobalMutex() { return mDisplayGlobalMutex; }
+    std::mutex &getProgramCacheMutex() { return mProgramCacheMutex; }
+
+    // Installs LoggingAnnotator as the global DebugAnnotator, for back-ends that do not implement
+    // their own DebugAnnotator.
+    void setGlobalDebugAnnotator() { gl::InitializeDebugAnnotations(&mAnnotator); }
 
   private:
     Display(EGLenum platform, EGLNativeDisplayType displayId, Device *eglDevice);
@@ -321,6 +340,9 @@ class Display final : public LabeledObject,
     std::mutex mScratchBufferMutex;
     std::vector<angle::ScratchBuffer> mScratchBuffers;
     std::vector<angle::ScratchBuffer> mZeroFilledBuffers;
+
+    std::mutex mDisplayGlobalMutex;
+    std::mutex mProgramCacheMutex;
 };
 
 }  // namespace egl

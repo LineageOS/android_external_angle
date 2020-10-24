@@ -60,7 +60,8 @@ class ANGLEPerfTest : public testing::Test, angle::NonCopyable
     ANGLEPerfTest(const std::string &name,
                   const std::string &backend,
                   const std::string &story,
-                  unsigned int iterationsPerStep);
+                  unsigned int iterationsPerStep,
+                  const char *units = "ns");
     ~ANGLEPerfTest() override;
 
     virtual void step() = 0;
@@ -72,6 +73,12 @@ class ANGLEPerfTest : public testing::Test, angle::NonCopyable
     virtual void flush() {}
 
   protected:
+    enum class RunLoopPolicy
+    {
+        FinishEveryStep,
+        RunContinuously,
+    };
+
     void run();
     void SetUp() override;
     void TearDown() override;
@@ -86,7 +93,7 @@ class ANGLEPerfTest : public testing::Test, angle::NonCopyable
 
     // Defaults to one step per run loop. Can be changed in any test.
     void setStepsPerRunLoopStep(int stepsPerRunLoop);
-    void doRunLoop(double maxRunTime);
+    void doRunLoop(double maxRunTime, int maxStepsToRun, RunLoopPolicy runPolicy);
 
     // Overriden in trace perf tests.
     virtual void saveScreenshot(const std::string &screenshotName) {}
@@ -107,11 +114,13 @@ class ANGLEPerfTest : public testing::Test, angle::NonCopyable
     int mStepsPerRunLoopStep;
     int mIterationsPerStep;
     bool mRunning;
+    std::vector<double> mTestTrialResults;
 };
 
 enum class SurfaceType
 {
     Window,
+    WindowWithVSync,
     Offscreen,
 };
 
@@ -133,7 +142,9 @@ struct RenderTestParams : public angle::PlatformParameters
 class ANGLERenderTest : public ANGLEPerfTest
 {
   public:
-    ANGLERenderTest(const std::string &name, const RenderTestParams &testParams);
+    ANGLERenderTest(const std::string &name,
+                    const RenderTestParams &testParams,
+                    const char *units = "ns");
     ~ANGLERenderTest() override;
 
     void addExtensionPrerequisite(const char *extensionName);

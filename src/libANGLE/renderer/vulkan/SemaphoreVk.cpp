@@ -138,8 +138,9 @@ angle::Result SemaphoreVk::wait(gl::Context *context,
 
             vk::CommandBuffer &commandBuffer = contextVk->getOutsideRenderPassCommandBuffer();
 
-            // Image should not be accessed while unowned.
-            ASSERT(!textureVk->getImage().hasStagedUpdates());
+            // Image should not be accessed while unowned. Emulated formats may have staged updates
+            // to clear the image after initialization.
+            ASSERT(!image.hasStagedUpdates() || image.getFormat().hasEmulatedImageChannels());
 
             // Queue ownership transfer and layout transition.
             image.acquireFromExternal(contextVk, VK_QUEUE_FAMILY_EXTERNAL, rendererQueueFamilyIndex,
@@ -167,6 +168,7 @@ angle::Result SemaphoreVk::signal(gl::Context *context,
             BufferVk *bufferVk             = vk::GetImpl(buffer);
             vk::BufferHelper &bufferHelper = bufferVk->getBuffer();
 
+            ANGLE_TRY(contextVk->onBufferReleaseToExternal(bufferHelper));
             vk::CommandBuffer &commandBuffer = contextVk->getOutsideRenderPassCommandBuffer();
 
             // Queue ownership transfer.
@@ -195,6 +197,7 @@ angle::Result SemaphoreVk::signal(gl::Context *context,
 
             ANGLE_TRY(textureVk->ensureImageInitialized(contextVk, ImageMipLevels::EnabledLevels));
 
+            ANGLE_TRY(contextVk->onImageReleaseToExternal(image));
             vk::CommandBuffer &commandBuffer = contextVk->getOutsideRenderPassCommandBuffer();
 
             // Queue ownership transfer and layout transition.

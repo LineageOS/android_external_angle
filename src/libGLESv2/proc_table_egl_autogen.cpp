@@ -39,6 +39,7 @@ const ProcEntry g_procTable[] = {
     {"eglCreateDeviceANGLE", P(EGL_CreateDeviceANGLE)},
     {"eglCreateImage", P(EGL_CreateImage)},
     {"eglCreateImageKHR", P(EGL_CreateImageKHR)},
+    {"eglCreateNativeClientBufferANDROID", P(EGL_CreateNativeClientBufferANDROID)},
     {"eglCreatePbufferFromClientBuffer", P(EGL_CreatePbufferFromClientBuffer)},
     {"eglCreatePbufferSurface", P(EGL_CreatePbufferSurface)},
     {"eglCreatePixmapSurface", P(EGL_CreatePixmapSurface)},
@@ -109,6 +110,7 @@ const ProcEntry g_procTable[] = {
     {"eglReleaseTexImage", P(EGL_ReleaseTexImage)},
     {"eglReleaseThread", P(EGL_ReleaseThread)},
     {"eglSetBlobCacheFuncsANDROID", P(EGL_SetBlobCacheFuncsANDROID)},
+    {"eglSignalSyncKHR", P(EGL_SignalSyncKHR)},
     {"eglStreamAttribKHR", P(EGL_StreamAttribKHR)},
     {"eglStreamConsumerAcquireKHR", P(EGL_StreamConsumerAcquireKHR)},
     {"eglStreamConsumerGLTextureExternalAttribsNV",
@@ -224,6 +226,8 @@ const ProcEntry g_procTable[] = {
     {"glBlitFramebufferContextANGLE", P(gl::BlitFramebufferContextANGLE)},
     {"glBufferData", P(gl::BufferData)},
     {"glBufferDataContextANGLE", P(gl::BufferDataContextANGLE)},
+    {"glBufferStorageEXT", P(gl::BufferStorageEXT)},
+    {"glBufferStorageEXTContextANGLE", P(gl::BufferStorageEXTContextANGLE)},
     {"glBufferStorageMemEXT", P(gl::BufferStorageMemEXT)},
     {"glBufferStorageMemEXTContextANGLE", P(gl::BufferStorageMemEXTContextANGLE)},
     {"glBufferSubData", P(gl::BufferSubData)},
@@ -309,6 +313,10 @@ const ProcEntry g_procTable[] = {
     {"glCopyBufferSubDataContextANGLE", P(gl::CopyBufferSubDataContextANGLE)},
     {"glCopyImageSubData", P(gl::CopyImageSubData)},
     {"glCopyImageSubDataContextANGLE", P(gl::CopyImageSubDataContextANGLE)},
+    {"glCopyImageSubDataEXT", P(gl::CopyImageSubDataEXT)},
+    {"glCopyImageSubDataEXTContextANGLE", P(gl::CopyImageSubDataEXTContextANGLE)},
+    {"glCopyImageSubDataOES", P(gl::CopyImageSubDataOES)},
+    {"glCopyImageSubDataOESContextANGLE", P(gl::CopyImageSubDataOESContextANGLE)},
     {"glCopySubTexture3DANGLE", P(gl::CopySubTexture3DANGLE)},
     {"glCopySubTexture3DANGLEContextANGLE", P(gl::CopySubTexture3DANGLEContextANGLE)},
     {"glCopySubTextureCHROMIUM", P(gl::CopySubTextureCHROMIUM)},
@@ -1091,6 +1099,8 @@ const ProcEntry g_procTable[] = {
     {"glMemoryObjectParameterivEXTContextANGLE", P(gl::MemoryObjectParameterivEXTContextANGLE)},
     {"glMinSampleShading", P(gl::MinSampleShading)},
     {"glMinSampleShadingContextANGLE", P(gl::MinSampleShadingContextANGLE)},
+    {"glMinSampleShadingOES", P(gl::MinSampleShadingOES)},
+    {"glMinSampleShadingOESContextANGLE", P(gl::MinSampleShadingOESContextANGLE)},
     {"glMultMatrixf", P(gl::MultMatrixf)},
     {"glMultMatrixfContextANGLE", P(gl::MultMatrixfContextANGLE)},
     {"glMultMatrixx", P(gl::MultMatrixx)},
@@ -1626,5 +1636,5 @@ const ProcEntry g_procTable[] = {
     {"glWeightPointerOES", P(gl::WeightPointerOES)},
     {"glWeightPointerOESContextANGLE", P(gl::WeightPointerOESContextANGLE)}};
 
-const size_t g_numProcs = 1529;
+const size_t g_numProcs = 1539;
 }  // namespace egl

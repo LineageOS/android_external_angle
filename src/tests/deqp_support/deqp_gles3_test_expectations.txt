@@ -335,6 +335,10 @@
 2137 MAC OPENGL : dEQP-GLES3.functional.shaders.loops.short_circuit.* = FAIL
 3317 MAC OPENGL : dEQP-GLES3.functional.fbo.blit.rect.out_of_bounds_linear = FAIL
 
+5136 MAC OPENGL : dEQP-GLES3.functional.fbo.completeness.renderable.texture.color0.stencil_index8 = FAIL
+5136 MAC OPENGL : dEQP-GLES3.functional.fbo.completeness.renderable.texture.stencil.stencil_index8 = FAIL
+5136 MAC OPENGL : dEQP-GLES3.functional.fbo.completeness.renderable.texture.depth.stencil_index8 = FAIL
+
 // ETC compressed formats not supported
 3853 MAC OPENGL : dEQP-GLES3.functional.negative_api.texture.compressedtexsubimage* = FAIL
 3853 MAC OPENGL : dEQP-GLES3.functional.negative_api.texture.generatemipmap = FAIL
@@ -351,6 +355,17 @@
 3317 MAC OPENGL AMD : dEQP-GLES3.functional.shaders.builtin_functions.precision.ceil.* = FAIL
 3317 MAC OPENGL AMD : dEQP-GLES3.functional.shaders.texture_functions.textureprojlod.isampler3d_vertex = FAIL
 3317 MAC OPENGL AMD : dEQP-GLES3.functional.shaders.texture_functions.textureprojlod.usampler3d_vertex = FAIL
+
+5172 MAC OPENGL AMD : dEQP-GLES3.functional.draw.draw_elements.indices.user_ptr.index_byte = FAIL
+5172 MAC OPENGL AMD : dEQP-GLES3.functional.draw.draw_elements_instanced.indices.user_ptr.index_byte = FAIL
+5172 MAC OPENGL AMD : dEQP-GLES3.functional.dither.enabled.* = FAIL
+5172 MAC OPENGL AMD : dEQP-GLES3.functional.draw.random.* = FAIL
+5172 MAC OPENGL AMD : dEQP-GLES3.functional.fragment_ops.depth_stencil.stencil_depth_funcs.no_stencil* = FAIL
+5172 MAC OPENGL AMD : dEQP-GLES3.functional.fragment_ops.depth_stencil.stencil_ops.keep* = FAIL
+5172 MAC OPENGL AMD : dEQP-GLES3.functional.fragment_ops.depth_stencil.stencil_ops.zero* = FAIL
+5172 MAC OPENGL AMD : dEQP-GLES3.functional.shaders.fragdata.valid_dynamic_index = FAIL
+5172 MAC OPENGL AMD : dEQP-GLES3.functional.shaders.fragdata.valid_uniform_index = FAIL
+5172 MAC OPENGL AMD : dEQP-GLES3.functional.shaders.fragdata.draw_buffers = FAIL
 
 // Mac Intel crashes
 2137 MAC OPENGL INTEL : dEQP-GLES3.functional.shaders.discard.function_static_loop_never = SKIP
@@ -426,6 +441,9 @@
 3531 MAC OPENGL INTEL : dEQP-GLES3.functional.fbo.render.resize.tex2d_rgb16f = FAIL
 3531 MAC OPENGL INTEL : dEQP-GLES3.functional.fbo.render.resize.tex2d_rgb8 = FAIL
 
+5172 MAC OPENGL INTEL : dEQP-GLES3.functional.fragment_out.basic.int.* = FAIL
+5172 MAC OPENGL INTEL : dEQP-GLES3.functional.fragment_out.basic.uint.* = FAIL
+
 // Android only failures
 1487 ANDROID GLES : dEQP-GLES3.functional.fbo.completeness.renderable.texture.color0.red_half_float_oes = FAIL
 1487 ANDROID GLES : dEQP-GLES3.functional.fbo.completeness.renderable.texture.color0.rg_half_float_oes = FAIL
@@ -489,6 +507,7 @@
 3308 NEXUS5X GLES : dEQP-GLES3.functional.transform_feedback.random.interleaved.triangles.8 = FAIL
 3308 NEXUS5X GLES : dEQP-GLES3.functional.transform_feedback.random.interleaved.triangles.10 = FAIL
 2322 NEXUS5X GLES : dEQP-GLES3.functional.shaders.metamorphic.* = SKIP
+5184 NEXUS5X GLES : dEQP-GLES3.functional.transform_feedback.random_full_array_capture.* = FAIL
 
 // Seems to fail on all desktop GL
 2960 OPENGL : dEQP-GLES3.functional.fbo.blit.default_framebuffer.srgb8_alpha8 = FAIL
@@ -499,6 +518,10 @@
 // Fails on Windows + Linux.
 2222 OPENGL NVIDIA : dEQP-GLES3.functional.fbo.completeness.samples.rbo2_rbo2_rbo0 = FAIL
 2222 OPENGL NVIDIA : dEQP-GLES3.functional.fbo.completeness.samples.rbo1_rbo2_rbo0 = FAIL
+
+// Low memory warnings when run multi-process.
+5162 OPENGL NVIDIA WIN : dEQP-GLES3.functional.multisample.fbo_8_samples.constancy* = SKIP
+5162 OPENGL NVIDIA WIN : dEQP-GLES3.functional.multisample.fbo_max_samples.constancy* = SKIP
 
 // General Vulkan failures
 
