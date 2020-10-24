@@ -289,6 +289,18 @@ static gl::TextureCaps GenerateTextureFormatCaps(const FunctionsGL *functions,
     textureCaps.blendable         = textureCaps.renderbuffer || textureCaps.textureAttachment;
 
     // Do extra renderability validation for some formats.
+    if (internalFormat == GL_R16F || internalFormat == GL_RG16F || internalFormat == GL_RGB16F)
+    {
+        // SupportRequirement can't currently express a condition of the form (version && extension)
+        // || other extensions, so do the (version && extension) part here.
+        if (functions->isAtLeastGLES(gl::Version(3, 0)) &&
+            functions->hasGLESExtension("GL_EXT_color_buffer_half_float"))
+        {
+            textureCaps.textureAttachment = true;
+            textureCaps.renderbuffer      = true;
+        }
+    }
+
     // We require GL_RGBA16F is renderable to expose EXT_color_buffer_half_float but we can't know
     // if the format is supported unless we try to create a framebuffer.
     if (internalFormat == GL_RGBA16F)
@@ -1482,7 +1494,8 @@ void GenerateCaps(const FunctionsGL *functions,
     // EXT_float_blend
     // Assume all desktop driver supports this by default.
     extensions->floatBlend = functions->standard == STANDARD_GL_DESKTOP ||
-                             functions->hasGLESExtension("GL_EXT_float_blend");
+                             functions->hasGLESExtension("GL_EXT_float_blend") ||
+                             functions->isAtLeastGLES(gl::Version(3, 2));
 
     // ANGLE_base_vertex_base_instance
     extensions->baseVertexBaseInstance =
@@ -1679,8 +1692,9 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
     // TODO(jie.a.chen@intel.com): Clean up the bugs.
     // anglebug.com/3031
     // crbug.com/922936
-    ANGLE_FEATURE_CONDITION(features, disableWorkerContexts,
-                            (IsWindows() && (isIntel || isAMD)) || (IsLinux() && isNvidia));
+    ANGLE_FEATURE_CONDITION(
+        features, disableWorkerContexts,
+        (IsWindows() && (isIntel || isAMD)) || (IsLinux() && isNvidia) || IsIOS());
 
     bool limitMaxTextureSize = isIntel && IsLinux() && GetLinuxOSVersion() < OSVersion(5, 0, 0);
     ANGLE_FEATURE_CONDITION(features, limitMaxTextureSizeTo4096,
@@ -1815,6 +1829,14 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
     // causes issues in Chrome. To get around this, default to a 30Hz refresh rate if we see bogus
     // from the driver.
     ANGLE_FEATURE_CONDITION(features, clampMscRate, IsLinux() && IsWayland());
+
+    ANGLE_FEATURE_CONDITION(features, bindTransformFeedbackBufferBeforeBindBufferRange, IsApple());
+
+    // http://crbug.com/1137851
+    // Speculative fix for now, leave disabled so users can enable it via flags.
+    ANGLE_FEATURE_CONDITION(features, disableSyncControlSupport, false);
+
+    ANGLE_FEATURE_CONDITION(features, keepBufferShadowCopy, !CanMapBufferForRead(functions));
 }
 
 void InitializeFrontendFeatures(const FunctionsGL *functions, angle::FrontendFeatures *features)

@@ -46,13 +46,11 @@ bool TransformationAddParameter::IsApplicable(
   }
 
   // The type must be supported.
-  uint32_t new_parameter_type_id = message_.parameter_type_id();
-  auto new_parameter_type =
-      ir_context->get_type_mgr()->GetType(new_parameter_type_id);
-  if (!new_parameter_type) {
+  if (ir_context->get_def_use_mgr()->GetDef(message_.parameter_type_id()) ==
+      nullptr) {
     return false;
   }
-  if (!IsParameterTypeSupported(*new_parameter_type)) {
+  if (!IsParameterTypeSupported(ir_context, message_.parameter_type_id())) {
     return false;
   }
 
@@ -76,12 +74,6 @@ bool TransformationAddParameter::IsApplicable(
     }
     // If the id of the value of the map is not available before the caller,
     // return false.
-    // TODO(https://github.com/KhronosGroup/SPIRV-Tools/issues/3722):
-    //      This can potentially trigger a bug if the caller is in an
-    //      unreachable block. fuzzerutil::IdIsAvailableBeforeInstruction uses
-    //      dominator analysis to check that value_id is available and the
-    //      domination rules are not defined for unreachable blocks.
-    //      The following code should be refactored.
     if (!fuzzerutil::IdIsAvailableBeforeInstruction(ir_context, instr,
                                                     value_id)) {
       return false;
@@ -94,7 +86,7 @@ bool TransformationAddParameter::IsApplicable(
     }
 
     // Type of every value of the map must be the same for all callers.
-    if (new_parameter_type_id != value_type_id) {
+    if (message_.parameter_type_id() != value_type_id) {
       return false;
     }
   }
@@ -125,20 +117,6 @@ void TransformationAddParameter::Apply(
 
   fuzzerutil::UpdateModuleIdBound(ir_context, message_.parameter_fresh_id());
 
-  // If the |new_parameter_type_id| is not a pointer type, mark id as
-  // irrelevant so that we can replace its use with some other id. If the
-  // |new_parameter_type_id| is a pointer type, we cannot mark it with
-  // IdIsIrrelevant, because this pointer might be replaced by a pointer from
-  // original shader. This would change the semantics of the module. In the case
-  // of a pointer type we mark it with PointeeValueIsIrrelevant.
-  if (new_parameter_type->kind() != opt::analysis::Type::kPointer) {
-    transformation_context->GetFactManager()->AddFactIdIsIrrelevant(
-        message_.parameter_fresh_id());
-  } else {
-    transformation_context->GetFactManager()->AddFactValueOfPointeeIsIrrelevant(
-        message_.parameter_fresh_id());
-  }
-
   // Fix all OpFunctionCall instructions.
   for (auto* inst : fuzzerutil::GetCallers(ir_context, function->result_id())) {
     inst->AddOperand(
@@ -167,9 +145,25 @@ void TransformationAddParameter::Apply(
         old_function_type->GetSingleWordInOperand(0), parameter_type_ids);
   }
 
+  auto new_parameter_kind = new_parameter_type->kind();
+
   // Make sure our changes are analyzed.
   ir_context->InvalidateAnalysesExceptFor(
       opt::IRContext::Analysis::kAnalysisNone);
+
+  // If the |new_parameter_type_id| is not a pointer type, mark id as
+  // irrelevant so that we can replace its use with some other id. If the
+  // |new_parameter_type_id| is a pointer type, we cannot mark it with
+  // IdIsIrrelevant, because this pointer might be replaced by a pointer from
+  // original shader. This would change the semantics of the module. In the case
+  // of a pointer type we mark it with PointeeValueIsIrrelevant.
+  if (new_parameter_kind != opt::analysis::Type::kPointer) {
+    transformation_context->GetFactManager()->AddFactIdIsIrrelevant(
+        message_.parameter_fresh_id());
+  } else {
+    transformation_context->GetFactManager()->AddFactValueOfPointeeIsIrrelevant(
+        message_.parameter_fresh_id());
+  }
 }
 
 protobufs::Transformation TransformationAddParameter::ToMessage() const {
@@ -179,32 +173,40 @@ protobufs::Transformation TransformationAddParameter::ToMessage() const {
 }
 
 bool TransformationAddParameter::IsParameterTypeSupported(
-    const opt::analysis::Type& type) {
+    opt::IRContext* ir_context, uint32_t type_id) {
   // TODO(https://github.com/KhronosGroup/SPIRV-Tools/issues/3403):
   //  Think about other type instructions we can add here.
-  switch (type.kind()) {
-    case opt::analysis::Type::kBool:
-    case opt::analysis::Type::kInteger:
-    case opt::analysis::Type::kFloat:
-    case opt::analysis::Type::kMatrix:
-    case opt::analysis::Type::kVector:
+  opt::Instruction* type_inst = ir_context->get_def_use_mgr()->GetDef(type_id);
+  switch (type_inst->opcode()) {
+    case SpvOpTypeBool:
+    case SpvOpTypeInt:
+    case SpvOpTypeFloat:
+    case SpvOpTypeMatrix:
+    case SpvOpTypeVector:
       return true;
-    case opt::analysis::Type::kArray:
-      return IsParameterTypeSupported(*type.AsArray()->element_type());
-    case opt::analysis::Type::kStruct:
-      return std::all_of(type.AsStruct()->element_types().begin(),
-                         type.AsStruct()->element_types().end(),
-                         [](const opt::analysis::Type* element_type) {
-                           return IsParameterTypeSupported(*element_type);
-                         });
-    case opt::analysis::Type::kPointer: {
-      auto storage_class = type.AsPointer()->storage_class();
+    case SpvOpTypeArray:
+      return IsParameterTypeSupported(ir_context,
+                                      type_inst->GetSingleWordInOperand(0));
+    case SpvOpTypeStruct:
+      if (fuzzerutil::HasBlockOrBufferBlockDecoration(ir_context, type_id)) {
+        return false;
+      }
+      for (uint32_t i = 0; i < type_inst->NumInOperands(); i++) {
+        if (!IsParameterTypeSupported(ir_context,
+                                      type_inst->GetSingleWordInOperand(i))) {
+          return false;
+        }
+      }
+      return true;
+    case SpvOpTypePointer: {
+      SpvStorageClass storage_class =
+          static_cast<SpvStorageClass>(type_inst->GetSingleWordInOperand(0));
       switch (storage_class) {
         case SpvStorageClassPrivate:
         case SpvStorageClassFunction:
         case SpvStorageClassWorkgroup: {
-          auto pointee_type = type.AsPointer()->pointee_type();
-          return IsParameterTypeSupported(*pointee_type);
+          return IsParameterTypeSupported(ir_context,
+                                          type_inst->GetSingleWordInOperand(1));
         }
         default:
           return false;
@@ -213,6 +215,10 @@ bool TransformationAddParameter::IsParameterTypeSupported(
     default:
       return false;
   }
+}
+
+std::unordered_set<uint32_t> TransformationAddParameter::GetFreshIds() const {
+  return {message_.parameter_fresh_id(), message_.function_type_fresh_id()};
 }
 
 }  // namespace fuzz

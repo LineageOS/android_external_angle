@@ -2721,6 +2721,9 @@ void main() {
 // Based on the WebGL test conformance/textures/misc/texture-copying-feedback-loops.html
 TEST_P(WebGLCompatibilityTest, TextureCopyingFeedbackLoops)
 {
+    // TODO(crbug.com/1132295): Failing on Apple DTK.
+    ANGLE_SKIP_TEST_IF(IsOSX() && IsARM64() && IsDesktopOpenGL());
+
     GLTexture texture;
     glBindTexture(GL_TEXTURE_2D, texture.get());
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 2, 2, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
@@ -2788,6 +2791,9 @@ TEST_P(WebGL2CompatibilityTest, CopyMip1ToMip0)
 
     // http://anglebug.com/4805
     ANGLE_SKIP_TEST_IF(IsOpenGL() && IsIntel() && (IsWindows() || IsOSX()));
+
+    // TODO(crbug.com/1132295): Failing on ARM64-based Apple DTKs.
+    ANGLE_SKIP_TEST_IF(IsOSX() && IsARM64() && IsDesktopOpenGL());
 
     GLFramebuffer framebuffer;
     glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
@@ -3619,7 +3625,8 @@ TEST_P(WebGLCompatibilityTest, R16FTextures)
             // Sized R 16F
             bool texture = true;
             bool filter  = true;
-            bool render  = IsGLExtensionEnabled("GL_EXT_color_buffer_float");
+            bool render  = IsGLExtensionEnabled("GL_EXT_color_buffer_float") ||
+                          IsGLExtensionEnabled("GL_EXT_color_buffer_half_float");
             TestFloatTextureFormat(GL_R16F, GL_RED, GL_HALF_FLOAT, texture, filter, render,
                                    textureData, readPixelsData);
         }
@@ -3675,7 +3682,8 @@ TEST_P(WebGLCompatibilityTest, RG16FTextures)
             // Sized RG 16F
             bool texture = true;
             bool filter  = true;
-            bool render  = IsGLExtensionEnabled("GL_EXT_color_buffer_float");
+            bool render  = IsGLExtensionEnabled("GL_EXT_color_buffer_float") ||
+                          IsGLExtensionEnabled("GL_EXT_color_buffer_half_float");
             TestFloatTextureFormat(GL_RG16F, GL_RG, GL_HALF_FLOAT, texture, filter, render,
                                    textureData, readPixelsData);
         }
@@ -3737,10 +3745,8 @@ TEST_P(WebGLCompatibilityTest, RGB16FTextures)
             // Sized RGB 16F
             bool texture = true;
             bool filter  = true;
-            // It is unclear how EXT_color_buffer_half_float applies to ES3.0 and above, however,
-            // dEQP GLES3 es3fFboColorbufferTests.cpp verifies that texture attachment of GL_RGB16F
-            // is possible, so assume that all GLES implementations support it.
-            bool render = IsGLExtensionEnabled("GL_EXT_color_buffer_half_float");
+            // Renderability of RGB is forbidden by GL_EXT_color_buffer_half_float in WebGL 2.
+            bool render = false;
             TestFloatTextureFormat(GL_RGB16F, GL_RGB, GL_HALF_FLOAT, texture, filter, render,
                                    textureData, readPixelsData);
         }
@@ -3796,7 +3802,8 @@ TEST_P(WebGLCompatibilityTest, RGBA16FTextures)
             // Sized RGBA 16F
             bool texture = true;
             bool filter  = true;
-            bool render  = IsGLExtensionEnabled("GL_EXT_color_buffer_float");
+            bool render  = IsGLExtensionEnabled("GL_EXT_color_buffer_float") ||
+                          IsGLExtensionEnabled("GL_EXT_color_buffer_half_float");
             TestFloatTextureFormat(GL_RGBA16F, GL_RGBA, GL_HALF_FLOAT, texture, filter, render,
                                    textureData, readPixelsData);
         }

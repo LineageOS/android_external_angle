@@ -174,10 +174,16 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
 
     void releaseOwnershipOfImage(const gl::Context *context);
 
-    const vk::ImageView &getReadImageViewAndRecordUse(ContextVk *contextVk) const;
+    const vk::ImageView &getReadImageViewAndRecordUse(ContextVk *contextVk,
+                                                      GLenum srgbDecode,
+                                                      bool texelFetchStaticUse) const;
+
     // A special view for cube maps as a 2D array, used with shaders that do texelFetch() and for
     // seamful cube map emulation.
-    const vk::ImageView &getFetchImageViewAndRecordUse(ContextVk *contextVk) const;
+    const vk::ImageView &getFetchImageViewAndRecordUse(ContextVk *contextVk,
+                                                       GLenum srgbDecode,
+                                                       bool texelFetchStaticUse) const;
+
     // A special view used for texture copies that shouldn't perform swizzle.
     const vk::ImageView &getCopyImageViewAndRecordUse(ContextVk *contextVk) const;
     angle::Result getStorageImageView(ContextVk *contextVk,
@@ -213,6 +219,13 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
                               void *pixels) override;
 
     ANGLE_INLINE bool hasBeenBoundAsImage() const { return mState.hasBeenBoundAsImage(); }
+
+    bool isSRGBOverrideEnabled() const
+    {
+        return mState.getSRGBOverride() != gl::SrgbOverride::Default;
+    }
+
+    angle::Result ensureMutable(ContextVk *contextVk);
 
   private:
     // Transform an image index from the frontend into one that can be used on the backing
@@ -385,11 +398,11 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
     const vk::Format &getBaseLevelFormat(RendererVk *renderer) const;
     // Queues a flush of any modified image attributes. The image will be reallocated with its new
     // attributes at the next opportunity.
-    angle::Result respecifyImageAttributes(ContextVk *contextVk);
-    angle::Result respecifyImageAttributesAndLevels(ContextVk *contextVk,
-                                                    gl::LevelIndex previousBaseLevelGL,
-                                                    gl::LevelIndex baseLevelGL,
-                                                    gl::LevelIndex maxLevelGL);
+    angle::Result respecifyImageStorage(ContextVk *contextVk);
+    angle::Result respecifyImageStorageAndLevels(ContextVk *contextVk,
+                                                 gl::LevelIndex previousBaseLevelGL,
+                                                 gl::LevelIndex baseLevelGL,
+                                                 gl::LevelIndex maxLevelGL);
 
     // Update base and max levels, and re-create image if needed.
     angle::Result updateBaseMaxLevels(ContextVk *contextVk,
@@ -409,8 +422,12 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
         return (mImage->valid()) ? mImage->getTilingMode() : VK_IMAGE_TILING_OPTIMAL;
     }
 
+    angle::Result refreshImageViews(ContextVk *contextVk);
+    bool shouldDecodeSRGB(ContextVk *contextVk, GLenum srgbDecode, bool texelFetchStaticUse) const;
+    void initImageUsageFlags(ContextVk *contextVk, const vk::Format &format);
+
     bool mOwnsImage;
-    bool mRequiresSRGBViews;
+    bool mRequiresMutableStorage;
 
     gl::TextureType mImageNativeType;
 

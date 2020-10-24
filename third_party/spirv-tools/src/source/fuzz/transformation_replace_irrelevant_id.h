@@ -32,6 +32,7 @@ class TransformationReplaceIrrelevantId : public Transformation {
   // - The id of interest in |message_.id_use_descriptor| is irrelevant
   //   according to the fact manager.
   // - The types of the original id and of the replacement ids are the same.
+  // - The replacement must not be the result id of an OpFunction instruction.
   // - |message_.replacement_id| is available to use at the enclosing
   //   instruction of |message_.id_use_descriptor|.
   // - The original id is in principle replaceable with any other id of the same
@@ -46,7 +47,16 @@ class TransformationReplaceIrrelevantId : public Transformation {
   void Apply(opt::IRContext* ir_context,
              TransformationContext* transformation_context) const override;
 
+  std::unordered_set<uint32_t> GetFreshIds() const override;
+
   protobufs::Transformation ToMessage() const override;
+
+  // Returns true if and only if |use_instruction| is OpVariable and
+  // |replacement_for_use| is not a constant instruction - i.e., if it would be
+  // illegal to replace the variable's initializer with the given instruction.
+  static bool AttemptsToReplaceVariableInitializerWithNonConstant(
+      const opt::Instruction& use_instruction,
+      const opt::Instruction& replacement_for_use);
 
  private:
   protobufs::TransformationReplaceIrrelevantId message_;

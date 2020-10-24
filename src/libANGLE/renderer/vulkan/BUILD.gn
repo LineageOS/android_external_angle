@@ -27,6 +27,8 @@ _vulkan_backend_sources = [
   "CompilerVk.h",
   "ContextVk.cpp",
   "ContextVk.h",
+  "DebugAnnotatorVk.cpp",
+  "DebugAnnotatorVk.h",
   "DeviceVk.cpp",
   "DeviceVk.h",
   "DisplayVk.cpp",
@@ -168,6 +170,9 @@ config("angle_vulkan_backend_config") {
   if (angle_enable_vulkan_gpu_trace_events) {
     defines += [ "ANGLE_ENABLE_VULKAN_GPU_TRACE_EVENTS=1" ]
   }
+  if (angle_enable_vulkan_validation_layers) {
+    defines += [ "ANGLE_ENABLE_VULKAN_VALIDATION_LAYERS" ]
+  }
 }
 
 angle_source_set("angle_vk_mem_alloc_wrapper") {
@@ -196,6 +201,7 @@ angle_source_set("angle_vulkan_backend") {
   libs = []
   deps = [
     ":angle_vk_mem_alloc_wrapper",
+    "$angle_root:angle_abseil",
     "$angle_root:angle_compression",
     "$angle_root:angle_gpu_info_util",
     "$angle_root:angle_image_util",

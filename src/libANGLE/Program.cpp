@@ -12,12 +12,12 @@
 #include <algorithm>
 #include <utility>
 
+#include "common/angle_version.h"
 #include "common/bitset_utils.h"
 #include "common/debug.h"
 #include "common/platform.h"
 #include "common/string_utils.h"
 #include "common/utilities.h"
-#include "common/version.h"
 #include "compiler/translator/blocklayout.h"
 #include "libANGLE/Context.h"
 #include "libANGLE/ErrorStrings.h"
@@ -889,6 +889,7 @@ void WriteShaderVar(BinaryOutputStream *stream, const sh::ShaderVariable &var)
     stream->writeInt(var.offset);
     stream->writeInt(var.readonly);
     stream->writeInt(var.writeonly);
+    stream->writeInt(var.texelFetchStaticUse);
 
     ASSERT(var.fields.empty());
 }
@@ -906,10 +907,11 @@ void LoadShaderVar(BinaryInputStream *stream, sh::ShaderVariable *var)
     var->structName = stream->readString();
     var->setParentArrayIndex(stream->readInt<int>());
 
-    var->imageUnitFormat = stream->readInt<GLenum>();
-    var->offset          = stream->readInt<int>();
-    var->readonly        = stream->readBool();
-    var->writeonly       = stream->readBool();
+    var->imageUnitFormat     = stream->readInt<GLenum>();
+    var->offset              = stream->readInt<int>();
+    var->readonly            = stream->readBool();
+    var->writeonly           = stream->readBool();
+    var->texelFetchStaticUse = stream->readBool();
 }
 
 // VariableLocation implementation.
@@ -1437,6 +1439,7 @@ angle::Result Program::linkImpl(const Context *context)
     // TODO: http://anglebug.com/4530: Enable program caching for separable programs
     if (cache && !isSeparable())
     {
+        std::lock_guard<std::mutex> cacheLock(context->getProgramCacheMutex());
         angle::Result cacheResult = cache->getProgram(context, this, &programHash);
         ANGLE_TRY(cacheResult);
 
@@ -1658,6 +1661,7 @@ void Program::resolveLinkImpl(const Context *context)
     postResolveLink(context);
 
     // Save to the program cache.
+    std::lock_guard<std::mutex> cacheLock(context->getProgramCacheMutex());
     MemoryProgramCache *cache = context->getMemoryProgramCache();
     // TODO: http://anglebug.com/4530: Enable program caching for separable programs
     if (cache && !isSeparable() &&

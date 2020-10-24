@@ -138,15 +138,6 @@ static bool RequireExtOrExtOrExt(const Version &, const Extensions &extensions)
     return extensions.*bool1 || extensions.*bool2 || extensions.*bool3;
 }
 
-static bool UnsizedHalfFloatOESRGBATextureAttachmentSupport(const Version &clientVersion,
-                                                            const Extensions &extensions)
-{
-    // dEQP requires ES3 + EXT_color_buffer_half_float for rendering to RGB[A] + HALF_FLOAT_OES
-    // textures but WebGL allows it with just ES 2.0
-    return (clientVersion.major >= 3 || extensions.webglCompatibility) &&
-           extensions.colorBufferHalfFloat;
-}
-
 // R8, RG8
 static bool SizedRGSupport(const Version &clientVersion, const Extensions &extensions)
 {
@@ -186,7 +177,9 @@ static bool SizedHalfFloatRGTextureAttachmentSupport(const Version &clientVersio
     // HALF_FLOAT
     if (clientVersion >= Version(3, 0))
     {
-        return extensions.colorBufferFloat;
+        // WebGL 2 supports EXT_color_buffer_half_float.
+        return extensions.colorBufferFloat ||
+               (extensions.webglCompatibility && extensions.colorBufferHalfFloat);
     }
     // HALF_FLOAT_OES
     else
@@ -253,7 +246,8 @@ static bool SizedHalfFloatRGBTextureAttachmentSupport(const Version &clientVersi
         // It is unclear how EXT_color_buffer_half_float applies to ES3.0 and above, however,
         // dEQP GLES3 es3fFboColorbufferTests.cpp verifies that texture attachment of GL_RGB16F
         // is possible, so assume that all GLES implementations support it.
-        return extensions.colorBufferHalfFloat;
+        // The WebGL version of the extension explicitly forbids RGB formats.
+        return extensions.colorBufferHalfFloat && !extensions.webglCompatibility;
     }
     // HALF_FLOAT_OES
     else
@@ -265,8 +259,9 @@ static bool SizedHalfFloatRGBTextureAttachmentSupport(const Version &clientVersi
 static bool SizedHalfFloatRGBRenderbufferSupport(const Version &clientVersion,
                                                  const Extensions &extensions)
 {
-    return (clientVersion >= Version(3, 0) || extensions.textureHalfFloat) &&
-           extensions.colorBufferHalfFloat;
+    return !extensions.webglCompatibility &&
+           ((clientVersion >= Version(3, 0) || extensions.textureHalfFloat) &&
+            extensions.colorBufferHalfFloat);
 }
 
 static bool SizedHalfFloatRGBATextureAttachmentSupport(const Version &clientVersion,
@@ -275,7 +270,9 @@ static bool SizedHalfFloatRGBATextureAttachmentSupport(const Version &clientVers
     // HALF_FLOAT
     if (clientVersion >= Version(3, 0))
     {
-        return extensions.colorBufferFloat;
+        // WebGL 2 supports EXT_color_buffer_half_float.
+        return extensions.colorBufferFloat ||
+               (extensions.webglCompatibility && extensions.colorBufferHalfFloat);
     }
     // HALF_FLOAT_OES
     else
@@ -354,7 +351,8 @@ InternalFormat::InternalFormat()
       textureSupport(NeverSupported),
       filterSupport(NeverSupported),
       textureAttachmentSupport(NeverSupported),
-      renderbufferSupport(NeverSupported)
+      renderbufferSupport(NeverSupported),
+      blendSupport(NeverSupported)
 {}
 
 InternalFormat::InternalFormat(const InternalFormat &other) = default;
@@ -985,8 +983,8 @@ static InternalFormatInfoMap BuildInternalFormatInfoMap()
     // - Multisampled buffer are disallowed for non-normalized integer component types and we want to support it for STENCIL_INDEX8
     // - All other stencil formats (all depth-stencil) are either float or normalized
     // - It affects only validation of internalformat in RenderbufferStorageMultisample.
-    //                         | Internal format  |sized|D |S |X | Format    | Type            | Component type        | Texture supported | Filterable    | Texture attachment | Renderbuffer   | Blend
-    AddDepthStencilFormat(&map, GL_STENCIL_INDEX8, true, 0, 8, 0, GL_STENCIL, GL_UNSIGNED_BYTE, GL_UNSIGNED_NORMALIZED, RequireES<1, 0>,    NeverSupported, RequireES<1, 0>,     RequireES<1, 0>, RequireES<1, 0>);
+    //                         | Internal format  |sized|D |S |X | Format          | Type            | Component type        | Texture supported                               | Filterable    | Texture attachment                              | Renderbuffer   | Blend
+    AddDepthStencilFormat(&map, GL_STENCIL_INDEX8, true, 0, 8, 0, GL_STENCIL_INDEX, GL_UNSIGNED_BYTE, GL_UNSIGNED_NORMALIZED, RequireESOrExt<1, 0, &Extensions::stencilIndex8>, NeverSupported, RequireESOrExt<1, 0, &Extensions::stencilIndex8>, RequireES<1, 0>, RequireES<1, 0>);
 
     // From GL_ANGLE_lossy_etc_decode
     //                       | Internal format                                                |W |H |D |BS |CC| SRGB | Texture supported                      | Filterable     | Texture attachment | Renderbuffer  | Blend
@@ -1073,8 +1071,8 @@ static InternalFormatInfoMap BuildInternalFormatInfoMap()
     AddRGBAFormat(&map, GL_RGBA,         false, 16, 16, 16, 16, 0, GL_RGBA, GL_HALF_FLOAT,                   GL_FLOAT, false, NeverSupported,                                                             NeverSupported,                                  NeverSupported,                                  NeverSupported, NeverSupported);
     AddRGBAFormat(&map, GL_RED,          false, 16,  0,  0,  0, 0, GL_RED,  GL_HALF_FLOAT_OES,               GL_FLOAT, false, RequireExtAndExt<&Extensions::textureHalfFloat, &Extensions::textureRG>,    RequireExt<&Extensions::textureHalfFloatLinear>, AlwaysSupported,                                 NeverSupported, NeverSupported);
     AddRGBAFormat(&map, GL_RG,           false, 16, 16,  0,  0, 0, GL_RG,   GL_HALF_FLOAT_OES,               GL_FLOAT, false, RequireExtAndExt<&Extensions::textureHalfFloat, &Extensions::textureRG>,    RequireExt<&Extensions::textureHalfFloatLinear>, AlwaysSupported,                                 NeverSupported, NeverSupported);
-    AddRGBAFormat(&map, GL_RGB,          false, 16, 16, 16,  0, 0, GL_RGB,  GL_HALF_FLOAT_OES,               GL_FLOAT, false, RequireExt<&Extensions::textureHalfFloat>,                                  RequireExt<&Extensions::textureHalfFloatLinear>, UnsizedHalfFloatOESRGBATextureAttachmentSupport, NeverSupported, NeverSupported);
-    AddRGBAFormat(&map, GL_RGBA,         false, 16, 16, 16, 16, 0, GL_RGBA, GL_HALF_FLOAT_OES,               GL_FLOAT, false, RequireExt<&Extensions::textureHalfFloat>,                                  RequireExt<&Extensions::textureHalfFloatLinear>, UnsizedHalfFloatOESRGBATextureAttachmentSupport, NeverSupported, NeverSupported);
+    AddRGBAFormat(&map, GL_RGB,          false, 16, 16, 16,  0, 0, GL_RGB,  GL_HALF_FLOAT_OES,               GL_FLOAT, false, RequireExt<&Extensions::textureHalfFloat>,                                  RequireExt<&Extensions::textureHalfFloatLinear>, RequireExt<&Extensions::colorBufferHalfFloat>,   NeverSupported, NeverSupported);
+    AddRGBAFormat(&map, GL_RGBA,         false, 16, 16, 16, 16, 0, GL_RGBA, GL_HALF_FLOAT_OES,               GL_FLOAT, false, RequireExt<&Extensions::textureHalfFloat>,                                  RequireExt<&Extensions::textureHalfFloatLinear>, RequireExt<&Extensions::colorBufferHalfFloat>,   NeverSupported, NeverSupported);
     AddRGBAFormat(&map, GL_RED,          false, 32,  0,  0,  0, 0, GL_RED,  GL_FLOAT,                        GL_FLOAT, false, RequireExtAndExt<&Extensions::textureFloatOES, &Extensions::textureRG>,     RequireExt<&Extensions::textureFloatLinearOES>,  AlwaysSupported,                                 NeverSupported, NeverSupported);
     AddRGBAFormat(&map, GL_RG,           false, 32, 32,  0,  0, 0, GL_RG,   GL_FLOAT,                        GL_FLOAT, false, RequireExtAndExt<&Extensions::textureFloatOES, &Extensions::textureRG>,     RequireExt<&Extensions::textureFloatLinearOES>,  AlwaysSupported,                                 NeverSupported, NeverSupported);
     AddRGBAFormat(&map, GL_RGB,          false, 32, 32, 32,  0, 0, GL_RGB,  GL_FLOAT,                        GL_FLOAT, false, RequireExt<&Extensions::textureFloatOES>,                                   RequireExt<&Extensions::textureFloatLinearOES>,  NeverSupported,                                  NeverSupported, NeverSupported);
@@ -1114,6 +1112,32 @@ const InternalFormatInfoMap &GetInternalFormatMap()
     static const angle::base::NoDestructor<InternalFormatInfoMap> formatMap(
         BuildInternalFormatInfoMap());
     return *formatMap;
+}
+
+int GetAndroidHardwareBufferFormatFromChannelSizes(const egl::AttributeMap &attribMap)
+{
+    // Retrieve channel size from attribute map. The default value should be 0, per spec.
+    GLuint redSize   = static_cast<GLuint>(attribMap.getAsInt(EGL_RED_SIZE, 0));
+    GLuint greenSize = static_cast<GLuint>(attribMap.getAsInt(EGL_GREEN_SIZE, 0));
+    GLuint blueSize  = static_cast<GLuint>(attribMap.getAsInt(EGL_BLUE_SIZE, 0));
+    GLuint alphaSize = static_cast<GLuint>(attribMap.getAsInt(EGL_ALPHA_SIZE, 0));
+
+    GLenum glInternalFormat = 0;
+    for (GLenum sizedInternalFormat : angle::android::kSupportedSizedInternalFormats)
+    {
+        const gl::InternalFormat &internalFormat = GetSizedInternalFormatInfo(sizedInternalFormat);
+        ASSERT(internalFormat.internalFormat != GL_NONE && internalFormat.sized);
+
+        if (internalFormat.isChannelSizeCompatible(redSize, greenSize, blueSize, alphaSize))
+        {
+            glInternalFormat = sizedInternalFormat;
+            break;
+        }
+    }
+
+    return (glInternalFormat != 0)
+               ? angle::android::GLInternalFormatToNativePixelFormat(glInternalFormat)
+               : 0;
 }
 
 static FormatSet BuildAllSizedInternalFormatSet()
@@ -1245,6 +1269,36 @@ GLuint InternalFormat::computePixelBytes(GLenum formatType) const
     const auto &typeInfo = GetTypeInfo(formatType);
     GLuint components    = typeInfo.specialInterpretation ? 1u : componentCount;
     return components * typeInfo.bytes;
+}
+
+bool InternalFormat::computeBufferRowLength(uint32_t width, uint32_t *resultOut) const
+{
+    CheckedNumeric<GLuint> checkedWidth(width);
+
+    if (compressed)
+    {
+        angle::CheckedNumeric<uint32_t> checkedRowLength =
+            rx::CheckedRoundUp<uint32_t>(width, compressedBlockWidth);
+
+        return CheckedMathResult(checkedRowLength, resultOut);
+    }
+
+    return CheckedMathResult(checkedWidth, resultOut);
+}
+
+bool InternalFormat::computeBufferImageHeight(uint32_t height, uint32_t *resultOut) const
+{
+    CheckedNumeric<GLuint> checkedHeight(height);
+
+    if (compressed)
+    {
+        angle::CheckedNumeric<uint32_t> checkedImageHeight =
+            rx::CheckedRoundUp<uint32_t>(height, compressedBlockHeight);
+
+        return CheckedMathResult(checkedImageHeight, resultOut);
+    }
+
+    return CheckedMathResult(checkedHeight, resultOut);
 }
 
 bool InternalFormat::computeRowPitch(GLenum formatType,

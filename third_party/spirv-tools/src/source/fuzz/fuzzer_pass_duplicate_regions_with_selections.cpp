@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "source/fuzz/fuzzer_pass_duplicate_regions_with_selections.h"
+
 #include "source/fuzz/fuzzer_util.h"
 #include "source/fuzz/transformation_duplicate_region_with_selection.h"
 
@@ -71,7 +72,7 @@ void FuzzerPassDuplicateRegionsWithSelections::Apply() {
       // the block if it heads a selection construct or a loop construct.
       if (dominator_analysis->Dominates(entry_block,
                                         postdominates_entry_block) &&
-          !postdominates_entry_block->GetLoopMergeInst()) {
+          !postdominates_entry_block->GetMergeInst()) {
         candidate_exit_blocks.push_back(postdominates_entry_block);
       }
     }
@@ -123,9 +124,8 @@ void FuzzerPassDuplicateRegionsWithSelections::Apply() {
         TransformationDuplicateRegionWithSelection(
             GetFuzzerContext()->GetFreshId(), condition_id,
             GetFuzzerContext()->GetFreshId(), entry_block->id(),
-            exit_block->id(), std::move(original_label_to_duplicate_label),
-            std::move(original_id_to_duplicate_id),
-            std::move(original_id_to_phi_id));
+            exit_block->id(), original_label_to_duplicate_label,
+            original_id_to_duplicate_id, original_id_to_phi_id);
     MaybeApplyTransformation(transformation);
   }
 }

@@ -791,6 +791,16 @@ bool DetermineCompressedTextureETCSupport(const TextureCapsMap &textureCaps)
     return GetFormatSupport(textureCaps, requiredFormats, true, true, false, false, false);
 }
 
+// Checks for GL_OES_texture_stencil8 support
+static bool DetermineStencilIndex8Support(const TextureCapsMap &textureCaps)
+{
+    constexpr GLenum requiredFormats[] = {
+        GL_STENCIL_INDEX8,
+    };
+
+    return GetFormatSupport(textureCaps, requiredFormats, false, false, true, false, false);
+}
+
 void Extensions::setTextureExtensionSupport(const TextureCapsMap &textureCaps)
 {
     // TODO(ynovikov): rgb8rgba8OES, colorBufferHalfFloat, textureHalfFloat, textureHalfFloatLinear,
@@ -844,6 +854,7 @@ void Extensions::setTextureExtensionSupport(const TextureCapsMap &textureCaps)
     textureCompressionBPTC              = DetermineBPTCTextureSupport(textureCaps);
     compressedTexturePVRTC              = DeterminePVRTCTextureSupport(textureCaps);
     compressedTexturePVRTCsRGB          = DeterminePVRTCsRGBTextureSupport(textureCaps);
+    stencilIndex8                       = DetermineStencilIndex8Support(textureCaps);
 }
 
 const ExtensionInfoMap &GetExtensionInfoMap()
@@ -1019,6 +1030,11 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_EXT_gpu_shader5"] = enableableExtension(&Extensions::gpuShader5EXT);
         map["GL_APPLE_clip_distance"] = enableableExtension(&Extensions::clipDistanceAPPLE);
         map["GL_EXT_EGL_image_array"] = enableableExtension(&Extensions::eglImageArray);
+        map["GL_EXT_buffer_storage"] = enableableExtension(&Extensions::bufferStorageEXT);
+        map["GL_OES_texture_stencil8"] = enableableExtension(&Extensions::stencilIndex8);
+        map["GL_OES_sample_shading"] = enableableExtension(&Extensions::sampleShadingOES);
+        map["GL_NV_robustness_video_memory_purge"] = esOnlyExtension(&Extensions::robustnessVideoMemoryPurgeNV);
+        map["GL_ANGLE_get_tex_level_parameter"] = enableableExtension(&Extensions::getTexLevelParameterANGLE);
         // GLES1 extensions
         map["GL_OES_point_size_array"] = enableableExtension(&Extensions::pointSizeArrayOES);
         map["GL_OES_texture_cube_map"] = enableableExtension(&Extensions::textureCubeMapOES);
@@ -1392,6 +1408,7 @@ std::vector<std::string> DisplayExtensions::getStrings() const
     InsertExtensionString("EGL_ANDROID_recordable",                              recordable,                         &extensionStrings);
     InsertExtensionString("EGL_ANGLE_power_preference",                          powerPreference,                    &extensionStrings);
     InsertExtensionString("EGL_ANGLE_image_d3d11_texture",                       imageD3D11Texture,                  &extensionStrings);
+    InsertExtensionString("EGL_ANDROID_create_native_client_buffer",             createNativeClientBufferANDROID,    &extensionStrings);
     InsertExtensionString("EGL_ANDROID_get_native_client_buffer",                getNativeClientBufferANDROID,       &extensionStrings);
     InsertExtensionString("EGL_ANDROID_native_fence_sync",                       nativeFenceSyncANDROID,             &extensionStrings);
     InsertExtensionString("EGL_ANGLE_create_context_backwards_compatible",       createContextBackwardsCompatible,   &extensionStrings);
@@ -1401,6 +1418,8 @@ std::vector<std::string> DisplayExtensions::getStrings() const
     InsertExtensionString("EGL_EXT_image_dma_buf_import",                        imageDmaBufImportEXT,               &extensionStrings);
     InsertExtensionString("EGL_EXT_image_dma_buf_import_modifiers",              imageDmaBufImportModifiersEXT,      &extensionStrings);
     InsertExtensionString("EGL_NOK_texture_from_pixmap",                         textureFromPixmapNOK,               &extensionStrings);
+    InsertExtensionString("EGL_NV_robustness_video_memory_purge",                robustnessVideoMemoryPurgeNV,               &extensionStrings);
+    InsertExtensionString("EGL_KHR_reusable_sync",                               reusableSyncKHR,                    &extensionStrings);
     // clang-format on
 
     return extensionStrings;

@@ -27,15 +27,36 @@ namespace spvtools {
 namespace fuzz {
 namespace fact_manager {
 
+// Forward reference to the DeadBlockFacts class.
+class DeadBlockFacts;
+// Forward reference to the IrrelevantValueFacts class.
+class IrrelevantValueFacts;
+
 // The purpose of this class is to group the fields and data used to represent
 // facts about data synonyms and id equations.
 class DataSynonymAndIdEquationFacts {
  public:
-  // See method in FactManager which delegates to this method.
-  void AddFact(const protobufs::FactDataSynonym& fact, opt::IRContext* context);
+  explicit DataSynonymAndIdEquationFacts(opt::IRContext* ir_context);
+
+  // See method in FactManager which delegates to this method. Returns true if
+  // neither |fact.data1()| nor |fact.data2()| contain an
+  // irrelevant id. Otherwise, returns false. |dead_block_facts| and
+  // |irrelevant_value_facts| are passed for consistency checks.
+  bool MaybeAddFact(const protobufs::FactDataSynonym& fact,
+                    const DeadBlockFacts& dead_block_facts,
+                    const IrrelevantValueFacts& irrelevant_value_facts);
+
+  // See method in FactManager which delegates to this method. Returns true if
+  // neither |fact.lhs_id()| nor any of |fact.rhs_id()| is irrelevant. Returns
+  // false otherwise. |dead_block_facts| and |irrelevant_value_facts| are passed
+  // for consistency checks.
+  bool MaybeAddFact(const protobufs::FactIdEquation& fact,
+                    const DeadBlockFacts& dead_block_facts,
+                    const IrrelevantValueFacts& irrelevant_value_facts);
 
   // See method in FactManager which delegates to this method.
-  void AddFact(const protobufs::FactIdEquation& fact, opt::IRContext* context);
+  std::vector<const protobufs::DataDescriptor*> GetSynonymsForId(
+      uint32_t id) const;
 
   // See method in FactManager which delegates to this method.
   std::vector<const protobufs::DataDescriptor*> GetSynonymsForDataDescriptor(
@@ -49,8 +70,7 @@ class DataSynonymAndIdEquationFacts {
                     const protobufs::DataDescriptor& data_descriptor2) const;
 
   // See method in FactManager which delegates to this method.
-  void ComputeClosureOfFacts(opt::IRContext* context,
-                             uint32_t maximum_equivalence_class_size);
+  void ComputeClosureOfFacts(uint32_t maximum_equivalence_class_size);
 
  private:
   // This helper struct represents the right hand side of an equation as an
@@ -77,20 +97,17 @@ class DataSynonymAndIdEquationFacts {
   // into sub-components of the data descriptors, if they are composites, to
   // record that their components are pairwise-synonymous.
   void AddDataSynonymFactRecursive(const protobufs::DataDescriptor& dd1,
-                                   const protobufs::DataDescriptor& dd2,
-                                   opt::IRContext* context);
+                                   const protobufs::DataDescriptor& dd2);
 
   // Computes various corollary facts from the data descriptor |dd| if members
   // of its equivalence class participate in equation facts with OpConvert*
   // opcodes. The descriptor should be registered in the equivalence relation.
-  void ComputeConversionDataSynonymFacts(const protobufs::DataDescriptor& dd,
-                                         opt::IRContext* context);
+  void ComputeConversionDataSynonymFacts(const protobufs::DataDescriptor& dd);
 
   // Recurses into sub-components of the data descriptors, if they are
   // composites, to record that their components are pairwise-synonymous.
   void ComputeCompositeDataSynonymFacts(const protobufs::DataDescriptor& dd1,
-                                        const protobufs::DataDescriptor& dd2,
-                                        opt::IRContext* context);
+                                        const protobufs::DataDescriptor& dd2);
 
   // Records the fact that |dd1| and |dd2| are equivalent, and merges the sets
   // of equations that are known about them.
@@ -102,14 +119,18 @@ class DataSynonymAndIdEquationFacts {
   const protobufs::DataDescriptor* RegisterDataDescriptor(
       const protobufs::DataDescriptor& dd);
 
-  // Returns true if and only if |dd1| and |dd2| are valid data descriptors
-  // whose associated data have compatible types. Two types are compatible if:
+  // Trivially returns true if either |dd1| or |dd2|'s objects are not present
+  // in the module.
+  //
+  // Otherwise, returns true if and only if |dd1| and |dd2| are valid data
+  // descriptors whose associated data have compatible types. Two types are
+  // compatible if:
   // - they are the same
   // - they both are numerical or vectors of numerical components with the same
   //   number of components and the same bit count per component
-  static bool DataDescriptorsAreWellFormedAndComparable(
-      opt::IRContext* context, const protobufs::DataDescriptor& dd1,
-      const protobufs::DataDescriptor& dd2);
+  bool DataDescriptorsAreWellFormedAndComparable(
+      const protobufs::DataDescriptor& dd1,
+      const protobufs::DataDescriptor& dd2) const;
 
   OperationSet GetEquations(const protobufs::DataDescriptor* lhs) const;
 
@@ -121,8 +142,10 @@ class DataSynonymAndIdEquationFacts {
   // from this and other known facts.
   void AddEquationFactRecursive(
       const protobufs::DataDescriptor& lhs_dd, SpvOp opcode,
-      const std::vector<const protobufs::DataDescriptor*>& rhs_dds,
-      opt::IRContext* context);
+      const std::vector<const protobufs::DataDescriptor*>& rhs_dds);
+
+  // Returns true if and only if |dd.object()| still exists in the module.
+  bool ObjectStillExists(const protobufs::DataDescriptor& dd) const;
 
   // The data descriptors that are known to be synonymous with one another are
   // captured by this equivalence relation.
@@ -147,6 +170,9 @@ class DataSynonymAndIdEquationFacts {
   // in that relation.
   std::unordered_map<const protobufs::DataDescriptor*, OperationSet>
       id_equations_;
+
+  // Pointer to the SPIR-V module we store facts about.
+  opt::IRContext* ir_context_;
 };
 
 }  // namespace fact_manager

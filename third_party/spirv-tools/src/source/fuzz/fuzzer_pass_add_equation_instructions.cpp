@@ -77,7 +77,8 @@ void FuzzerPassAddEquationInstructions::Apply() {
         std::vector<opt::Instruction*> available_instructions =
             FindAvailableInstructions(
                 function, block, inst_it,
-                [this](opt::IRContext*, opt::Instruction* instruction) -> bool {
+                [this](opt::IRContext* /*unused*/,
+                       opt::Instruction* instruction) -> bool {
                   return instruction->result_id() && instruction->type_id() &&
                          instruction->opcode() != SpvOpUndef &&
                          !GetTransformationContext()
