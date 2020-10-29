@@ -681,6 +681,10 @@ class ContextVk : public ContextImpl, public vk::Context
 
     void onSyncHelperInitialize() { mSyncObjectPendingFlush = true; }
 
+    // When UtilsVk issues a draw call on the currently running render pass, the pipelines and
+    // descriptor sets it binds need to be undone.
+    void invalidateGraphicsPipelineAndDescriptorSets();
+
   private:
     // Dirty bits.
     enum DirtyBitType : size_t
@@ -762,6 +766,14 @@ class ContextVk : public ContextImpl, public vk::Context
     {
         double gpuTimestampS;
         double cpuTimestampS;
+    };
+
+    // Performance Counters specific to this object type
+    using DescriptorSetList =
+        std::array<uint32_t, ToUnderlying(ContextVk::PipelineType::EnumCount)>;
+    struct PerfCounters
+    {
+        DescriptorSetList descriptorSetsAllocated;
     };
 
     class ScopedDescriptorSetUpdates;
@@ -904,7 +916,7 @@ class ContextVk : public ContextImpl, public vk::Context
                                                  vk::CommandBufferHelper *commandBufferHelper);
     void handleDirtyDriverUniformsBindingImpl(vk::CommandBuffer *commandBuffer,
                                               VkPipelineBindPoint bindPoint,
-                                              DriverUniformsDescriptorSet *driverUniforms);
+                                              const DriverUniformsDescriptorSet &driverUniforms);
     angle::Result handleDirtyDescriptorSets(const gl::Context *context,
                                             vk::CommandBuffer *commandBuffer);
     angle::Result allocateDriverUniforms(size_t driverUniformsSize,
@@ -984,6 +996,8 @@ class ContextVk : public ContextImpl, public vk::Context
     angle::Result updateRenderPassDepthStencilAccess();
     bool shouldSwitchToReadOnlyDepthFeedbackLoopMode(const gl::Context *context,
                                                      gl::Texture *texture) const;
+
+    void outputCumulativePerfCounters();
 
     std::array<DirtyBitHandler, DIRTY_BIT_MAX> mGraphicsDirtyBitHandlers;
     std::array<DirtyBitHandler, DIRTY_BIT_MAX> mComputeDirtyBitHandlers;
@@ -1153,6 +1167,7 @@ class ContextVk : public ContextImpl, public vk::Context
 
     // A mix of per-frame and per-run counters.
     vk::PerfCounters mPerfCounters;
+    PerfCounters mObjectPerfCounters;
 
     gl::State::DirtyBits mPipelineDirtyBitsMask;
 
