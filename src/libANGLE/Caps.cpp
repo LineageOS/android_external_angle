@@ -154,7 +154,10 @@ std::vector<std::string> Extensions::getStrings() const
     return extensionStrings;
 }
 
-Limitations::Limitations() = default;
+Limitations::Limitations()                         = default;
+Limitations::Limitations(const Limitations &other) = default;
+
+Limitations &Limitations::operator=(const Limitations &other) = default;
 
 static bool GetFormatSupportBase(const TextureCapsMap &textureCaps,
                                  const GLenum *requiredFormats,
@@ -1033,6 +1036,7 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_EXT_buffer_storage"] = enableableExtension(&Extensions::bufferStorageEXT);
         map["GL_OES_texture_stencil8"] = enableableExtension(&Extensions::stencilIndex8);
         map["GL_OES_sample_shading"] = enableableExtension(&Extensions::sampleShadingOES);
+        map["GL_OES_shader_multisample_interpolation"] = enableableExtension(&Extensions::multisampleInterpolationOES);
         map["GL_NV_robustness_video_memory_purge"] = esOnlyExtension(&Extensions::robustnessVideoMemoryPurgeNV);
         map["GL_ANGLE_get_tex_level_parameter"] = enableableExtension(&Extensions::getTexLevelParameterANGLE);
         // GLES1 extensions

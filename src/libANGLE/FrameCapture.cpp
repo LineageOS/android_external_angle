@@ -199,7 +199,7 @@ std::string GetCaptureTrigger()
 #if defined(ANGLE_PLATFORM_ANDROID)
     return AndroidGetEnvFromProp(kAndroidCaptureTrigger);
 #else
-    return std::string();
+    return GetEnvironmentVar(kCaptureTriggerVarName);
 #endif  // defined(ANGLE_PLATFORM_ANDROID)
 }
 
@@ -1061,8 +1061,7 @@ void WriteCppReplay(bool compression,
                     const gl::Context *context,
                     const std::string &captureLabel,
                     uint32_t frameIndex,
-                    uint32_t frameStart,
-                    uint32_t frameEnd,
+                    uint32_t frameCount,
                     const std::vector<CallCapture> &frameCalls,
                     const std::vector<CallCapture> &setupCalls,
                     ResourceTracker *resourceTracker,
@@ -1087,7 +1086,7 @@ void WriteCppReplay(bool compression,
         out << "{\n";
     }
 
-    if (frameIndex == frameStart)
+    if (frameIndex == 1)
     {
         std::stringstream setupCallStream;
 
@@ -1103,7 +1102,7 @@ void WriteCppReplay(bool compression,
         out << "\n";
     }
 
-    if (frameIndex == frameEnd)
+    if (frameIndex == frameCount)
     {
         // Emit code to reset back to starting state
         out << "void " << FmtResetFunction(context->id()) << "\n";
@@ -1185,10 +1184,8 @@ void WriteCppReplayIndexFiles(bool compression,
                               const std::string &outDir,
                               const gl::ContextID contextId,
                               const std::string &captureLabel,
-                              uint32_t frameStart,
-                              uint32_t frameEnd,
-                              EGLint drawSurfaceWidth,
-                              EGLint drawSurfaceHeight,
+                              uint32_t frameCount,
+                              const SurfaceDimensions &drawSurfaceDimensions,
                               size_t readBufferSize,
                               const gl::AttribArray<size_t> &clientArraySizes,
                               const HasResourceTypeMap &hasResourceType,
@@ -1204,16 +1201,6 @@ void WriteCppReplayIndexFiles(bool compression,
     std::stringstream source;
 
     header << "#pragma once\n";
-    header << "\n";
-    header << "// Version of ANGLE used to capture this replay.\n";
-    header << "#define ANGLE_REPLAY_VERSION";
-    if (!captureLabel.empty())
-    {
-        std::string captureLabelUpper = captureLabel;
-        angle::ToUpper(&captureLabelUpper);
-        header << "_" << captureLabelUpper;
-    }
-    header << " " << ANGLE_REVISION << "\n";
     header << "\n";
     header << "#include <EGL/egl.h>\n";
     header << "#include \"angle_gl.h\"\n";
@@ -1231,7 +1218,65 @@ void WriteCppReplayIndexFiles(bool compression,
         header << "namespace " << captureLabel << "\n";
         header << "{\n";
     }
-    header << "// Replay functions\n";
+    header << "// Begin Trace Metadata\n";
+    header << "#define ANGLE_REPLAY_VERSION";
+    if (!captureLabel.empty())
+    {
+        std::string captureLabelUpper = captureLabel;
+        angle::ToUpper(&captureLabelUpper);
+        header << "_" << captureLabelUpper;
+    }
+    header << " " << ANGLE_REVISION << "\n";
+    header << "constexpr uint32_t kReplayFrameStart = 1;\n";
+    header << "constexpr uint32_t kReplayFrameEnd = " << frameCount << ";\n";
+    header << "constexpr EGLint kReplayDrawSurfaceWidth = "
+           << drawSurfaceDimensions.at(contextId).width << ";\n";
+    header << "constexpr EGLint kReplayDrawSurfaceHeight = "
+           << drawSurfaceDimensions.at(contextId).height << ";\n";
+    header << "constexpr EGLint kDefaultFramebufferRedBits = "
+           << (config ? std::to_string(config->redSize) : "EGL_DONT_CARE") << ";\n";
+    header << "constexpr EGLint kDefaultFramebufferGreenBits = "
+           << (config ? std::to_string(config->greenSize) : "EGL_DONT_CARE") << ";\n";
+    header << "constexpr EGLint kDefaultFramebufferBlueBits = "
+           << (config ? std::to_string(config->blueSize) : "EGL_DONT_CARE") << ";\n";
+    header << "constexpr EGLint kDefaultFramebufferAlphaBits = "
+           << (config ? std::to_string(config->alphaSize) : "EGL_DONT_CARE") << ";\n";
+    header << "constexpr EGLint kDefaultFramebufferDepthBits = "
+           << (config ? std::to_string(config->depthSize) : "EGL_DONT_CARE") << ";\n";
+    header << "constexpr EGLint kDefaultFramebufferStencilBits = "
+           << (config ? std::to_string(config->stencilSize) : "EGL_DONT_CARE") << ";\n";
+    header << "constexpr bool kIsBinaryDataCompressed = " << (compression ? "true" : "false")
+           << ";\n";
+    header << "// End Trace Metadata\n";
+    header << "\n";
+    header << "void SetupContext" << static_cast<int>(contextId) << "Replay();\n";
+    header << "void ReplayContext" << static_cast<int>(contextId)
+           << "Frame(uint32_t frameIndex);\n";
+    header << "void ResetContext" << static_cast<int>(contextId) << "Replay();\n";
+    if (serializeStateEnabled)
+    {
+        header << "std::vector<uint8_t> GetSerializedContext" << static_cast<int>(contextId)
+               << "StateData(uint32_t frameIndex);\n";
+    }
+    header << "\n";
+    for (uint32_t frameIndex = 1; frameIndex <= frameCount; ++frameIndex)
+    {
+        header << "void " << FmtReplayFunction(contextId, frameIndex) << ";\n";
+    }
+    header << "\n";
+    if (serializeStateEnabled)
+    {
+        for (uint32_t frameIndex = 1; frameIndex <= frameCount; ++frameIndex)
+        {
+            header << "std::vector<uint8_t> "
+                   << FmtGetSerializedContextStateDataFunction(contextId, frameIndex) << ";\n";
+        }
+        header << "\n";
+    }
+
+    header << "using DecompressCallback = uint8_t *(*)(const std::vector<uint8_t> &);\n";
+    header << "void SetBinaryDataDecompressCallback(DecompressCallback callback);\n";
+    header << "void SetBinaryDataDir(const char *dataDir);\n";
     header << "\n";
     header << "// Maps from <captured Program ID, captured location> to run-time location.\n";
     header
@@ -1243,7 +1288,7 @@ void WriteCppReplayIndexFiles(bool compression,
     header << "void UpdateCurrentProgram(GLuint program);\n";
     header << "\n";
     header << "// Maps from captured Resource ID to run-time Resource ID.\n";
-    header << "class ResourceMap\n\n";
+    header << "class ResourceMap\n";
     header << "{\n";
     header << "  public:\n";
     header << "    ResourceMap() {}\n";
@@ -1257,54 +1302,6 @@ void WriteCppReplayIndexFiles(bool compression,
     header << "    std::vector<GLuint> mIDs;\n";
     header << "};\n";
     header << "\n";
-    header << "constexpr uint32_t kReplayFrameStart = " << frameStart << ";\n";
-    header << "constexpr uint32_t kReplayFrameEnd = " << frameEnd << ";\n";
-    header << "constexpr EGLint kReplayDrawSurfaceWidth = " << drawSurfaceWidth << ";\n";
-    header << "constexpr EGLint kReplayDrawSurfaceHeight = " << drawSurfaceHeight << ";\n";
-    header << "constexpr EGLint kDefaultFramebufferRedBits = "
-           << (config ? std::to_string(config->redSize) : "EGL_DONT_CARE") << ";\n";
-    header << "constexpr EGLint kDefaultFramebufferGreenBits = "
-           << (config ? std::to_string(config->greenSize) : "EGL_DONT_CARE") << ";\n";
-    header << "constexpr EGLint kDefaultFramebufferBlueBits = "
-           << (config ? std::to_string(config->blueSize) : "EGL_DONT_CARE") << ";\n";
-    header << "constexpr EGLint kDefaultFramebufferAlphaBits = "
-           << (config ? std::to_string(config->alphaSize) : "EGL_DONT_CARE") << ";\n";
-    header << "constexpr EGLint kDefaultFramebufferDepthBits = "
-           << (config ? std::to_string(config->depthSize) : "EGL_DONT_CARE") << ";\n";
-    header << "constexpr EGLint kDefaultFramebufferStencilBits = "
-           << (config ? std::to_string(config->stencilSize) : "EGL_DONT_CARE") << ";\n";
-    header << "\n";
-    header << "void SetupContext" << static_cast<int>(contextId) << "Replay();\n";
-    header << "void ReplayContext" << static_cast<int>(contextId)
-           << "Frame(uint32_t frameIndex);\n";
-    header << "void ResetContext" << static_cast<int>(contextId) << "Replay();\n";
-    if (serializeStateEnabled)
-    {
-        header << "std::vector<uint8_t> GetSerializedContext" << static_cast<int>(contextId)
-               << "StateData(uint32_t frameIndex);\n";
-    }
-    header << "\n";
-    for (uint32_t frameIndex = frameStart; frameIndex <= frameEnd; ++frameIndex)
-    {
-        header << "void " << FmtReplayFunction(contextId, frameIndex) << ";\n";
-    }
-    header << "\n";
-    if (serializeStateEnabled)
-    {
-        for (uint32_t frameIndex = frameStart; frameIndex <= frameEnd; ++frameIndex)
-        {
-            header << "std::vector<uint8_t> "
-                   << FmtGetSerializedContextStateDataFunction(contextId, frameIndex) << ";\n";
-        }
-    }
-    header << "\n";
-
-    header << "constexpr bool kIsBinaryDataCompressed = " << (compression ? "true" : "false")
-           << ";\n";
-    header << "\n";
-    header << "using DecompressCallback = uint8_t *(*)(const std::vector<uint8_t> &);\n";
-    header << "void SetBinaryDataDecompressCallback(DecompressCallback callback);\n";
-    header << "void SetBinaryDataDir(const char *dataDir);\n";
     header << "void LoadBinaryData(const char *fileName);\n";
     header << "\n";
     header << "// Global state\n";
@@ -1390,7 +1387,7 @@ void WriteCppReplayIndexFiles(bool compression,
     source << "{\n";
     source << "    switch (frameIndex)\n";
     source << "    {\n";
-    for (uint32_t frameIndex = frameStart; frameIndex <= frameEnd; ++frameIndex)
+    for (uint32_t frameIndex = 1; frameIndex <= frameCount; ++frameIndex)
     {
         source << "        case " << frameIndex << ":\n";
         source << "            ReplayContext" << static_cast<int>(contextId) << "Frame"
@@ -1420,7 +1417,7 @@ void WriteCppReplayIndexFiles(bool compression,
         source << "{\n";
         source << "    switch (frameIndex)\n";
         source << "    {\n";
-        for (uint32_t frameIndex = frameStart; frameIndex <= frameEnd; ++frameIndex)
+        for (uint32_t frameIndex = 1; frameIndex <= frameCount; ++frameIndex)
         {
             source << "        case " << frameIndex << ":\n";
             source << "            return "
@@ -1556,7 +1553,7 @@ void WriteCppReplayIndexFiles(bool compression,
         std::string indexPath = indexPathStream.str();
 
         SaveFileHelper saveIndex(indexPath);
-        for (uint32_t frameIndex = frameStart; frameIndex <= frameEnd; ++frameIndex)
+        for (uint32_t frameIndex = 1; frameIndex <= frameCount; ++frameIndex)
         {
             saveIndex << GetCaptureFileName(contextId, captureLabel, frameIndex, ".cpp") << "\n";
         }
@@ -2800,7 +2797,7 @@ void CaptureMidExecutionSetup(const gl::Context *context,
     const gl::ResourceMap<gl::Shader, gl::ShaderProgramID> &shaders =
         shadersAndPrograms.getShadersForCapture();
     const gl::ResourceMap<gl::Program, gl::ShaderProgramID> &programs =
-        shadersAndPrograms.getProgramsForCapture();
+        shadersAndPrograms.getProgramsForCaptureAndPerf();
 
     // Capture Program binary state. Use max ID as a temporary shader ID.
     gl::ShaderProgramID tempShaderID = {resourceTracker->getMaxShaderPrograms()};
@@ -3598,9 +3595,9 @@ FrameCapture::FrameCapture()
       mSerializeStateEnabled(false),
       mCompression(true),
       mClientVertexArrayMap{},
-      mFrameIndex(0),
-      mFrameStart(0),
-      mFrameEnd(10),
+      mFrameIndex(1),
+      mCaptureStartFrame(1),
+      mCaptureEndFrame(10),
       mClientArraySizes{},
       mReadBufferSize(0),
       mHasResourceType{},
@@ -3637,13 +3634,13 @@ FrameCapture::FrameCapture()
     std::string startFromEnv = angle::GetEnvironmentVar(kFrameStartVarName);
     if (!startFromEnv.empty())
     {
-        mFrameStart = atoi(startFromEnv.c_str());
+        mCaptureStartFrame = atoi(startFromEnv.c_str());
     }
 
     std::string endFromEnv = angle::GetEnvironmentVar(kFrameEndVarName);
     if (!endFromEnv.empty())
     {
-        mFrameEnd = atoi(endFromEnv.c_str());
+        mCaptureEndFrame = atoi(endFromEnv.c_str());
     }
 
     std::string captureTriggerFromEnv = angle::GetEnvironmentVar(kCaptureTriggerVarName);
@@ -3653,10 +3650,8 @@ FrameCapture::FrameCapture()
 
         // If the trigger has been populated, ignore the other frame range variables by setting them
         // to unreasonable values. This isn't perfect, but it is effective.
-        // TODO (anglebug.com/4949): Improve this, possibly by moving away from default start frame.
-        mFrameStart = mFrameEnd = std::numeric_limits<uint32_t>::max();
-        INFO() << "Capture trigger detected, overriding mFrameStart and mFrameEnd to "
-               << mFrameStart;
+        mCaptureStartFrame = mCaptureEndFrame = std::numeric_limits<uint32_t>::max();
+        INFO() << "Capture trigger detected, disabling capture start/end frame.";
     }
 
     std::string labelFromEnv = angle::GetEnvironmentVar(kCaptureLabel);
@@ -3943,7 +3938,7 @@ void FrameCapture::maybeCapturePreCallUpdates(const gl::Context *context, CallCa
                     mBufferDataMap.erase(bufferDataInfo);
                 }
                 // If we're capturing, track what new buffers have been genned
-                if (mFrameIndex >= mFrameStart)
+                if (mFrameIndex >= mCaptureStartFrame)
                 {
                     mResourceTracker.setDeletedBuffer(bufferIDs[i]);
                 }
@@ -3960,7 +3955,7 @@ void FrameCapture::maybeCapturePreCallUpdates(const gl::Context *context, CallCa
             for (GLsizei i = 0; i < count; i++)
             {
                 // If we're capturing, track what new buffers have been genned
-                if (mFrameIndex >= mFrameStart)
+                if (mFrameIndex >= mCaptureStartFrame)
                 {
                     mResourceTracker.setGennedBuffer(bufferIDs[i]);
                 }
@@ -4353,12 +4348,12 @@ void FrameCapture::checkForCaptureTrigger()
     if (captureTrigger != mCaptureTrigger)
     {
         // Start mid-execution capture for the next frame
-        mFrameStart = mFrameIndex + 1;
+        mCaptureStartFrame = mFrameIndex + 1;
 
         // Use the original trigger value as the frame count
-        mFrameEnd = mFrameStart + (mCaptureTrigger - 1);
+        mCaptureEndFrame = mCaptureStartFrame + (mCaptureTrigger - 1);
 
-        INFO() << "Capture triggered at frame " << mFrameStart << " for " << mCaptureTrigger
+        INFO() << "Capture triggered after frame " << mFrameIndex << " for " << mCaptureTrigger
                << " frames";
 
         // Stop polling
@@ -4372,23 +4367,23 @@ void FrameCapture::onEndFrame(const gl::Context *context)
     checkForCaptureTrigger();
 
     // Note that we currently capture before the start frame to collect shader and program sources.
-    if (!mFrameCalls.empty() && mFrameIndex >= mFrameStart)
+    if (!mFrameCalls.empty() && mFrameIndex >= mCaptureStartFrame)
     {
         if (mIsFirstFrame)
         {
-            mFrameStart   = mFrameIndex;
-            mIsFirstFrame = false;
+            mCaptureStartFrame = mFrameIndex;
+            mIsFirstFrame      = false;
         }
-        WriteCppReplay(mCompression, mOutDirectory, context, mCaptureLabel, mFrameIndex,
-                       mFrameStart, mFrameEnd, mFrameCalls, mSetupCalls, &mResourceTracker,
-                       &mBinaryData, mSerializeStateEnabled);
-        if (mFrameIndex == mFrameEnd)
+        WriteCppReplay(mCompression, mOutDirectory, context, mCaptureLabel, getReplayFrameIndex(),
+                       getFrameCount(), mFrameCalls, mSetupCalls, &mResourceTracker, &mBinaryData,
+                       mSerializeStateEnabled);
+        if (mFrameIndex == mCaptureEndFrame)
         {
             // Save the index files after the last frame.
-            WriteCppReplayIndexFiles(
-                mCompression, mOutDirectory, context->id(), mCaptureLabel, mFrameStart, mFrameEnd,
-                mDrawSurfaceWidth, mDrawSurfaceHeight, mReadBufferSize, mClientArraySizes,
-                mHasResourceType, mSerializeStateEnabled, false, context->getConfig(), mBinaryData);
+            WriteCppReplayIndexFiles(mCompression, mOutDirectory, context->id(), mCaptureLabel,
+                                     getFrameCount(), mDrawSurfaceDimensions, mReadBufferSize,
+                                     mClientArraySizes, mHasResourceType, mSerializeStateEnabled,
+                                     false, context->getConfig(), mBinaryData);
             if (!mBinaryData.empty())
             {
                 SaveBinaryData(mCompression, mOutDirectory, context->id(), mCaptureLabel,
@@ -4416,7 +4411,7 @@ void FrameCapture::onEndFrame(const gl::Context *context)
     reset();
     mFrameIndex++;
 
-    if (enabled() && mFrameIndex == mFrameStart)
+    if (enabled() && mFrameIndex == mCaptureStartFrame)
     {
         mSetupCalls.clear();
         CaptureMidExecutionSetup(context, &mSetupCalls, &mResourceTracker, this);
@@ -4429,17 +4424,17 @@ void FrameCapture::onDestroyContext(const gl::Context *context)
     {
         return;
     }
-    if (!mWroteIndexFile && mFrameIndex > mFrameStart)
+    if (!mWroteIndexFile && mFrameIndex > mCaptureStartFrame)
     {
         // If context is destroyed before end frame is reached and at least
         // 1 frame has been recorded, then write the index files.
         // It doesnt make sense to write the index files when no frame has been recorded
         mFrameIndex -= 1;
-        mFrameEnd = mFrameIndex;
+        mCaptureEndFrame = mFrameIndex;
         WriteCppReplayIndexFiles(mCompression, mOutDirectory, context->id(), mCaptureLabel,
-                                 mFrameStart, mFrameEnd, mDrawSurfaceWidth, mDrawSurfaceHeight,
-                                 mReadBufferSize, mClientArraySizes, mHasResourceType,
-                                 mSerializeStateEnabled, true, context->getConfig(), mBinaryData);
+                                 getFrameCount(), mDrawSurfaceDimensions, mReadBufferSize,
+                                 mClientArraySizes, mHasResourceType, mSerializeStateEnabled, true,
+                                 context->getConfig(), mBinaryData);
         if (!mBinaryData.empty())
         {
             SaveBinaryData(mCompression, mOutDirectory, context->id(), mCaptureLabel, mBinaryData);
@@ -4449,15 +4444,14 @@ void FrameCapture::onDestroyContext(const gl::Context *context)
     }
 }
 
-void FrameCapture::onMakeCurrent(const egl::Surface *drawSurface)
+void FrameCapture::onMakeCurrent(const gl::Context *context, const egl::Surface *drawSurface)
 {
     if (!drawSurface)
         return;
 
     // Track the width and height of the draw surface as provided to makeCurrent
-    // TODO (b/159238311): Track this per context. Right now last one wins.
-    mDrawSurfaceWidth  = drawSurface->getWidth();
-    mDrawSurfaceHeight = drawSurface->getHeight();
+    mDrawSurfaceDimensions[context->id()] =
+        gl::Extents(drawSurface->getWidth(), drawSurface->getHeight(), 1);
 }
 
 DataCounters::DataCounters() = default;
@@ -4569,7 +4563,17 @@ bool FrameCapture::isCapturing() const
     // Currently we will always do a capture up until the last frame. In the future we could improve
     // mid execution capture by only capturing between the start and end frames. The only necessary
     // reason we need to capture before the start is for attached program and shader sources.
-    return mEnabled && mFrameIndex <= mFrameEnd;
+    return mEnabled && mFrameIndex <= mCaptureEndFrame;
+}
+
+uint32_t FrameCapture::getFrameCount() const
+{
+    return mCaptureEndFrame - mCaptureStartFrame + 1;
+}
+
+uint32_t FrameCapture::getReplayFrameIndex() const
+{
+    return mFrameIndex - mCaptureStartFrame + 1;
 }
 
 void FrameCapture::replay(gl::Context *context)

@@ -654,6 +654,9 @@ struct Extensions
     // GL_OES_sample_shading
     bool sampleShadingOES = false;
 
+    // OES_shader_multisample_interpolation
+    bool multisampleInterpolationOES = false;
+
     // GL_NV_robustness_video_memory_purge
     bool robustnessVideoMemoryPurgeNV = false;
 
@@ -681,6 +684,9 @@ const ExtensionInfoMap &GetExtensionInfoMap();
 struct Limitations
 {
     Limitations();
+    Limitations(const Limitations &other);
+
+    Limitations &operator=(const Limitations &other);
 
     // Renderer doesn't support gl_FrontFacing in fragment shaders
     bool noFrontFacingSupport = false;
@@ -709,6 +715,10 @@ struct Limitations
 
     // D3D does not support vertex attribute aliasing
     bool noVertexAttributeAliasing = false;
+
+    // Renderer doesn't support GL_TEXTURE_COMPARE_MODE=GL_NONE on a shadow sampler.
+    // TODO(http://anglebug.com/5231): add validation code to front-end.
+    bool noShadowSamplerCompareModeNone = false;
 };
 
 struct TypePrecision
@@ -738,6 +748,10 @@ struct Caps
     // If the values could be got by using GetIntegeri_v, they should
     // be GLint instead of GLuint and call LimitToInt() to ensure
     // they will not overflow.
+
+    GLfloat minInterpolationOffset        = 0;
+    GLfloat maxInterpolationOffset        = 0;
+    GLint subPixelInterpolationOffsetBits = 0;
 
     // ES 3.1 (April 29, 2015) 20.39: implementation dependent values
     GLint64 maxElementIndex       = 0;

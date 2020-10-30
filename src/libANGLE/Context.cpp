@@ -673,7 +673,7 @@ egl::Error Context::makeCurrent(egl::Display *display,
         mHasBeenCurrent = true;
     }
 
-    mFrameCapture->onMakeCurrent(drawSurface);
+    mFrameCapture->onMakeCurrent(this, drawSurface);
 
     // TODO(jmadill): Rework this when we support ContextImpl
     mState.setAllDirtyBits();
@@ -1419,6 +1419,12 @@ void Context::getFloatvImpl(GLenum pname, GLfloat *params) const
         case GL_MAX_TEXTURE_LOD_BIAS:
             *params = mState.mCaps.maxLODBias;
             break;
+        case GL_MIN_FRAGMENT_INTERPOLATION_OFFSET:
+            *params = mState.mCaps.minInterpolationOffset;
+            break;
+        case GL_MAX_FRAGMENT_INTERPOLATION_OFFSET:
+            *params = mState.mCaps.maxInterpolationOffset;
+            break;
         default:
             mState.getFloatv(pname, params);
             break;
@@ -1850,7 +1856,10 @@ void Context::getIntegervImpl(GLenum pname, GLint *params) const
         case GL_MAX_DUAL_SOURCE_DRAW_BUFFERS_EXT:
             *params = mState.mExtensions.maxDualSourceDrawBuffers;
             break;
-
+        // OES_shader_multisample_interpolation
+        case GL_FRAGMENT_INTERPOLATION_OFFSET_BITS_OES:
+            *params = mState.mCaps.subPixelInterpolationOffsetBits;
+            break;
         default:
             ANGLE_CONTEXT_TRY(mState.getIntegerv(this, pname, params));
             break;
@@ -3152,6 +3161,7 @@ Extensions Context::generateSupportedExtensions() const
         supportedExtensions.drawBuffersIndexedEXT    = false;
         supportedExtensions.drawBuffersIndexedOES    = false;
         supportedExtensions.eglImageArray            = false;
+        supportedExtensions.textureSRGBOverride      = false;
 
         // Requires glCompressedTexImage3D
         supportedExtensions.textureCompressionASTCOES = false;
@@ -3486,9 +3496,11 @@ void Context::initCaps()
                << std::endl;
         mDisplay->overrideFrontendFeatures({"disable_program_binary"}, true);
 
-        INFO() << "Disabling GL_EXT_map_buffer_range during capture, it is not supported on "
-               << "some native drivers" << std::endl;
+        INFO() << "Disabling GL_EXT_map_buffer_range and GL_OES_mapbuffer during capture, which "
+                  "are not supported on some native drivers"
+               << std::endl;
         mState.mExtensions.mapBufferRange = false;
+        mState.mExtensions.mapBufferOES   = false;
     }
 
     // Disable support for OES_get_program_binary

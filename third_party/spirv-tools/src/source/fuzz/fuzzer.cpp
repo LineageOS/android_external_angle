@@ -23,6 +23,7 @@
 #include "source/fuzz/fuzzer_context.h"
 #include "source/fuzz/fuzzer_pass_add_access_chains.h"
 #include "source/fuzz/fuzzer_pass_add_bit_instruction_synonyms.h"
+#include "source/fuzz/fuzzer_pass_add_composite_extract.h"
 #include "source/fuzz/fuzzer_pass_add_composite_inserts.h"
 #include "source/fuzz/fuzzer_pass_add_composite_types.h"
 #include "source/fuzz/fuzzer_pass_add_copy_memory.h"
@@ -54,6 +55,7 @@
 #include "source/fuzz/fuzzer_pass_copy_objects.h"
 #include "source/fuzz/fuzzer_pass_donate_modules.h"
 #include "source/fuzz/fuzzer_pass_duplicate_regions_with_selections.h"
+#include "source/fuzz/fuzzer_pass_expand_vector_reductions.h"
 #include "source/fuzz/fuzzer_pass_flatten_conditional_branches.h"
 #include "source/fuzz/fuzzer_pass_inline_functions.h"
 #include "source/fuzz/fuzzer_pass_interchange_signedness_of_integer_operands.h"
@@ -228,6 +230,7 @@ Fuzzer::FuzzerResult Fuzzer::Run() {
     // if it is enabled.
     MaybeAddRepeatedPass<FuzzerPassAddAccessChains>(&pass_instances);
     MaybeAddRepeatedPass<FuzzerPassAddBitInstructionSynonyms>(&pass_instances);
+    MaybeAddRepeatedPass<FuzzerPassAddCompositeExtract>(&pass_instances);
     MaybeAddRepeatedPass<FuzzerPassAddCompositeInserts>(&pass_instances);
     MaybeAddRepeatedPass<FuzzerPassAddCompositeTypes>(&pass_instances);
     MaybeAddRepeatedPass<FuzzerPassAddCopyMemory>(&pass_instances);
@@ -257,6 +260,7 @@ Fuzzer::FuzzerResult Fuzzer::Run() {
                                                   donor_suppliers_);
     MaybeAddRepeatedPass<FuzzerPassDuplicateRegionsWithSelections>(
         &pass_instances);
+    MaybeAddRepeatedPass<FuzzerPassExpandVectorReductions>(&pass_instances);
     MaybeAddRepeatedPass<FuzzerPassFlattenConditionalBranches>(&pass_instances);
     MaybeAddRepeatedPass<FuzzerPassInlineFunctions>(&pass_instances);
     MaybeAddRepeatedPass<FuzzerPassInvertComparisonOperators>(&pass_instances);
