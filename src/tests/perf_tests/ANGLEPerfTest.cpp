@@ -210,6 +210,10 @@ void ANGLEPerfTest::run()
     }
 
     uint32_t numTrials = OneFrame() ? 1 : gTestTrials;
+    if (gVerboseLogging)
+    {
+        printf("Test Trials: %d\n", static_cast<int>(numTrials));
+    }
 
     for (uint32_t trial = 0; trial < numTrials; ++trial)
     {
@@ -432,9 +436,16 @@ std::string RenderTestParams::backend() const
             return "_unk";
     }
 
-    if (eglParameters.deviceType == EGL_PLATFORM_ANGLE_DEVICE_TYPE_NULL_ANGLE)
+    switch (eglParameters.deviceType)
     {
-        strstr << "_null";
+        case EGL_PLATFORM_ANGLE_DEVICE_TYPE_NULL_ANGLE:
+            strstr << "_null";
+            break;
+        case EGL_PLATFORM_ANGLE_DEVICE_TYPE_SWIFTSHADER_ANGLE:
+            strstr << "_swiftshader";
+            break;
+        default:
+            break;
     }
 
     return strstr.str();

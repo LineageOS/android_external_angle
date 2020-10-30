@@ -110,6 +110,9 @@ struct alignas(4) SamplerDesc
     uint8_t mipFilter : 2;
 
     uint8_t maxAnisotropy : 5;
+
+    // Use uint8_t instead of MTLCompareFunction to compact space
+    uint8_t compareFunction : 3;
 };
 
 struct VertexAttributeDesc
@@ -302,6 +305,9 @@ struct RenderPassAttachmentDesc
     TextureRef implicitMSTexture;
     MipmapNativeLevel level;
     uint32_t sliceOrDepth;
+
+    // This attachment is blendable or not.
+    bool blendable;
 
     MTLLoadAction loadAction;
     MTLStoreAction storeAction;

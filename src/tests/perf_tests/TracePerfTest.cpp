@@ -221,6 +221,13 @@ TracePerfTest::TracePerfTest()
         mSkipTest = true;
     }
 
+    if (param.eglParameters.deviceType != EGL_PLATFORM_ANGLE_DEVICE_TYPE_HARDWARE_ANGLE &&
+        !gEnableAllTraceTests)
+    {
+        printf("Test skipped. Use --enable-all-trace-tests to run.\n");
+        mSkipTest = true;
+    }
+
     if (param.testID == RestrictedTraceID::cod_mobile)
     {
         // TODO: http://anglebug.com/4967 Vulkan: GL_EXT_color_buffer_float not supported on Pixel 2
@@ -248,6 +255,16 @@ TracePerfTest::TracePerfTest()
     if (param.testID == RestrictedTraceID::marvel_contest_of_champions)
     {
         addExtensionPrerequisite("GL_EXT_color_buffer_half_float");
+    }
+
+    if (param.testID == RestrictedTraceID::world_of_tanks_blitz)
+    {
+        addExtensionPrerequisite("GL_EXT_disjoint_timer_query");
+    }
+
+    if (param.testID == RestrictedTraceID::dragon_ball_legends)
+    {
+        addExtensionPrerequisite("GL_KHR_texture_compression_astc_ldr");
     }
 
     // We already swap in TracePerfTest::drawBenchmark, no need to swap again in the harness.
@@ -326,12 +343,21 @@ void TracePerfTest::initializeBenchmark()
 
     // Potentially slow. Can load a lot of resources.
     SetupReplay(params.testID);
+
     glFinish();
 
     ASSERT_TRUE(mEndFrame > mStartFrame);
 
     getWindow()->ignoreSizeEvents();
     getWindow()->setVisible(true);
+
+    // If we're re-tracing, trigger capture start after setup. This ensures the Setup function gets
+    // recaptured into another Setup function and not merged with the first frame.
+    if (angle::gStartTraceAfterSetup)
+    {
+        angle::SetEnvironmentVar("ANGLE_CAPTURE_TRIGGER", "0");
+        getGLWindow()->swap();
+    }
 }
 
 #undef TRACE_TEST_CASE
@@ -829,7 +855,8 @@ std::vector<P> gTestsWithSurfaceType =
                       {SurfaceType::Offscreen, SurfaceType::Window, SurfaceType::WindowWithVSync},
                       CombineWithSurfaceType);
 std::vector<P> gTestsWithRenderer =
-    CombineWithFuncs(gTestsWithSurfaceType, {Vulkan<P>, VulkanMockICD<P>, Native<P>});
+    CombineWithFuncs(gTestsWithSurfaceType,
+                     {Vulkan<P>, VulkanMockICD<P>, VulkanSwiftShader<P>, Native<P>});
 std::vector<P> gTestsWithoutMockICD = FilterWithFunc(gTestsWithRenderer, NoAndroidMockICD);
 ANGLE_INSTANTIATE_TEST_ARRAY(TracePerfTest, gTestsWithoutMockICD);
 
