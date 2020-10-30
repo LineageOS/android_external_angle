@@ -16,15 +16,19 @@
 #include "brawl_stars/brawl_stars_capture_context2.h"
 #include "candy_crush_500/candy_crush_500_capture_context1.h"
 #include "cod_mobile/cod_mobile_capture_context4.h"
+#include "dragon_ball_legends/dragon_ball_legends_capture_context3.h"
 #include "egypt_1500/egypt_1500_capture_context6.h"
+#include "fate_grand_order/fate_grand_order_capture_context2.h"
 #include "free_fire/free_fire_capture_context3.h"
 #include "kartrider_rush/kartrider_rush_capture_context3.h"
 #include "manhattan_10/manhattan_10_capture_context6.h"
 #include "marvel_contest_of_champions/marvel_contest_of_champions_capture_context2.h"
 #include "mobile_legends/mobile_legends_capture_context3.h"
 #include "nba2k20_800/nba2k20_800_capture_context1.h"
+#include "pubg_mobile_lite/pubg_mobile_lite_capture_context5.h"
 #include "temple_run_300/temple_run_300_capture_context1.h"
 #include "trex_200/trex_200_capture_context6.h"
+#include "world_of_tanks_blitz/world_of_tanks_blitz_capture_context3.h"
 
 namespace angle
 {
@@ -49,9 +53,17 @@ constexpr angle::PackedEnumMap<RestrictedTraceID, TraceInfo> kTraceInfos = {
     {RestrictedTraceID::cod_mobile,
      {cod_mobile::kReplayFrameStart, cod_mobile::kReplayFrameEnd,
       cod_mobile::kReplayDrawSurfaceWidth, cod_mobile::kReplayDrawSurfaceHeight, "cod_mobile"}},
+    {RestrictedTraceID::dragon_ball_legends,
+     {dragon_ball_legends::kReplayFrameStart, dragon_ball_legends::kReplayFrameEnd,
+      dragon_ball_legends::kReplayDrawSurfaceWidth, dragon_ball_legends::kReplayDrawSurfaceHeight,
+      "dragon_ball_legends"}},
     {RestrictedTraceID::egypt_1500,
      {egypt_1500::kReplayFrameStart, egypt_1500::kReplayFrameEnd,
       egypt_1500::kReplayDrawSurfaceWidth, egypt_1500::kReplayDrawSurfaceHeight, "egypt_1500"}},
+    {RestrictedTraceID::fate_grand_order,
+     {fate_grand_order::kReplayFrameStart, fate_grand_order::kReplayFrameEnd,
+      fate_grand_order::kReplayDrawSurfaceWidth, fate_grand_order::kReplayDrawSurfaceHeight,
+      "fate_grand_order"}},
     {RestrictedTraceID::free_fire,
      {free_fire::kReplayFrameStart, free_fire::kReplayFrameEnd, free_fire::kReplayDrawSurfaceWidth,
       free_fire::kReplayDrawSurfaceHeight, "free_fire"}},
@@ -74,13 +86,21 @@ constexpr angle::PackedEnumMap<RestrictedTraceID, TraceInfo> kTraceInfos = {
     {RestrictedTraceID::nba2k20_800,
      {nba2k20_800::kReplayFrameStart, nba2k20_800::kReplayFrameEnd,
       nba2k20_800::kReplayDrawSurfaceWidth, nba2k20_800::kReplayDrawSurfaceHeight, "nba2k20_800"}},
+    {RestrictedTraceID::pubg_mobile_lite,
+     {pubg_mobile_lite::kReplayFrameStart, pubg_mobile_lite::kReplayFrameEnd,
+      pubg_mobile_lite::kReplayDrawSurfaceWidth, pubg_mobile_lite::kReplayDrawSurfaceHeight,
+      "pubg_mobile_lite"}},
     {RestrictedTraceID::temple_run_300,
      {temple_run_300::kReplayFrameStart, temple_run_300::kReplayFrameEnd,
       temple_run_300::kReplayDrawSurfaceWidth, temple_run_300::kReplayDrawSurfaceHeight,
       "temple_run_300"}},
     {RestrictedTraceID::trex_200,
      {trex_200::kReplayFrameStart, trex_200::kReplayFrameEnd, trex_200::kReplayDrawSurfaceWidth,
-      trex_200::kReplayDrawSurfaceHeight, "trex_200"}}};
+      trex_200::kReplayDrawSurfaceHeight, "trex_200"}},
+    {RestrictedTraceID::world_of_tanks_blitz,
+     {world_of_tanks_blitz::kReplayFrameStart, world_of_tanks_blitz::kReplayFrameEnd,
+      world_of_tanks_blitz::kReplayDrawSurfaceWidth, world_of_tanks_blitz::kReplayDrawSurfaceHeight,
+      "world_of_tanks_blitz"}}};
 }
 
 const TraceInfo &GetTraceInfo(RestrictedTraceID traceID)
@@ -107,8 +127,14 @@ void ReplayFrame(RestrictedTraceID traceID, uint32_t frameIndex)
         case RestrictedTraceID::cod_mobile:
             cod_mobile::ReplayContext4Frame(frameIndex);
             break;
+        case RestrictedTraceID::dragon_ball_legends:
+            dragon_ball_legends::ReplayContext3Frame(frameIndex);
+            break;
         case RestrictedTraceID::egypt_1500:
             egypt_1500::ReplayContext6Frame(frameIndex);
+            break;
+        case RestrictedTraceID::fate_grand_order:
+            fate_grand_order::ReplayContext2Frame(frameIndex);
             break;
         case RestrictedTraceID::free_fire:
             free_fire::ReplayContext3Frame(frameIndex);
@@ -128,11 +154,17 @@ void ReplayFrame(RestrictedTraceID traceID, uint32_t frameIndex)
         case RestrictedTraceID::nba2k20_800:
             nba2k20_800::ReplayContext1Frame(frameIndex);
             break;
+        case RestrictedTraceID::pubg_mobile_lite:
+            pubg_mobile_lite::ReplayContext5Frame(frameIndex);
+            break;
         case RestrictedTraceID::temple_run_300:
             temple_run_300::ReplayContext1Frame(frameIndex);
             break;
         case RestrictedTraceID::trex_200:
             trex_200::ReplayContext6Frame(frameIndex);
+            break;
+        case RestrictedTraceID::world_of_tanks_blitz:
+            world_of_tanks_blitz::ReplayContext3Frame(frameIndex);
             break;
         default:
             fprintf(stderr, "Error in switch.\n");
@@ -160,8 +192,14 @@ void ResetReplay(RestrictedTraceID traceID)
         case RestrictedTraceID::cod_mobile:
             cod_mobile::ResetContext4Replay();
             break;
+        case RestrictedTraceID::dragon_ball_legends:
+            dragon_ball_legends::ResetContext3Replay();
+            break;
         case RestrictedTraceID::egypt_1500:
             egypt_1500::ResetContext6Replay();
+            break;
+        case RestrictedTraceID::fate_grand_order:
+            fate_grand_order::ResetContext2Replay();
             break;
         case RestrictedTraceID::free_fire:
             free_fire::ResetContext3Replay();
@@ -181,11 +219,17 @@ void ResetReplay(RestrictedTraceID traceID)
         case RestrictedTraceID::nba2k20_800:
             nba2k20_800::ResetContext1Replay();
             break;
+        case RestrictedTraceID::pubg_mobile_lite:
+            pubg_mobile_lite::ResetContext5Replay();
+            break;
         case RestrictedTraceID::temple_run_300:
             temple_run_300::ResetContext1Replay();
             break;
         case RestrictedTraceID::trex_200:
             trex_200::ResetContext6Replay();
+            break;
+        case RestrictedTraceID::world_of_tanks_blitz:
+            world_of_tanks_blitz::ResetContext3Replay();
             break;
         default:
             fprintf(stderr, "Error in switch.\n");
@@ -213,8 +257,14 @@ void SetupReplay(RestrictedTraceID traceID)
         case RestrictedTraceID::cod_mobile:
             cod_mobile::SetupContext4Replay();
             break;
+        case RestrictedTraceID::dragon_ball_legends:
+            dragon_ball_legends::SetupContext3Replay();
+            break;
         case RestrictedTraceID::egypt_1500:
             egypt_1500::SetupContext6Replay();
+            break;
+        case RestrictedTraceID::fate_grand_order:
+            fate_grand_order::SetupContext2Replay();
             break;
         case RestrictedTraceID::free_fire:
             free_fire::SetupContext3Replay();
@@ -234,11 +284,17 @@ void SetupReplay(RestrictedTraceID traceID)
         case RestrictedTraceID::nba2k20_800:
             nba2k20_800::SetupContext1Replay();
             break;
+        case RestrictedTraceID::pubg_mobile_lite:
+            pubg_mobile_lite::SetupContext5Replay();
+            break;
         case RestrictedTraceID::temple_run_300:
             temple_run_300::SetupContext1Replay();
             break;
         case RestrictedTraceID::trex_200:
             trex_200::SetupContext6Replay();
+            break;
+        case RestrictedTraceID::world_of_tanks_blitz:
+            world_of_tanks_blitz::SetupContext3Replay();
             break;
         default:
             fprintf(stderr, "Error in switch.\n");
@@ -266,8 +322,14 @@ void SetBinaryDataDir(RestrictedTraceID traceID, const char *dataDir)
         case RestrictedTraceID::cod_mobile:
             cod_mobile::SetBinaryDataDir(dataDir);
             break;
+        case RestrictedTraceID::dragon_ball_legends:
+            dragon_ball_legends::SetBinaryDataDir(dataDir);
+            break;
         case RestrictedTraceID::egypt_1500:
             egypt_1500::SetBinaryDataDir(dataDir);
+            break;
+        case RestrictedTraceID::fate_grand_order:
+            fate_grand_order::SetBinaryDataDir(dataDir);
             break;
         case RestrictedTraceID::free_fire:
             free_fire::SetBinaryDataDir(dataDir);
@@ -287,11 +349,17 @@ void SetBinaryDataDir(RestrictedTraceID traceID, const char *dataDir)
         case RestrictedTraceID::nba2k20_800:
             nba2k20_800::SetBinaryDataDir(dataDir);
             break;
+        case RestrictedTraceID::pubg_mobile_lite:
+            pubg_mobile_lite::SetBinaryDataDir(dataDir);
+            break;
         case RestrictedTraceID::temple_run_300:
             temple_run_300::SetBinaryDataDir(dataDir);
             break;
         case RestrictedTraceID::trex_200:
             trex_200::SetBinaryDataDir(dataDir);
+            break;
+        case RestrictedTraceID::world_of_tanks_blitz:
+            world_of_tanks_blitz::SetBinaryDataDir(dataDir);
             break;
         default:
             fprintf(stderr, "Error in switch.\n");
@@ -319,8 +387,14 @@ void SetBinaryDataDecompressCallback(RestrictedTraceID traceID, DecompressCallba
         case RestrictedTraceID::cod_mobile:
             cod_mobile::SetBinaryDataDecompressCallback(callback);
             break;
+        case RestrictedTraceID::dragon_ball_legends:
+            dragon_ball_legends::SetBinaryDataDecompressCallback(callback);
+            break;
         case RestrictedTraceID::egypt_1500:
             egypt_1500::SetBinaryDataDecompressCallback(callback);
+            break;
+        case RestrictedTraceID::fate_grand_order:
+            fate_grand_order::SetBinaryDataDecompressCallback(callback);
             break;
         case RestrictedTraceID::free_fire:
             free_fire::SetBinaryDataDecompressCallback(callback);
@@ -340,11 +414,17 @@ void SetBinaryDataDecompressCallback(RestrictedTraceID traceID, DecompressCallba
         case RestrictedTraceID::nba2k20_800:
             nba2k20_800::SetBinaryDataDecompressCallback(callback);
             break;
+        case RestrictedTraceID::pubg_mobile_lite:
+            pubg_mobile_lite::SetBinaryDataDecompressCallback(callback);
+            break;
         case RestrictedTraceID::temple_run_300:
             temple_run_300::SetBinaryDataDecompressCallback(callback);
             break;
         case RestrictedTraceID::trex_200:
             trex_200::SetBinaryDataDecompressCallback(callback);
+            break;
+        case RestrictedTraceID::world_of_tanks_blitz:
+            world_of_tanks_blitz::SetBinaryDataDecompressCallback(callback);
             break;
         default:
             fprintf(stderr, "Error in switch.\n");

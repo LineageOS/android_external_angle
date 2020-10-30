@@ -702,6 +702,7 @@ ContextVk::ContextVk(const gl::State &state, gl::ErrorSet *errorSet, RendererVk 
       mGpuClockSync{std::numeric_limits<double>::max(), std::numeric_limits<double>::max()},
       mGpuEventTimestampOrigin(0),
       mPerfCounters{},
+      mObjectPerfCounters{},
       mContextPriority(renderer->getDriverPriority(GetContextPriority(state))),
       mCurrentIndirectBuffer(nullptr),
       mShareGroupVk(vk::GetImpl(state.getShareGroup()))
@@ -784,12 +785,16 @@ ContextVk::ContextVk(const gl::State &state, gl::ErrorSet *errorSet, RendererVk 
     mDescriptorBufferInfos.reserve(kDescriptorBufferInfosInitialSize);
     mDescriptorImageInfos.reserve(kDescriptorImageInfosInitialSize);
     mWriteDescriptorSets.reserve(kDescriptorWriteInfosInitialSize);
+
+    mObjectPerfCounters.descriptorSetsAllocated.fill(0);
 }
 
 ContextVk::~ContextVk() = default;
 
 void ContextVk::onDestroy(const gl::Context *context)
 {
+    outputCumulativePerfCounters();
+
     // Remove context from the share group
     mShareGroupVk->getShareContextSet()->erase(this);
 
@@ -1777,6 +1782,42 @@ void ContextVk::updateOverlayOnPresent()
         writeDescriptorSetCount->next();
 
         mPerfCounters.writeDescriptorSets = 0;
+    }
+
+    {
+        uint32_t descriptorSetAllocations = 0;
+
+        // ContextVk's descriptor set allocations
+        for (const uint32_t count : mObjectPerfCounters.descriptorSetsAllocated)
+        {
+            descriptorSetAllocations += count;
+        }
+        // UtilsVk's descriptor set allocations
+        descriptorSetAllocations += mUtils.getObjectPerfCounters().descriptorSetsAllocated;
+        // ProgramExecutableVk's descriptor set allocations
+        const gl::State &state = getState();
+        const gl::ShaderProgramManager &shadersAndPrograms =
+            state.getShaderProgramManagerForCapture();
+        const gl::ResourceMap<gl::Program, gl::ShaderProgramID> &programs =
+            shadersAndPrograms.getProgramsForCaptureAndPerf();
+        for (const std::pair<GLuint, gl::Program *> &resource : programs)
+        {
+            ProgramVk *programVk = vk::GetImpl(resource.second);
+            ProgramExecutableVk::PerfCounters progPerfCounters =
+                programVk->getExecutable().getObjectPerfCounters();
+
+            for (const uint32_t count : progPerfCounters.descriptorSetsAllocated)
+            {
+                descriptorSetAllocations += count;
+            }
+        }
+
+        gl::RunningGraphWidget *descriptorSetAllocationCount =
+            overlay->getRunningGraphWidget(gl::WidgetId::VulkanDescriptorSetAllocations);
+        descriptorSetAllocationCount->add(descriptorSetAllocations -
+                                          mPerfCounters.descriptorSetAllocations);
+        descriptorSetAllocationCount->next();
+        mPerfCounters.descriptorSetAllocations = descriptorSetAllocations;
     }
 }
 
@@ -4003,22 +4044,14 @@ angle::Result ContextVk::handleDirtyComputeDriverUniforms(const gl::Context *con
                                              &mDriverUniforms[PipelineType::Compute]);
 }
 
-void ContextVk::handleDirtyDriverUniformsBindingImpl(vk::CommandBuffer *commandBuffer,
-                                                     VkPipelineBindPoint bindPoint,
-                                                     DriverUniformsDescriptorSet *driverUniforms)
+void ContextVk::handleDirtyDriverUniformsBindingImpl(
+    vk::CommandBuffer *commandBuffer,
+    VkPipelineBindPoint bindPoint,
+    const DriverUniformsDescriptorSet &driverUniforms)
 {
-    // The descriptor pool that this descriptor set was allocated from needs to be retained when the
-    // descriptor set is used in a new command. Since the descriptor pools are specific to each
-    // ContextVk, we only need to retain them once to ensure the reference count and Serial are
-    // updated correctly.
-    if (!driverUniforms->descriptorPoolBinding.get().usedInRecordedCommands())
-    {
-        driverUniforms->descriptorPoolBinding.get().retain(&mResourceUseList);
-    }
-
     commandBuffer->bindDescriptorSets(
         mExecutable->getPipelineLayout(), bindPoint, DescriptorSetIndex::DriverUniforms, 1,
-        &driverUniforms->descriptorSet, 1, &driverUniforms->dynamicOffset);
+        &driverUniforms.descriptorSet, 1, &driverUniforms.dynamicOffset);
 }
 
 angle::Result ContextVk::handleDirtyGraphicsDriverUniformsBinding(const gl::Context *context,
@@ -4026,7 +4059,7 @@ angle::Result ContextVk::handleDirtyGraphicsDriverUniformsBinding(const gl::Cont
 {
     // Bind the driver descriptor set.
     handleDirtyDriverUniformsBindingImpl(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                         &mDriverUniforms[PipelineType::Graphics]);
+                                         mDriverUniforms[PipelineType::Graphics]);
     return angle::Result::Continue;
 }
 
@@ -4035,7 +4068,7 @@ angle::Result ContextVk::handleDirtyComputeDriverUniformsBinding(const gl::Conte
 {
     // Bind the driver descriptor set.
     handleDirtyDriverUniformsBindingImpl(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
-                                         &mDriverUniforms[PipelineType::Compute]);
+                                         mDriverUniforms[PipelineType::Compute]);
     return angle::Result::Continue;
 }
 
@@ -4075,9 +4108,6 @@ angle::Result ContextVk::updateDriverUniformsDescriptorSet(
     if (driverUniforms->descriptorSetCache.get(bufferSerial.getValue(),
                                                &driverUniforms->descriptorSet))
     {
-        // The descriptor pool that this descriptor set was allocated from needs to be retained each
-        // time the descriptor set is used in a new command.
-        driverUniforms->descriptorPoolBinding.get().retain(&mResourceUseList);
         return angle::Result::Continue;
     }
 
@@ -4088,6 +4118,7 @@ angle::Result ContextVk::updateDriverUniformsDescriptorSet(
     ANGLE_TRY(mDriverUniformsDescriptorPools[pipelineType].allocateSetsAndGetInfo(
         this, driverUniforms->descriptorSetLayout.get().ptr(), 1,
         &driverUniforms->descriptorPoolBinding, &driverUniforms->descriptorSet, &newPoolAllocated));
+    mObjectPerfCounters.descriptorSetsAllocated[ToUnderlying(pipelineType)]++;
 
     // Clear descriptor set cache. It may no longer be valid.
     if (newPoolAllocated)
@@ -5298,6 +5329,12 @@ void ContextVk::setDefaultUniformBlocksMinSizeForTesting(size_t minSize)
     mDefaultUniformStorage.setMinimumSizeForTesting(minSize);
 }
 
+void ContextVk::invalidateGraphicsPipelineAndDescriptorSets()
+{
+    mGraphicsDirtyBits.set(DIRTY_BIT_PIPELINE);
+    mGraphicsDirtyBits.set(DIRTY_BIT_DESCRIPTOR_SETS);
+}
+
 angle::Result ContextVk::updateRenderPassDepthStencilAccess()
 {
     if (hasStartedRenderPass() && mDrawFramebuffer->getDepthStencilRenderTarget())
@@ -5344,5 +5381,28 @@ bool ContextVk::shouldSwitchToReadOnlyDepthFeedbackLoopMode(const gl::Context *c
     return texture->isDepthOrStencil() &&
            texture->isBoundToFramebuffer(mDrawFramebuffer->getState().getFramebufferSerial()) &&
            !mDrawFramebuffer->isReadOnlyDepthFeedbackLoopMode();
+}
+
+// Requires that trace is enabled to see the output, which is supported with is_debug=true
+void ContextVk::outputCumulativePerfCounters()
+{
+    if (!vk::kOutputCumulativePerfCounters)
+    {
+        return;
+    }
+
+    {
+        INFO() << "Context Descriptor Set Allocations: ";
+
+        for (size_t pipelineType = 0;
+             pipelineType < mObjectPerfCounters.descriptorSetsAllocated.size(); ++pipelineType)
+        {
+            uint32_t count = mObjectPerfCounters.descriptorSetsAllocated[pipelineType];
+            if (count > 0)
+            {
+                INFO() << "    PipelineType " << pipelineType << ": " << count;
+            }
+        }
+    }
 }
 }  // namespace rx

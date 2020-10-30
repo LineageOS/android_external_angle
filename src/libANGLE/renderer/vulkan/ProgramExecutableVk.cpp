@@ -182,10 +182,14 @@ ProgramExecutableVk::ProgramExecutableVk()
       mNumDefaultUniformDescriptors(0),
       mDynamicBufferOffsets{},
       mProgram(nullptr),
-      mProgramPipeline(nullptr)
+      mProgramPipeline(nullptr),
+      mObjectPerfCounters{}
 {}
 
-ProgramExecutableVk::~ProgramExecutableVk() = default;
+ProgramExecutableVk::~ProgramExecutableVk()
+{
+    outputCumulativePerfCounters();
+}
 
 void ProgramExecutableVk::reset(ContextVk *contextVk)
 {
@@ -260,23 +264,23 @@ void ProgramExecutableVk::save(gl::BinaryOutputStream *stream)
 {
     for (gl::ShaderType shaderType : gl::AllShaderTypes())
     {
-        stream->writeInt<size_t>(mVariableInfoMap[shaderType].size());
+        stream->writeInt(mVariableInfoMap[shaderType].size());
         for (const auto &it : mVariableInfoMap[shaderType])
         {
             stream->writeString(it.first);
-            stream->writeInt<uint32_t>(it.second.descriptorSet);
-            stream->writeInt<uint32_t>(it.second.binding);
-            stream->writeInt<uint32_t>(it.second.location);
-            stream->writeInt<uint32_t>(it.second.component);
+            stream->writeInt(it.second.descriptorSet);
+            stream->writeInt(it.second.binding);
+            stream->writeInt(it.second.location);
+            stream->writeInt(it.second.component);
             // PackedEnumBitSet uses uint8_t
-            stream->writeInt<uint8_t>(it.second.activeStages.bits());
-            stream->writeInt<uint32_t>(it.second.xfbBuffer);
-            stream->writeInt<uint32_t>(it.second.xfbOffset);
-            stream->writeInt<uint32_t>(it.second.xfbStride);
-            stream->writeInt<uint8_t>(it.second.useRelaxedPrecision);
-            stream->writeInt<uint8_t>(it.second.varyingIsOutput);
-            stream->writeInt<uint8_t>(it.second.attributeComponentCount);
-            stream->writeInt<uint8_t>(it.second.attributeLocationCount);
+            stream->writeInt(it.second.activeStages.bits());
+            stream->writeInt(it.second.xfbBuffer);
+            stream->writeInt(it.second.xfbOffset);
+            stream->writeInt(it.second.xfbStride);
+            stream->writeBool(it.second.useRelaxedPrecision);
+            stream->writeBool(it.second.varyingIsOutput);
+            stream->writeInt(it.second.attributeComponentCount);
+            stream->writeInt(it.second.attributeLocationCount);
         }
     }
 }
@@ -378,12 +382,8 @@ angle::Result ProgramExecutableVk::allocUniformAndXfbDescriptorSet(
     auto iter = mUniformsAndXfbDescriptorSetCache.find(xfbBufferDesc);
     if (iter != mUniformsAndXfbDescriptorSetCache.end())
     {
-        *newDescriptorSetAllocated                                        = false;
         mDescriptorSets[ToUnderlying(DescriptorSetIndex::UniformsAndXfb)] = iter->second;
-        // The descriptor pool that this descriptor set was allocated from needs to be retained each
-        // time the descriptor set is used in a new command.
-        mDescriptorPoolBindings[ToUnderlying(DescriptorSetIndex::UniformsAndXfb)].get().retain(
-            &contextVk->getResourceUseList());
+        *newDescriptorSetAllocated                                        = false;
         return angle::Result::Continue;
     }
 
@@ -427,6 +427,8 @@ angle::Result ProgramExecutableVk::allocateDescriptorSetAndGetInfo(
         &mDescriptorPoolBindings[ToUnderlying(descriptorSetIndex)],
         &mDescriptorSets[ToUnderlying(descriptorSetIndex)], newPoolAllocatedOut));
     mEmptyDescriptorSets[ToUnderlying(descriptorSetIndex)] = VK_NULL_HANDLE;
+
+    ++mObjectPerfCounters.descriptorSetsAllocated[ToUnderlying(descriptorSetIndex)];
 
     return angle::Result::Continue;
 }
@@ -991,11 +993,6 @@ angle::Result ProgramExecutableVk::updateBuffersDescriptorSet(
            descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
     const bool isStorageBuffer = descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 
-    static_assert(
-        gl::IMPLEMENTATION_MAX_SHADER_STORAGE_BUFFER_BINDINGS >=
-            gl::IMPLEMENTATION_MAX_UNIFORM_BUFFER_BINDINGS,
-        "The descriptor arrays here would have inadequate size for uniform buffer objects");
-
     VkDescriptorSet descriptorSet =
         mDescriptorSets[ToUnderlying(DescriptorSetIndex::ShaderResource)];
 
@@ -1401,10 +1398,6 @@ angle::Result ProgramExecutableVk::updateTexturesDescriptorSet(ContextVk *contex
     if (iter != mTextureDescriptorsCache.end())
     {
         mDescriptorSets[ToUnderlying(DescriptorSetIndex::Texture)] = iter->second;
-        // The descriptor pool that this descriptor set was allocated from needs to be retained each
-        // time the descriptor set is used in a new command.
-        mDescriptorPoolBindings[ToUnderlying(DescriptorSetIndex::Texture)].get().retain(
-            &contextVk->getResourceUseList());
         return angle::Result::Continue;
     }
 
@@ -1574,6 +1567,8 @@ angle::Result ProgramExecutableVk::updateDescriptorSets(ContextVk *contextVk,
                     contextVk, descriptorSetLayout.ptr(), 1,
                     &mDescriptorPoolBindings[descriptorSetIndex],
                     &mEmptyDescriptorSets[descriptorSetIndex]));
+
+                ++mObjectPerfCounters.descriptorSetsAllocated[descriptorSetIndex];
             }
             descSet = mEmptyDescriptorSets[descriptorSetIndex];
         }
@@ -1593,6 +1588,46 @@ angle::Result ProgramExecutableVk::updateDescriptorSets(ContextVk *contextVk,
     }
 
     return angle::Result::Continue;
+}
+
+// Requires that trace is enabled to see the output, which is supported with is_debug=true
+void ProgramExecutableVk::outputCumulativePerfCounters()
+{
+    if (!vk::kOutputCumulativePerfCounters)
+    {
+        return;
+    }
+
+    {
+        std::ostringstream text;
+
+        for (size_t descriptorSetIndex = 0;
+             descriptorSetIndex < mObjectPerfCounters.descriptorSetsAllocated.size();
+             ++descriptorSetIndex)
+        {
+            uint32_t count = mObjectPerfCounters.descriptorSetsAllocated[descriptorSetIndex];
+            if (count > 0)
+            {
+                text << "    DescriptorSetIndex " << descriptorSetIndex << ": " << count << "\n";
+            }
+        }
+
+        // Only output information for programs that allocated descriptor sets.
+        std::string textStr = text.str();
+        if (!textStr.empty())
+        {
+            INFO() << "ProgramExecutable: " << this << ":";
+
+            // Output each descriptor set allocation on a single line, so they're prefixed with the
+            // INFO information (file, line number, etc.).
+            // https://stackoverflow.com/a/12514641
+            std::istringstream iss(textStr);
+            for (std::string line; std::getline(iss, line);)
+            {
+                INFO() << line;
+            }
+        }
+    }
 }
 
 }  // namespace rx

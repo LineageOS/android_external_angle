@@ -1,6 +1,6 @@
 {
   "src/tests/restricted_traces/.gitignore":
-    "975053b988efba09342bbc967b8cbb76",
+    "ddaa06125884442e2ed1d0885d9bdc02",
   "src/tests/restricted_traces/angry_birds_2_1500.tar.gz.sha1":
     "44fc5437c4a84012e338b3da4b6fc28a",
   "src/tests/restricted_traces/arena_of_valor.tar.gz.sha1":
@@ -11,12 +11,16 @@
     "55de8a400b02e570ff2380436bda269d",
   "src/tests/restricted_traces/cod_mobile.tar.gz.sha1":
     "dffd3bed0d0e53481f43b414309bf152",
+  "src/tests/restricted_traces/dragon_ball_legends.tar.gz.sha1":
+    "dc20d295d45ab85cd15bed6065d7a13a",
   "src/tests/restricted_traces/egypt_1500.tar.gz.sha1":
     "1d80caa37b937f83c95cd053b1bdd4ac",
+  "src/tests/restricted_traces/fate_grand_order.tar.gz.sha1":
+    "df7f111c1f4e30767a4c33eb190600b8",
   "src/tests/restricted_traces/free_fire.tar.gz.sha1":
     "a95efee5e5c6d85bac2d8c2ab09dc34c",
   "src/tests/restricted_traces/gen_restricted_traces.py":
-    "a520ef50175b1b9a20383a884e293b54",
+    "5c95022fc335f608f8bc9daf305c8bf3",
   "src/tests/restricted_traces/kartrider_rush.tar.gz.sha1":
     "64079b7406be62a9b04062b8790f3313",
   "src/tests/restricted_traces/manhattan_10.tar.gz.sha1":
@@ -27,16 +31,20 @@
     "a3fe48a3acc2165a7fb3eb6cf01b441f",
   "src/tests/restricted_traces/nba2k20_800.tar.gz.sha1":
     "03df0dcf41c18bc59edfc0b088ca4a87",
+  "src/tests/restricted_traces/pubg_mobile_lite.tar.gz.sha1":
+    "07c3f467603d4d00bdae2bfed121da8d",
   "src/tests/restricted_traces/restricted_traces.json":
-    "964d9d30361aae731f495562ed373b79",
+    "1d885a202e69b31e10213da68979c539",
   "src/tests/restricted_traces/restricted_traces_autogen.cpp":
-    "8d82249c50da7d734fb71e11f2829d90",
+    "8eeff2f2f4788b5f3764c3bcfa325285",
   "src/tests/restricted_traces/restricted_traces_autogen.gni":
-    "2367de2be057b3b3b7bbd3e89053b0f2",
+    "cb1e3a2d827912765d824e99144ad70c",
   "src/tests/restricted_traces/restricted_traces_autogen.h":
-    "7601e1f0c3806fa2ff203788906762b1",
+    "d8e7c186631c9b35312c7a399862e332",
   "src/tests/restricted_traces/temple_run_300.tar.gz.sha1":
     "77475b0186ee0380eeb9db47433d0457",
   "src/tests/restricted_traces/trex_200.tar.gz.sha1":
-    "ca2d91a527f4a4317f944afc96c35268"
+    "ca2d91a527f4a4317f944afc96c35268",
+  "src/tests/restricted_traces/world_of_tanks_blitz.tar.gz.sha1":
+    "c72106f9999f5eff8916a0c699072687"
 }
