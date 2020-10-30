@@ -247,7 +247,12 @@ ShareGroupImpl *DisplayMtl::createShareGroup()
 
 gl::Version DisplayMtl::getMaxSupportedESVersion() const
 {
-    return mtl::kMaxSupportedGLVersion;
+    // NOTE(hqle): Supports GLES 3.0 on iOS GPU family 4+ for now.
+    if (supportsEitherGPUFamily(4, 1))
+    {
+        return mtl::kMaxSupportedGLVersion;
+    }
+    return gl::Version(2, 0);
 }
 
 gl::Version DisplayMtl::getMaxConformantESVersion() const
@@ -456,6 +461,12 @@ const gl::Extensions &DisplayMtl::getNativeExtensions() const
     return mNativeExtensions;
 }
 
+const gl::Limitations &DisplayMtl::getNativeLimitations() const
+{
+    ensureCapsInitialized();
+    return mNativeLimitations;
+}
+
 void DisplayMtl::ensureCapsInitialized() const
 {
     if (mCapsInitialized)
@@ -515,10 +526,11 @@ void DisplayMtl::ensureCapsInitialized() const
     mNativeCaps.maxViewportWidth     = mNativeCaps.max2DTextureSize;
     mNativeCaps.maxViewportHeight    = mNativeCaps.max2DTextureSize;
 
-    // NOTE(hqle): MSAA
+    // MSAA
+    mNativeCaps.maxSamples             = mFormatTable.getMaxSamples();
     mNativeCaps.maxSampleMaskWords     = 0;
-    mNativeCaps.maxColorTextureSamples = 1;
-    mNativeCaps.maxDepthTextureSamples = 1;
+    mNativeCaps.maxColorTextureSamples = mNativeCaps.maxSamples;
+    mNativeCaps.maxDepthTextureSamples = mNativeCaps.maxSamples;
     mNativeCaps.maxIntegerSamples      = 1;
 
     mNativeCaps.maxVertexAttributes           = mtl::kMaxVertexAttribs;
@@ -597,11 +609,11 @@ void DisplayMtl::ensureCapsInitialized() const
     mNativeCaps.maxTransformFeedbackSeparateComponents =
         gl::IMPLEMENTATION_MAX_TRANSFORM_FEEDBACK_SEPARATE_COMPONENTS;
 
-    // NOTE(hqle): support MSAA.
-    mNativeCaps.maxSamples = 1;
-
     // GL_APPLE_clip_distance
     mNativeCaps.maxClipDistances = 8;
+
+    // Metal doesn't support GL_TEXTURE_COMPARE_MODE=GL_NONE for shadow samplers
+    mNativeLimitations.noShadowSamplerCompareModeNone = true;
 }
 
 void DisplayMtl::initializeExtensions() const
@@ -617,7 +629,7 @@ void DisplayMtl::initializeExtensions() const
     mNativeExtensions.drawBuffers            = true;
     mNativeExtensions.fragDepth              = true;
     mNativeExtensions.framebufferBlit        = true;
-    mNativeExtensions.framebufferMultisample = false;
+    mNativeExtensions.framebufferMultisample = true;
     mNativeExtensions.copyTexture            = true;
     mNativeExtensions.copyCompressedTexture  = false;
 

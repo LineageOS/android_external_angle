@@ -301,6 +301,9 @@ using ProgramSourceMap = std::map<gl::ShaderProgramID, ProgramSources>;
 using TextureLevels       = std::map<GLint, std::vector<uint8_t>>;
 using TextureLevelDataMap = std::map<gl::TextureID, TextureLevels>;
 
+// Map from ContextID to surface dimensions
+using SurfaceDimensions = std::map<gl::ContextID, gl::Extents>;
+
 class FrameCapture final : angle::NonCopyable
 {
   public:
@@ -311,11 +314,15 @@ class FrameCapture final : angle::NonCopyable
     void checkForCaptureTrigger();
     void onEndFrame(const gl::Context *context);
     void onDestroyContext(const gl::Context *context);
-    void onMakeCurrent(const egl::Surface *drawSurface);
+    void onMakeCurrent(const gl::Context *context, const egl::Surface *drawSurface);
     bool enabled() const { return mEnabled; }
 
     bool isCapturing() const;
     void replay(gl::Context *context);
+    uint32_t getFrameCount() const;
+
+    // Returns a frame index starting from "1" as the first frame.
+    uint32_t getReplayFrameIndex() const;
 
     void trackBufferMapping(CallCapture *call,
                             gl::BufferID id,
@@ -356,12 +363,11 @@ class FrameCapture final : angle::NonCopyable
     bool mCompression;
     gl::AttribArray<int> mClientVertexArrayMap;
     uint32_t mFrameIndex;
-    uint32_t mFrameStart;
-    uint32_t mFrameEnd;
-    bool mIsFirstFrame        = true;
-    bool mWroteIndexFile      = false;
-    EGLint mDrawSurfaceWidth  = 0;
-    EGLint mDrawSurfaceHeight = 0;
+    uint32_t mCaptureStartFrame;
+    uint32_t mCaptureEndFrame;
+    bool mIsFirstFrame   = true;
+    bool mWroteIndexFile = false;
+    SurfaceDimensions mDrawSurfaceDimensions;
     gl::AttribArray<size_t> mClientArraySizes;
     size_t mReadBufferSize;
     HasResourceTypeMap mHasResourceType;

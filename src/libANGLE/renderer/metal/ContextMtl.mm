@@ -21,6 +21,7 @@
 #include "libANGLE/renderer/metal/QueryMtl.h"
 #include "libANGLE/renderer/metal/RenderBufferMtl.h"
 #include "libANGLE/renderer/metal/RenderTargetMtl.h"
+#include "libANGLE/renderer/metal/SamplerMtl.h"
 #include "libANGLE/renderer/metal/ShaderMtl.h"
 #include "libANGLE/renderer/metal/SyncMtl.h"
 #include "libANGLE/renderer/metal/TextureMtl.h"
@@ -118,6 +119,20 @@ bool NeedToInvertDepthRange(float near, float far)
 bool IsTransformFeedbackOnly(const gl::State &glState)
 {
     return glState.isTransformFeedbackActiveUnpaused() && glState.isRasterizerDiscardEnabled();
+}
+
+std::string ConvertMarkerToString(GLsizei length, const char *marker)
+{
+    std::string cppString;
+    if (length == 0)
+    {
+        cppString = marker;
+    }
+    else
+    {
+        cppString.assign(marker, length);
+    }
+    return cppString;
 }
 
 }  // namespace
@@ -629,11 +644,13 @@ angle::Result ContextMtl::insertEventMarker(GLsizei length, const char *marker)
 
 angle::Result ContextMtl::pushGroupMarker(GLsizei length, const char *marker)
 {
+    mCmdBuffer.pushDebugGroup(ConvertMarkerToString(length, marker));
     return angle::Result::Continue;
 }
 
 angle::Result ContextMtl::popGroupMarker()
 {
+    mCmdBuffer.popDebugGroup();
     return angle::Result::Continue;
 }
 
@@ -780,10 +797,9 @@ angle::Result ContextMtl::syncState(const gl::Context *context,
                 // NOTE(hqle): ES 3.0 feature.
                 break;
             case gl::State::DIRTY_BIT_CLEAR_COLOR:
-                mClearColor.red   = glState.getColorClearValue().red;
-                mClearColor.green = glState.getColorClearValue().green;
-                mClearColor.blue  = glState.getColorClearValue().blue;
-                mClearColor.alpha = glState.getColorClearValue().alpha;
+                mClearColor = mtl::ClearColorValue(
+                    glState.getColorClearValue().red, glState.getColorClearValue().green,
+                    glState.getColorClearValue().blue, glState.getColorClearValue().alpha);
                 break;
             case gl::State::DIRTY_BIT_CLEAR_DEPTH:
                 break;
@@ -995,9 +1011,7 @@ TransformFeedbackImpl *ContextMtl::createTransformFeedback(const gl::TransformFe
 // Sampler object creation
 SamplerImpl *ContextMtl::createSampler(const gl::SamplerState &state)
 {
-    // NOTE(hqle): ES 3.0
-    UNIMPLEMENTED();
-    return nullptr;
+    return new SamplerMtl(state);
 }
 
 // Program Pipeline object creation
@@ -1123,7 +1137,7 @@ void ContextMtl::invalidateRenderPipeline()
     mDirtyBits.set(DIRTY_BIT_RENDER_PIPELINE);
 }
 
-const MTLClearColor &ContextMtl::getClearColorValue() const
+const mtl::ClearColorValue &ContextMtl::getClearColorValue() const
 {
     return mClearColor;
 }
