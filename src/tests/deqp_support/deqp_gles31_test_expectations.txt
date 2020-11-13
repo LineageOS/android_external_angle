@@ -109,6 +109,7 @@
 1442 OPENGL : dEQP-GLES31.functional.program_interface_query.uniform.referenced_by_shader.* = FAIL
 1442 OPENGL : dEQP-GLES31.functional.program_interface_query.uniform.random.* = FAIL
 1442 OPENGL : dEQP-GLES31.functional.program_interface_query.uniform_block.referenced_by.* = FAIL
+4933 OPENGL : dEQP-GLES31.functional.texture.texture_buffer.render_modify.as_fragment_texture.mapbuffer_* = FAIL
 
 // Slow / timeout on Linux GL
 5197 LINUX OPENGL : dEQP-GLES31.functional.compute.indirect_dispatch.gen_in_compute.large_offset = TIMEOUT
@@ -171,9 +172,6 @@
 3881 VULKAN ANDROID : dEQP-GLES31.functional.program_interface_query.uniform.location.default_block.array.array.image_2d = SKIP
 3881 VULKAN ANDROID : dEQP-GLES31.functional.program_interface_query.uniform.location.default_block.array.array.iimage_2d_array = SKIP
 
-// Flaky crashes in Windows x86 Subzero Reactor
-4482 WIN SWIFTSHADER : dEQP-GLES31.functional.synchronization.inter_invocation.* = SKIP
-
 ////
 //// General Vulkan expectations
 ////
@@ -186,12 +184,6 @@
 
 // Cannot create 2D (array) view of 3D texture.
 3886 VULKAN : dEQP-GLES31.functional.image_load_store.3d.*layer = FAIL
-
-// Conflict between "interpolateAtOffset()" and the viewport transformation for a default framebuffer
-3589 VULKAN : dEQP-GLES31.functional.shaders.multisample_interpolation.interpolate_at_offset.no_qualifiers.default_framebuffer = FAIL
-3589 VULKAN : dEQP-GLES31.functional.shaders.multisample_interpolation.interpolate_at_offset.centroid_qualifier.default_framebuffer = FAIL
-3589 VULKAN : dEQP-GLES31.functional.shaders.multisample_interpolation.interpolate_at_offset.sample_qualifier.default_framebuffer = FAIL
-3589 VULKAN : dEQP-GLES31.functional.shaders.multisample_interpolation.interpolate_at_offset.array_element.default_framebuffer = FAIL
 
 ////
 //// Android (i.e. Pixel*) Vulkan expectations
@@ -273,3 +265,34 @@
 4822 VULKAN ANDROID : dEQP-GLES31.functional.draw_buffers_indexed.random.max_required_draw_buffers.10 = SKIP
 4822 VULKAN ANDROID : dEQP-GLES31.functional.draw_buffers_indexed.random.max_required_draw_buffers.11 = SKIP
 4822 VULKAN ANDROID : dEQP-GLES31.functional.draw_buffers_indexed.random.max_required_draw_buffers.17 = SKIP
+
+// There is an issue with renderbuffers where the test fails verification before the copy.
+3593 VULKAN : dEQP-GLES31.functional.copy_image.non_compressed*renderbuffer* = FAIL
+3593 SWIFTSHADER : dEQP-GLES31.functional.copy_image.mixed*renderbuffer* = FAIL
+3593 VULKAN ANDROID : dEQP-GLES31.functional.copy_image.mixed*renderbuffer* = FAIL
+
+// Swiftshader fails to create a correct source/destination srgb8_alpha8_astc image before copy, however 5x4 is correct
+5275 SWIFTSHADER : dEQP-GLES31.functional.copy_image.*rgba*srgb8_alpha8_astc_*_khr.*_to_texture2d* = FAIL
+5275 SWIFTSHADER : dEQP-GLES31.functional.copy_image.*rgba*srgb8_alpha8_astc_*_khr.*_to_cubemap* = FAIL
+5275 SWIFTSHADER : dEQP-GLES31.functional.copy_image.*srgb8_alpha8_astc_*_khr_rgba*.*cubemap_to* = FAIL
+5275 SWIFTSHADER : dEQP-GLES31.functional.copy_image.*srgb8_alpha8_astc_*_khr_rgba*.*texture2d*_to* = FAIL
+5275 SWIFTSHADER : dEQP-GLES31.functional.copy_image.*srgb8_alpha8_astc_5x4_khr.*texture2d*_to_texture2d* = PASS
+5275 SWIFTSHADER : dEQP-GLES31.functional.copy_image.*srgb8_alpha8_astc_5x4_khr.*texture2d*_to_cubemap = PASS
+5275 SWIFTSHADER : dEQP-GLES31.functional.copy_image.*srgb8_alpha8_astc_5x4_khr.*cubemap*_to_texture2d* = PASS
+5275 SWIFTSHADER : dEQP-GLES31.functional.copy_image.*srgb8_alpha8_astc_5x4_khr.*cubemap_to_cubemap = PASS
+
+// Desktop cards without native etc support, angle emulated format fails
+5276 AMD VULKAN : dEQP-GLES31.functional.copy_image.compressed.viewclass_eac* = FAIL
+5276 AMD VULKAN : dEQP-GLES31.functional.copy_image.compressed.viewclass_etc* = FAIL
+5276 AMD VULKAN : dEQP-GLES31.functional.copy_image.mixed.*eac* = FAIL
+5276 NVIDIA VULKAN : dEQP-GLES31.functional.copy_image.compressed.viewclass_eac* = FAIL
+5276 NVIDIA VULKAN : dEQP-GLES31.functional.copy_image.compressed.viewclass_etc* = FAIL
+5276 NVIDIA VULKAN : dEQP-GLES31.functional.copy_image.mixed.*eac* = FAIL
+
+// Vulkan Android failures with these formats
+5277 VULKAN ANDROID : dEQP-GLES31.functional.copy_image.non_compressed.viewclass_32_bits.rgba8_snorm_rgb10_a2* = FAIL
+5277 VULKAN ANDROID : dEQP-GLES31.functional.copy_image.non_compressed.viewclass_32_bits.rgba8_snorm_rgb9_e5* = FAIL
+
+// Skip on Pixel2 to reduce the bots test time so that it won't timeout
+172936025 VULKAN PIXEL2ORXL : dEQP-GLES31.functional.copy_image.mixed.viewclass_128_bits_mixed.*.* = SKIP
+172936025 VULKAN PIXEL2ORXL : dEQP-GLES31.functional.copy_image.compressed.viewclass_astc*.*.* = SKIP

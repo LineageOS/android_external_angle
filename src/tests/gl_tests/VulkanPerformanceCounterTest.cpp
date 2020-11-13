@@ -729,6 +729,45 @@ TEST_P(VulkanPerformanceCounterTest, Invalidate)
     compareLoadCountersForInvalidateTest(counters, expected);
 }
 
+// Similar to Invalidate, but uses glInvalidateSubFramebuffer such that the given area covers the
+// whole framebuffer.
+TEST_P(VulkanPerformanceCounterTest, InvalidateSub)
+{
+    const rx::vk::PerfCounters &counters = hackANGLE();
+    rx::vk::PerfCounters expected;
+
+    // Expect rpCount+1, depth(Clears+1, Loads+0, Stores+0), stencil(Clears+0, Load+0, Stores+0)
+    setExpectedCountersForInvalidateTest(counters, 1, 1, 0, 0, 0, 0, 0, &expected);
+
+    ANGLE_GL_PROGRAM(program, essl1_shaders::vs::Simple(), essl1_shaders::fs::Red());
+    GLFramebuffer framebuffer;
+    GLTexture texture;
+    GLRenderbuffer renderbuffer;
+    setupClearAndDrawForInvalidateTest(&program, &framebuffer, &texture, &renderbuffer, false);
+
+    // Execute the scenario that this test is for:
+
+    // Invalidate (storeOp = DONT_CARE; mContentDefined = false)
+    const GLenum discards[] = {GL_DEPTH_ATTACHMENT, GL_STENCIL_ATTACHMENT};
+    glInvalidateSubFramebuffer(GL_FRAMEBUFFER, 2, discards, -100, -100, kInvalidateTestSize + 200,
+                               kInvalidateTestSize + 200);
+    ASSERT_GL_NO_ERROR();
+
+    // Ensure that the render pass wasn't broken
+    EXPECT_EQ(expected.renderPasses, counters.renderPasses);
+
+    // Use swapBuffers and then check how many loads and stores were actually done
+    swapBuffers();
+    compareDepthStencilCountersForInvalidateTest(counters, expected);
+
+    // Start and end another render pass, to check that the load ops are as expected
+    setAndIncrementLoadCountersForInvalidateTest(counters, 0, 0, &expected);
+    drawQuad(program, essl1_shaders::PositionAttrib(), 0.5f);
+    ASSERT_GL_NO_ERROR();
+    swapBuffers();
+    compareLoadCountersForInvalidateTest(counters, expected);
+}
+
 // Tests that another case does not break render pass, and that counts are correct:
 //
 // - Scenario: invalidate, draw
@@ -1552,6 +1591,79 @@ TEST_P(VulkanPerformanceCounterTest, MaskedClearDoesNotBreakRenderPass)
     EXPECT_PIXEL_COLOR_EQ(kSize / 2, kSize / 2, GLColor::blue);
 }
 
+// Tests that clear followed by scissored draw uses loadOp to clear.
+TEST_P(VulkanPerformanceCounterTest, ClearThenScissoredDraw)
+{
+    const rx::vk::PerfCounters &counters = hackANGLE();
+
+    uint32_t expectedRenderPassCount = counters.renderPasses + 1;
+    uint32_t expectedDepthClears     = counters.depthClears + 1;
+    uint32_t expectedStencilClears   = counters.stencilClears + 1;
+
+    constexpr GLsizei kSize = 64;
+
+    GLTexture texture;
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, kSize, kSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+
+    GLRenderbuffer renderbuffer;
+    glBindRenderbuffer(GL_RENDERBUFFER, renderbuffer);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, kSize, kSize);
+
+    GLFramebuffer framebuffer;
+    glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER,
+                              renderbuffer);
+    ASSERT_GL_FRAMEBUFFER_COMPLETE(GL_FRAMEBUFFER);
+    ASSERT_GL_NO_ERROR();
+
+    // Clear depth/stencil
+    glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
+    glClearDepthf(1.0f);
+    glClearStencil(0x55);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+
+    // Issue a scissored draw call, expecting depth/stencil to be 1.0 and 0x55.
+    glViewport(0, 0, kSize, kSize);
+    glScissor(0, 0, kSize / 2, kSize);
+    glEnable(GL_SCISSOR_TEST);
+
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+
+    glEnable(GL_STENCIL_TEST);
+    glStencilFunc(GL_EQUAL, 0x55, 0xFF);
+    glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+    glStencilMask(0xFF);
+
+    ANGLE_GL_PROGRAM(drawGreen, essl1_shaders::vs::Passthrough(), essl1_shaders::fs::Green());
+    drawQuad(drawGreen, essl1_shaders::PositionAttrib(), 0.95f);
+    ASSERT_GL_NO_ERROR();
+
+    // Break the render pass.
+    GLTexture copyTex;
+    glBindTexture(GL_TEXTURE_2D, copyTex);
+    glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 0, 0, kSize, kSize, 0);
+    ASSERT_GL_NO_ERROR();
+
+    // Make sure a single render pass was used and depth/stencil clear used loadOp=CLEAR.
+    EXPECT_EQ(expectedRenderPassCount, counters.renderPasses);
+    EXPECT_EQ(expectedDepthClears, counters.depthClears);
+    EXPECT_EQ(expectedStencilClears, counters.stencilClears);
+
+    // Verify correctness.
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green);
+    EXPECT_PIXEL_COLOR_EQ(kSize / 2 - 1, 0, GLColor::green);
+    EXPECT_PIXEL_COLOR_EQ(0, kSize - 1, GLColor::green);
+    EXPECT_PIXEL_COLOR_EQ(kSize / 2 - 1, kSize - 1, GLColor::green);
+
+    EXPECT_PIXEL_COLOR_EQ(kSize / 2, 0, GLColor::red);
+    EXPECT_PIXEL_COLOR_EQ(kSize - 1, 0, GLColor::red);
+    EXPECT_PIXEL_COLOR_EQ(kSize / 2, kSize - 1, GLColor::red);
+    EXPECT_PIXEL_COLOR_EQ(kSize - 1, kSize - 1, GLColor::red);
+}
+
 // Tests that scissored clears don't break the RP.
 TEST_P(VulkanPerformanceCounterTest, ScissoredClearDoesNotBreakRenderPass)
 {
@@ -1739,14 +1851,14 @@ TEST_P(VulkanPerformanceCounterTest, InRenderpassFlushShouldNotBreakRenderpass)
 // Tests that depth/stencil texture clear/load works correctly.
 TEST_P(VulkanPerformanceCounterTest, DepthStencilTextureClearAndLoad)
 {
+    // TODO: http://anglebug.com/5329 Flaky test
+    ANGLE_SKIP_TEST_IF(IsWindows() && IsAMD() && IsVulkan());
+
     const rx::vk::PerfCounters &counters = hackANGLE();
     uint32_t expectedDepthClearCount     = counters.depthClears + 1;
     uint32_t expectedDepthLoadCount      = counters.depthLoads + 3;
     uint32_t expectedStencilClearCount   = counters.stencilClears + 1;
     uint32_t expectedStencilLoadCount    = counters.stencilLoads + 3;
-
-    GLFramebuffer FBO;
-    glBindFramebuffer(GL_FRAMEBUFFER, FBO);
 
     constexpr GLsizei kSize = 6;
 
@@ -1861,9 +1973,6 @@ TEST_P(VulkanPerformanceCounterTest, RenderToTextureDepthStencilTextureShouldNot
     uint32_t expectedDepthLoadCount      = counters.depthLoads;
     uint32_t expectedStencilClearCount   = counters.stencilClears + 1;
     uint32_t expectedStencilLoadCount    = counters.stencilLoads;
-
-    GLFramebuffer FBO;
-    glBindFramebuffer(GL_FRAMEBUFFER, FBO);
 
     constexpr GLsizei kSize = 6;
 
@@ -1995,9 +2104,6 @@ TEST_P(VulkanPerformanceCounterTest, RenderToTextureDepthStencilRenderbufferShou
     // Additionally, expect 4 resolves and 3 unresolves.
     setExpectedCountersForUnresolveResolveTest(counters, 3, 3, 3, 4, 4, 4, &expected);
 
-    GLFramebuffer FBO;
-    glBindFramebuffer(GL_FRAMEBUFFER, FBO);
-
     constexpr GLsizei kSize = 6;
 
     // Create multisampled framebuffer to draw into, with both color and depth attachments.
@@ -2120,9 +2226,6 @@ TEST_P(VulkanPerformanceCounterTest, RenderToTextureInvalidate)
     // Additionally, expect no resolve and unresolve.
     setExpectedCountersForUnresolveResolveTest(counters, 0, 0, 0, 0, 0, 0, &expected);
 
-    GLFramebuffer FBO;
-    glBindFramebuffer(GL_FRAMEBUFFER, FBO);
-
     constexpr GLsizei kSize = 6;
 
     // Create multisampled framebuffer to draw into, with both color and depth attachments.
@@ -2241,9 +2344,6 @@ TEST_P(VulkanPerformanceCounterTest, RenderToTextureUninitializedAndUnusedDepthS
 
     // Additionally, expect only color resolve.
     setExpectedCountersForUnresolveResolveTest(counters, 0, 0, 0, 1, 0, 0, &expected);
-
-    GLFramebuffer FBO;
-    glBindFramebuffer(GL_FRAMEBUFFER, FBO);
 
     constexpr GLsizei kSize = 6;
 
@@ -2372,9 +2472,6 @@ TEST_P(VulkanPerformanceCounterTest, ClearAfterClearDoesNotBreakRenderPass)
 {
     const rx::vk::PerfCounters &counters = hackANGLE();
     uint32_t expectedRenderPassCount     = counters.renderPasses + 1;
-
-    GLFramebuffer FBO;
-    glBindFramebuffer(GL_FRAMEBUFFER, FBO);
 
     constexpr GLsizei kSize = 6;
 
@@ -2512,6 +2609,251 @@ TEST_P(VulkanPerformanceCounterTest, ClearAfterClearDoesNotBreakRenderPass)
     EXPECT_PIXEL_COLOR_EQ(kSize / 3, 2 * kSize / 3 - 1, GLColor::green);
     EXPECT_PIXEL_COLOR_EQ(2 * kSize / 3 - 1, 2 * kSize / 3 - 1, GLColor::green);
     EXPECT_PIXEL_COLOR_EQ(kSize / 2, kSize / 2, GLColor::green);
+}
+
+// Ensures that changing the scissor size doesn't break the render pass.
+TEST_P(VulkanPerformanceCounterTest, ScissorDoesNotBreakRenderPass)
+{
+    constexpr GLsizei kSize = 16;
+
+    // Create a framebuffer with a color attachment.
+    GLTexture color;
+    glBindTexture(GL_TEXTURE_2D, color);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, kSize, kSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+
+    GLFramebuffer fbo;
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color, 0);
+    ASSERT_GL_NO_ERROR();
+
+    // First, issue a clear and make sure it's done.  Later we can verify that areas outside
+    // scissors are not rendered to.
+    glClearColor(0, 0, 0, 1);
+    glClear(GL_COLOR_BUFFER_BIT);
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::black);
+
+    const rx::vk::PerfCounters &counters = hackANGLE();
+    uint32_t expectedRenderPassCount     = counters.renderPasses + 1;
+
+    // This test starts with a small scissor and gradually grows it and issues draw calls and
+    // various kinds of clears:
+    //
+    // - Clear the center to red
+    //
+    //     +----------------------+
+    //     | K                    |
+    //     |                      |
+    //     |       +-----+        |
+    //     |       |     |        |
+    //     |       |  R  |        |
+    //     |       |     |        |
+    //     |       +-----+        |
+    //     |                      |
+    //     |                      |
+    //     |                      |
+    //     |                      |
+    //     +----------------------+
+    //
+    // - Draw green to center right
+    //
+    //     +----------------------+
+    //     |                      |
+    //     |              +-------+
+    //     |       +-----+|       |
+    //     |       |     ||       |
+    //     |       |  R  ||  G    |
+    //     |       |     ||       |
+    //     |       +-----+|       |
+    //     |              |       |
+    //     |              |       |
+    //     |              |       |
+    //     |              +-------+
+    //     +----------------------+
+    //
+    // - Masked clear of center column, only outputting to the blue channel
+    //
+    //     +----------------------+
+    //     |      +---+           |
+    //     |      | B |   +-------+
+    //     |      |+--+--+|       |
+    //     |      ||  |  ||       |
+    //     |      ||M |R ||  G    |
+    //     |      ||  |  ||       |
+    //     |      |+--+--+|       |
+    //     |      |   |   |       |
+    //     |      |   |   |       |
+    //     |      |   |   |       |
+    //     |      |   |   +-------+
+    //     +------+---+-----------+
+    //
+    // - Masked draw of center row, only outputting to alpha.
+    //
+    //     +----------------------+
+    //     | K    +---+ K         |
+    //     |      | B |   +-------+
+    //     |      |+--+--+|       |
+    //     |      ||M |R ||   G   |
+    //     | +----++--+--++-----+ |
+    //     | |    ||TM|TR||     | |
+    //     | | TK |+--+--+|  TG | |
+    //     | |    |TB |TK |     | |
+    //     | +----+---+---+-----+ |
+    //     |      |   |   |   G   |
+    //     | K    | B | K +-------+
+    //     +------+---+-----------+
+    //
+    // Where: K=Black, R=Red, G=Green, B=Blue, M=Magenta, T=Transparent
+
+    constexpr GLsizei kClearX      = kSize / 3;
+    constexpr GLsizei kClearY      = kSize / 3;
+    constexpr GLsizei kClearWidth  = kSize / 3;
+    constexpr GLsizei kClearHeight = kSize / 3;
+
+    constexpr GLsizei kDrawX      = kClearX + kClearWidth + 2;
+    constexpr GLsizei kDrawY      = kSize / 5;
+    constexpr GLsizei kDrawWidth  = kSize - kDrawX;
+    constexpr GLsizei kDrawHeight = 7 * kSize / 10;
+
+    constexpr GLsizei kMaskedClearX      = kSize / 4;
+    constexpr GLsizei kMaskedClearY      = kSize / 8;
+    constexpr GLsizei kMaskedClearWidth  = kSize / 4;
+    constexpr GLsizei kMaskedClearHeight = 7 * kSize / 8;
+
+    constexpr GLsizei kMaskedDrawX      = kSize / 8;
+    constexpr GLsizei kMaskedDrawY      = kSize / 2;
+    constexpr GLsizei kMaskedDrawWidth  = 6 * kSize / 8;
+    constexpr GLsizei kMaskedDrawHeight = kSize / 4;
+
+    glEnable(GL_SCISSOR_TEST);
+
+    // Clear center to red
+    glScissor(kClearX, kClearY, kClearWidth, kClearHeight);
+    glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    ANGLE_GL_PROGRAM(drawColor, essl1_shaders::vs::Simple(), essl1_shaders::fs::UniformColor());
+    glUseProgram(drawColor);
+    GLint colorUniformLocation =
+        glGetUniformLocation(drawColor, angle::essl1_shaders::ColorUniform());
+    ASSERT_NE(colorUniformLocation, -1);
+
+    // Draw green to center right
+    glScissor(kDrawX, kDrawY, kDrawWidth, kDrawHeight);
+    glUniform4f(colorUniformLocation, 0.0f, 1.0f, 0.0f, 1.0f);
+    drawQuad(drawColor, essl1_shaders::PositionAttrib(), 0);
+    ASSERT_GL_NO_ERROR();
+
+    // Masked blue-channel clear of center column
+    glColorMask(GL_FALSE, GL_FALSE, GL_TRUE, GL_FALSE);
+    glScissor(kMaskedClearX, kMaskedClearY, kMaskedClearWidth, kMaskedClearHeight);
+    glClearColor(0.5f, 0.5f, 1.0f, 0.5f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    // Masked alpha-channel draw of center row
+    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE);
+    glScissor(kMaskedDrawX, kMaskedDrawY, kMaskedDrawWidth, kMaskedDrawHeight);
+    glUniform4f(colorUniformLocation, 0.5f, 0.5f, 0.5f, 0.0f);
+    drawQuad(drawColor, essl1_shaders::PositionAttrib(), 0);
+    ASSERT_GL_NO_ERROR();
+
+    // Verify render pass count.
+    EXPECT_EQ(counters.renderPasses, expectedRenderPassCount);
+
+    // Make sure the result is correct:
+    //
+    //     +----------------------+  <-- 0
+    //     | K    +---+ K         |  <-- kMaskedClearY
+    //     |      | B |   +-------+  <-- kDrawY
+    //     |      |+--+--+|       |  <-- kClearY
+    //     |      ||M |R ||   G   |
+    //     | +----++--+--++-----+ |  <-- kMaskedDrawY
+    //     | |    ||TM|TR||     | |
+    //     | | TK |+--+--+|  TG | |  <-- kClearY + kClearHeight
+    //     | |    |TB |TK |     | |
+    //     | +----+---+---+-----+ |  <-- kMaskedDrawY + kMaskedDrawHeight
+    //     |      |   |   |   G   |
+    //     | K    | B | K +-------+  <-- kDrawY + kDrawHeight
+    //     +------+---+-----------+  <-- kSize == kMaskedClearY + kMaskedClearHeight
+    //     | |    ||  |  ||     | |
+    //     | |    ||  |  ||     |  \---> kSize == kDrawX + kDrawWidth
+    //     | |    ||  |  ||      \-----> kMaskedDrawX + kMaskedDrawWidth
+    //     | |    ||  |  | \-----------> kDrawX
+    //     | |    ||  |   \------------> kClearX + kClearWidth
+    //     | |    ||   \---------------> kMaskedClearX + kMaskedClearWidth
+    //     | |    | \------------------> kClearX
+    //     | |     \-------------------> kMaskedClearX
+    //     |  \------------------------> kMaskedDrawX
+    //      \--------------------------> 0
+
+    constexpr GLsizei kClearX2       = kClearX + kClearWidth;
+    constexpr GLsizei kClearY2       = kClearY + kClearHeight;
+    constexpr GLsizei kDrawX2        = kDrawX + kDrawWidth;
+    constexpr GLsizei kDrawY2        = kDrawY + kDrawHeight;
+    constexpr GLsizei kMaskedClearX2 = kMaskedClearX + kMaskedClearWidth;
+    constexpr GLsizei kMaskedClearY2 = kMaskedClearY + kMaskedClearHeight;
+    constexpr GLsizei kMaskedDrawX2  = kMaskedDrawX + kMaskedDrawWidth;
+    constexpr GLsizei kMaskedDrawY2  = kMaskedDrawY + kMaskedDrawHeight;
+
+    constexpr GLColor kTransparentRed(255, 0, 0, 0);
+    constexpr GLColor kTransparentGreen(0, 255, 0, 0);
+    constexpr GLColor kTransparentBlue(0, 0, 255, 0);
+    constexpr GLColor kTransparentMagenta(255, 0, 255, 0);
+
+    // Verify the black areas.
+    EXPECT_PIXEL_RECT_EQ(0, 0, kMaskedClearX, kMaskedDrawY, GLColor::black);
+    EXPECT_PIXEL_RECT_EQ(0, kMaskedDrawY2, kMaskedClearX, kSize - kMaskedDrawY2, GLColor::black);
+    EXPECT_PIXEL_RECT_EQ(kMaskedClearX2, 0, kSize - kMaskedClearX2, kDrawY, GLColor::black);
+    EXPECT_PIXEL_RECT_EQ(kMaskedClearX2, kDrawY2, kSize - kMaskedClearX2, kSize - kDrawY2,
+                         GLColor::black);
+    EXPECT_PIXEL_RECT_EQ(kMaskedClearX, 0, kMaskedClearWidth, kMaskedClearY, GLColor::black);
+    EXPECT_PIXEL_RECT_EQ(kMaskedClearX2, kDrawY, kDrawX - kMaskedClearX2, kClearY - kDrawY,
+                         GLColor::black);
+    EXPECT_PIXEL_RECT_EQ(kClearX2, kClearY, kDrawX - kClearX2, kMaskedDrawY - kClearY,
+                         GLColor::black);
+    EXPECT_PIXEL_RECT_EQ(0, kMaskedDrawY, kMaskedDrawX, kMaskedDrawHeight, GLColor::black);
+    EXPECT_PIXEL_RECT_EQ(kMaskedClearX2, kMaskedDrawY2, kDrawX - kMaskedClearX2,
+                         kSize - kMaskedDrawY2, GLColor::black);
+
+    // Verify the red area:
+    EXPECT_PIXEL_RECT_EQ(kMaskedClearX2, kClearY, kClearX2 - kMaskedClearX2, kMaskedDrawY - kClearY,
+                         GLColor::red);
+    // Verify the transparent red area:
+    EXPECT_PIXEL_RECT_EQ(kMaskedClearX2, kMaskedDrawY, kClearX2 - kMaskedClearX2,
+                         kClearY2 - kMaskedDrawY, kTransparentRed);
+    // Verify the magenta area:
+    EXPECT_PIXEL_RECT_EQ(kClearX, kClearY, kMaskedClearX2 - kClearX, kMaskedDrawY - kClearY,
+                         GLColor::magenta);
+    // Verify the transparent magenta area:
+    EXPECT_PIXEL_RECT_EQ(kClearX, kMaskedDrawY, kMaskedClearX2 - kClearX, kClearY2 - kMaskedDrawY,
+                         kTransparentMagenta);
+    // Verify the green area:
+    EXPECT_PIXEL_RECT_EQ(kDrawX, kDrawY, kDrawWidth, kMaskedDrawY - kDrawY, GLColor::green);
+    EXPECT_PIXEL_RECT_EQ(kDrawX, kMaskedDrawY2, kDrawWidth, kDrawY2 - kMaskedDrawY2,
+                         GLColor::green);
+    EXPECT_PIXEL_RECT_EQ(kMaskedDrawX2, kMaskedDrawY, kDrawX2 - kMaskedDrawX2, kMaskedDrawHeight,
+                         GLColor::green);
+    // Verify the transparent green area:
+    EXPECT_PIXEL_RECT_EQ(kDrawX, kMaskedDrawY, kMaskedDrawX2 - kDrawX, kMaskedDrawHeight,
+                         kTransparentGreen);
+    // Verify the blue area:
+    EXPECT_PIXEL_RECT_EQ(kMaskedClearX, kMaskedClearY, kMaskedClearWidth, kClearY - kMaskedClearY,
+                         GLColor::blue);
+    EXPECT_PIXEL_RECT_EQ(kMaskedClearX, kMaskedDrawY2, kMaskedClearWidth,
+                         kMaskedClearY2 - kMaskedDrawY2, GLColor::blue);
+    EXPECT_PIXEL_RECT_EQ(kMaskedClearX, kClearY, kClearX - kMaskedClearX, kMaskedDrawY - kClearY,
+                         GLColor::blue);
+    // Verify the transparent blue area:
+    EXPECT_PIXEL_RECT_EQ(kMaskedClearX, kClearY2, kMaskedClearWidth, kMaskedDrawY2 - kClearY2,
+                         kTransparentBlue);
+    EXPECT_PIXEL_RECT_EQ(kMaskedClearX, kMaskedDrawY, kClearX - kMaskedClearX,
+                         kClearY2 - kMaskedDrawY, kTransparentBlue);
+    // Verify the transparent black area:
+    EXPECT_PIXEL_RECT_EQ(kMaskedDrawX, kMaskedDrawY, kMaskedClearX - kMaskedDrawX,
+                         kMaskedDrawHeight, GLColor::transparentBlack);
+    EXPECT_PIXEL_RECT_EQ(kMaskedClearX2, kClearY2, kDrawX - kMaskedClearX2,
+                         kMaskedDrawY2 - kClearY2, GLColor::transparentBlack);
+    EXPECT_PIXEL_RECT_EQ(kClearX2, kMaskedDrawY, kDrawX - kClearX2, kMaskedDrawHeight,
+                         GLColor::transparentBlack);
 }
 
 ANGLE_INSTANTIATE_TEST(VulkanPerformanceCounterTest, ES3_VULKAN());

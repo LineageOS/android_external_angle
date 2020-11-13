@@ -10,6 +10,7 @@
 #include "test_utils/gl_raii.h"
 #include "util/random_utils.h"
 #include "util/shader_utils.h"
+#include "util/test_utils.h"
 
 using namespace angle;
 
@@ -1744,6 +1745,60 @@ TEST_P(VulkanClearTest, Test)
     maskedScissoredColorDepthStencilClear(GetParam());
 }
 
+// Tests that clearing a non existing attachment works.
+TEST_P(ClearTest, ClearColorThenClearNonExistingDepthStencil)
+{
+    constexpr GLsizei kSize = 16;
+
+    GLTexture color;
+    glBindTexture(GL_TEXTURE_2D, color);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, kSize, kSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+
+    GLFramebuffer fbo;
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color, 0);
+    ASSERT_GL_NO_ERROR();
+    ASSERT_GL_FRAMEBUFFER_COMPLETE(GL_FRAMEBUFFER);
+
+    // Clear color.
+    glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    // Clear depth/stencil.
+    glClear(GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+    ASSERT_GL_NO_ERROR();
+
+    // Read back color.
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::red);
+}
+
+// Tests that clearing a non existing attachment works.
+TEST_P(ClearTestES3, ClearDepthStencilThenClearNonExistingColor)
+{
+    constexpr GLsizei kSize = 16;
+
+    GLRenderbuffer depth;
+    glBindRenderbuffer(GL_RENDERBUFFER, depth);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, kSize, kSize);
+
+    GLFramebuffer fbo;
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, depth);
+    ASSERT_GL_NO_ERROR();
+    ASSERT_GL_FRAMEBUFFER_COMPLETE(GL_FRAMEBUFFER);
+
+    // Clear depth/stencil.
+    glClearDepthf(1.0f);
+    glClearStencil(0xAA);
+    glClear(GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+    ASSERT_GL_NO_ERROR();
+
+    // Clear color.
+    glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    ASSERT_GL_NO_ERROR();
+}
+
 // Test that just clearing a nonexistent drawbuffer of the default framebuffer doesn't cause an
 // assert.
 TEST_P(ClearTestES3, ClearBuffer1OnDefaultFramebufferNoAssert)
@@ -2041,10 +2096,6 @@ TEST_P(ClearTestES3, ClearThenMixedMaskedClear)
 {
     constexpr GLsizei kSize = 16;
 
-    GLint maxDrawBuffers = 0;
-    glGetIntegerv(GL_MAX_DRAW_BUFFERS, &maxDrawBuffers);
-    ASSERT_GE(maxDrawBuffers, 4);
-
     // Setup framebuffer.
     GLRenderbuffer color;
     glBindRenderbuffer(GL_RENDERBUFFER, color);
@@ -2115,10 +2166,6 @@ TEST_P(ClearTestES3, DrawClearThenDrawWithoutStateChange)
 {
     swapBuffers();
     constexpr GLsizei kSize = 16;
-
-    GLint maxDrawBuffers = 0;
-    glGetIntegerv(GL_MAX_DRAW_BUFFERS, &maxDrawBuffers);
-    ASSERT_GE(maxDrawBuffers, 4);
 
     // Setup framebuffer.
     GLRenderbuffer color;
@@ -2271,6 +2318,135 @@ TEST_P(ClearTestES3, ClearBufferfiStencilMask)
     ASSERT_GL_NO_ERROR();
 }
 
+// Test that glClearBufferfi works when stencil attachment is not present.
+TEST_P(ClearTestES3, ClearBufferfiNoStencilAttachment)
+{
+    constexpr GLsizei kSize = 16;
+
+    GLRenderbuffer color;
+    glBindRenderbuffer(GL_RENDERBUFFER, color);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, kSize, kSize);
+
+    GLRenderbuffer depth;
+    glBindRenderbuffer(GL_RENDERBUFFER, depth);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, kSize, kSize);
+
+    GLFramebuffer fbo;
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, color);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depth);
+    EXPECT_GL_FRAMEBUFFER_COMPLETE(GL_FRAMEBUFFER);
+    EXPECT_GL_NO_ERROR();
+
+    // Clear depth/stencil with glClearBufferfi.  Note that the stencil attachment doesn't exist.
+    glClearBufferfi(GL_DEPTH_STENCIL, 0, 0.5f, 0x55);
+    EXPECT_GL_NO_ERROR();
+
+    // Verify depth is cleared correctly.
+    verifyDepth(0.5f, kSize);
+}
+
+// Test that scissored clear followed by non-scissored draw works.  Ensures that when scissor size
+// is expanded, the clear operation remains limited to the scissor region.  Written to catch
+// potential future bugs if loadOp=CLEAR is used in the Vulkan backend for a small render pass and
+// then the render area is mistakenly enlarged.
+TEST_P(ClearTest, ScissoredClearThenNonScissoredDraw)
+{
+    constexpr GLsizei kSize = 16;
+    const std::vector<GLColor> kInitialData(kSize * kSize, GLColor::red);
+
+    // Setup framebuffer.  Initialize color with red.
+    GLTexture color;
+    glBindTexture(GL_TEXTURE_2D, color);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, kSize, kSize, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                 kInitialData.data());
+
+    GLFramebuffer fb;
+    glBindFramebuffer(GL_FRAMEBUFFER, fb);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color, 0);
+    EXPECT_GL_NO_ERROR();
+    ASSERT_GL_FRAMEBUFFER_COMPLETE(GL_FRAMEBUFFER);
+
+    // Issue a scissored clear to green.
+    glClearColor(0.0f, 1.0f, 0.0f, 1.0f);
+    glScissor(kSize / 2, 0, kSize / 2, kSize);
+    glEnable(GL_SCISSOR_TEST);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    // Expand the scissor and blend blue into the framebuffer.
+    glScissor(0, 0, kSize, kSize);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_ONE);
+
+    ANGLE_GL_PROGRAM(drawBlue, essl1_shaders::vs::Simple(), essl1_shaders::fs::Blue());
+    drawQuad(drawBlue, essl1_shaders::PositionAttrib(), 0.5f);
+    ASSERT_GL_NO_ERROR();
+
+    // Verify that the left half is magenta, and the right half is cyan.
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::magenta);
+    EXPECT_PIXEL_COLOR_EQ(kSize / 2 - 1, 0, GLColor::magenta);
+    EXPECT_PIXEL_COLOR_EQ(0, kSize - 1, GLColor::magenta);
+    EXPECT_PIXEL_COLOR_EQ(kSize / 2 - 1, kSize - 1, GLColor::magenta);
+
+    EXPECT_PIXEL_COLOR_EQ(kSize / 2, 0, GLColor::cyan);
+    EXPECT_PIXEL_COLOR_EQ(kSize / 2, kSize - 1, GLColor::cyan);
+    EXPECT_PIXEL_COLOR_EQ(kSize - 1, 0, GLColor::cyan);
+    EXPECT_PIXEL_COLOR_EQ(kSize - 1, kSize - 1, GLColor::cyan);
+}
+
+// Test that clear followed by a scissored masked clear works.
+TEST_P(ClearTest, ClearThenScissoredMaskedClear)
+{
+    constexpr GLsizei kSize = 16;
+
+    // Setup framebuffer
+    GLTexture color;
+    glBindTexture(GL_TEXTURE_2D, color);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, kSize, kSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+
+    GLFramebuffer fb;
+    glBindFramebuffer(GL_FRAMEBUFFER, fb);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color, 0);
+    EXPECT_GL_NO_ERROR();
+    ASSERT_GL_FRAMEBUFFER_COMPLETE(GL_FRAMEBUFFER);
+
+    // Clear to red.
+    glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    // Mask red and clear to green with a scissor
+    glColorMask(GL_FALSE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glScissor(0, 0, kSize / 2, kSize);
+    glEnable(GL_SCISSOR_TEST);
+    glClearColor(0.0f, 1.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    // Verify that the left half is yellow, and the right half is red.
+    EXPECT_PIXEL_RECT_EQ(0, 0, kSize / 2, kSize, GLColor::yellow);
+    EXPECT_PIXEL_RECT_EQ(kSize / 2, 0, kSize / 2, kSize, GLColor::red);
+}
+
+// This is a test that must be verified visually.
+//
+// Tests that clear of the default framebuffer applies to the window.
+TEST_P(ClearTest, DISABLED_ClearReachesWindow)
+{
+    ANGLE_GL_PROGRAM(blueProgram, essl1_shaders::vs::Simple(), essl1_shaders::fs::Blue());
+
+    // Draw blue.
+    drawQuad(blueProgram, essl1_shaders::PositionAttrib(), 0.5f);
+    swapBuffers();
+
+    // Use glClear to clear to red.  Regression test for the Vulkan backend where this clear
+    // remained "deferred" and didn't make it to the window on swap.
+    glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    swapBuffers();
+
+    // Wait for visual verification.
+    angle::Sleep(2000);
+}
+
 #ifdef Bool
 // X11 craziness.
 #    undef Bool
@@ -2279,7 +2455,7 @@ TEST_P(ClearTestES3, ClearBufferfiStencilMask)
 // Use this to select which configurations (e.g. which renderer, which GLES major version) these
 // tests should be run against.
 ANGLE_INSTANTIATE_TEST_ES2_AND_ES3(ClearTest);
-ANGLE_INSTANTIATE_TEST_ES3_AND(ClearTestES3, ES3_METAL());
+ANGLE_INSTANTIATE_TEST_ES3(ClearTestES3);
 ANGLE_INSTANTIATE_TEST_COMBINE_4(MaskedScissoredClearTest,
                                  MaskedScissoredClearVariationsTestPrint,
                                  testing::Range(0, 3),

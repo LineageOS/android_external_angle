@@ -219,17 +219,39 @@ std::ostream &operator<<(std::ostream &stream, const PlatformParameters &pp)
         stream << "_NoGenMultipleMipsPerPass";
     }
 
-    if (pp.eglParameters.emulatedPrerotation == 90)
+    switch (pp.eglParameters.emulatedPrerotation)
     {
-        stream << "_PreRotation90";
+        case 90:
+            stream << "_PreRotate90";
+            break;
+        case 180:
+            stream << "_PreRotate180";
+            break;
+        case 270:
+            stream << "_PreRotate270";
+            break;
+        default:
+            break;
     }
-    else if (pp.eglParameters.emulatedPrerotation == 180)
+
+    if (pp.eglParameters.asyncCommandQueueFeatureVulkan == EGL_TRUE)
     {
-        stream << "_PreRotation180";
+        stream << "_AsyncQueue";
     }
-    else if (pp.eglParameters.emulatedPrerotation == 270)
+
+    if (pp.eglParameters.hasExplicitMemBarrierFeatureMtl == EGL_FALSE)
     {
-        stream << "_PreRotation270";
+        stream << "_NoMetalExplicitMemoryBarrier";
+    }
+
+    if (pp.eglParameters.hasCheapRenderPassFeatureMtl == EGL_FALSE)
+    {
+        stream << "_NoMetalCheapRenderPass";
+    }
+
+    if (pp.eglParameters.forceBufferGPUStorageFeatureMtl == EGL_TRUE)
+    {
+        stream << "_ForceMetalBufferGPUStorage";
     }
 
     return stream;

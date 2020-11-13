@@ -1698,6 +1698,7 @@ TEST_P(CopyTextureTestDest, AlphaCopyWithRGB)
 // Bug where TEXTURE_SWIZZLE_RGBA was not reset after the Luminance workaround. (crbug.com/1022080)
 TEST_P(CopyTextureTestES3, LuminanceWorkaroundTextureSwizzleBug)
 {
+    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_EXT_texture_sRGB"));
 
     {
         GLColor pixels(50u, 20u, 100u, 150u);
@@ -2551,6 +2552,6 @@ ANGLE_INSTANTIATE_TEST(CopyTextureTestDest,
                        ES2_OPENGLES(),
                        ES2_VULKAN(),
                        ES2_METAL());
-ANGLE_INSTANTIATE_TEST_ES3_AND(CopyTextureTestES3, ES3_METAL());
+ANGLE_INSTANTIATE_TEST_ES3(CopyTextureTestES3);
 
 }  // namespace angle
