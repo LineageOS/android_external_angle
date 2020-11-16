@@ -31,21 +31,6 @@ inline NSUInteger GetMipSize(NSUInteger baseSize, const MipmapNativeLevel level)
     return std::max<NSUInteger>(1, baseSize >> level.get());
 }
 
-void SetTextureSwizzle(ContextMtl *context,
-                       const Format &format,
-                       MTLTextureDescriptor *textureDescOut)
-{
-// Texture swizzle functions's declarations are only available if macos 10.15 sdk is present
-#if defined(__IPHONE_13_0) || defined(__MAC_10_15)
-    if (context->getDisplay()->getFeatures().hasTextureSwizzle.enabled && format.swizzled)
-    {
-        textureDescOut.swizzle = MTLTextureSwizzleChannelsMake(
-            GetTextureSwizzle(format.swizzle[0]), GetTextureSwizzle(format.swizzle[1]),
-            GetTextureSwizzle(format.swizzle[2]), GetTextureSwizzle(format.swizzle[3]));
-    }
-#endif
-}
-
 // Asynchronously synchronize the content of a resource between GPU memory and its CPU cache.
 // NOTE: This operation doesn't finish immediately upon function's return.
 template <class T>
@@ -248,8 +233,6 @@ angle::Result Texture::MakeTexture(ContextMtl *context,
                                    bool allowFormatView,
                                    TextureRef *refOut)
 {
-    SetTextureSwizzle(context, mtlFormat, desc);
-
     refOut->reset(new Texture(context, desc, mips, renderTargetOnly, allowFormatView));
 
     if (!(*refOut) || !(*refOut)->get())
@@ -352,6 +335,27 @@ Texture::Texture(Texture *original, MTLTextureType type, NSRange mipmapLevelRang
 
         set([view ANGLE_MTL_AUTORELEASE]);
     }
+}
+
+Texture::Texture(Texture *original, const TextureSwizzleChannels &swizzle)
+    : Resource(original),
+      mColorWritableMask(original->mColorWritableMask)  // Share color write mask property
+{
+#if ANGLE_MTL_SWIZZLE_AVAILABLE
+    ANGLE_MTL_OBJC_SCOPE
+    {
+        auto view = [original->get()
+            newTextureViewWithPixelFormat:original->pixelFormat()
+                              textureType:original->textureType()
+                                   levels:NSMakeRange(0, original->mipmapLevels())
+                                   slices:NSMakeRange(0, original->cubeFacesOrArrayLength())
+                                  swizzle:swizzle];
+
+        set([view ANGLE_MTL_AUTORELEASE]);
+    }
+#else
+    UNREACHABLE();
+#endif
 }
 
 void Texture::syncContent(ContextMtl *context, mtl::BlitCommandEncoder *blitEncoder)
@@ -514,6 +518,17 @@ TextureRef Texture::createViewWithCompatibleFormat(MTLPixelFormat format)
 {
     // No need for ASSERT(supportFormatView());
     return TextureRef(new Texture(this, format));
+}
+
+TextureRef Texture::createSwizzleView(const TextureSwizzleChannels &swizzle)
+{
+#if ANGLE_MTL_SWIZZLE_AVAILABLE
+    return TextureRef(new Texture(this, swizzle));
+#else
+    WARN() << "Texture swizzle is not supported on pre iOS 13.0 and macOS 15.0";
+    UNIMPLEMENTED();
+    return shared_from_this();
+#endif
 }
 
 MTLPixelFormat Texture::pixelFormat() const
@@ -741,7 +756,7 @@ angle::Result Buffer::resetWithSharedMemOpt(ContextMtl *context,
 
     options = 0;
 #if TARGET_OS_OSX || TARGET_OS_MACCATALYST
-    if (!forceUseSharedMem)
+    if (!forceUseSharedMem || context->getDisplay()->getFeatures().forceBufferGPUStorage.enabled)
     {
         options |= MTLResourceStorageModeManaged;
     }
@@ -846,7 +861,13 @@ void Buffer::flush(ContextMtl *context, size_t offsetWritten, size_t sizeWritten
     {
         if (get().storageMode == MTLStorageModeManaged)
         {
-            [get() didModifyRange:NSMakeRange(offsetWritten, sizeWritten)];
+            size_t startOffset = std::min(offsetWritten, size());
+            size_t endOffset   = std::min(offsetWritten + sizeWritten, size());
+            size_t clampedSize = endOffset - startOffset;
+            if (clampedSize > 0)
+            {
+                [get() didModifyRange:NSMakeRange(startOffset, clampedSize)];
+            }
         }
     }
 #endif

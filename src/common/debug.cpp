@@ -89,6 +89,15 @@ bool DebugAnnotationsActive()
 #endif
 }
 
+bool ShouldBeginScopedEvent()
+{
+#if defined(ANGLE_ENABLE_ANNOTATOR_RUN_TIME_CHECKS)
+    return DebugAnnotationsActive();
+#else
+    return true;
+#endif  // defined(ANGLE_ENABLE_ANNOTATOR_RUN_TIME_CHECKS)
+}
+
 bool DebugAnnotationsInitialized()
 {
     return g_debugAnnotator != nullptr;
@@ -145,8 +154,10 @@ void ScopedPerfEventHelper::begin(const char *format, ...)
     va_end(vararg);
 
     ANGLE_LOG(EVENT) << std::string(&buffer[0], len);
-    // Do not need to call DebugAnnotationsActive() here, because it was called in EVENT()
-    g_debugAnnotator->beginEvent(mContext, mEntryPoint, mFunctionName, buffer.data());
+    if (DebugAnnotationsInitialized())
+    {
+        g_debugAnnotator->beginEvent(mContext, mEntryPoint, mFunctionName, buffer.data());
+    }
 }
 
 LogMessage::LogMessage(const char *file, const char *function, int line, LogSeverity severity)
@@ -214,6 +225,9 @@ void Trace(LogSeverity severity, const char *message)
     }
 
     if (severity == LOG_FATAL || severity == LOG_ERR || severity == LOG_WARN ||
+#if defined(ANGLE_ENABLE_TRACE_ANDROID_LOGCAT)
+        severity == LOG_EVENT ||
+#endif
         severity == LOG_INFO)
     {
 #if defined(ANGLE_PLATFORM_ANDROID)
@@ -221,6 +235,7 @@ void Trace(LogSeverity severity, const char *message)
         switch (severity)
         {
             case LOG_INFO:
+            case LOG_EVENT:
                 android_priority = ANDROID_LOG_INFO;
                 break;
             case LOG_WARN:

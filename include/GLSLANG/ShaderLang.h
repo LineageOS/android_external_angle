@@ -26,7 +26,7 @@
 
 // Version number for shader translation API.
 // It is incremented every time the API changes.
-#define ANGLE_SH_VERSION 235
+#define ANGLE_SH_VERSION 240
 
 enum ShShaderSpec
 {
@@ -315,9 +315,8 @@ const ShCompileOptions SH_ADD_BASE_VERTEX_TO_VERTEX_ID = UINT64_C(1) << 48;
 // This works around the dynamic lvalue indexing of swizzled vectors on various platforms.
 const ShCompileOptions SH_REMOVE_DYNAMIC_INDEXING_OF_SWIZZLED_VECTOR = UINT64_C(1) << 49;
 
-// This flag works a driver bug that fails to allocate ShaderResourceView for StructuredBuffer
-// on Windows 7 and earlier.
-const ShCompileOptions SH_DONT_TRANSLATE_UNIFORM_BLOCK_TO_STRUCTUREDBUFFER = UINT64_C(1) << 50;
+// This flag works around a slow fxc compile performance issue with dynamic uniform indexing.
+const ShCompileOptions SH_ALLOW_TRANSLATE_UNIFORM_BLOCK_TO_STRUCTUREDBUFFER = UINT64_C(1) << 50;
 
 // This flag indicates whether Bresenham line raster emulation code should be generated.  This
 // emulation is necessary if the backend uses a differnet algorithm to draw lines.  Currently only
@@ -341,6 +340,9 @@ const ShCompileOptions SH_EARLY_FRAGMENT_TESTS_OPTIMIZATION = UINT64_C(1) << 55;
 
 // Allow compiler to insert Android pre-rotation code.
 const ShCompileOptions SH_ADD_PRE_ROTATION = UINT64_C(1) << 56;
+
+// Allow compiler to use specialization constant to do pre-rotation and y flip.
+const ShCompileOptions SH_USE_ROTATION_SPECIALIZATION_CONSTANT = UINT64_C(1) << 57;
 
 // Defines alternate strategies for implementing array index clamping.
 enum ShArrayIndexClampingStrategy
@@ -407,6 +409,9 @@ struct ShBuiltInResources
     int EXT_texture_cube_map_array;
     int EXT_shadow_samplers;
     int OES_shader_multisample_interpolation;
+    int OES_shader_image_atomic;
+    int OES_texture_buffer;
+    int EXT_texture_buffer;
 
     // Set to 1 to enable replacing GL_EXT_draw_buffers #extension directives
     // with GL_NV_draw_buffers in ESSL output. This flag can be used to emulate
@@ -772,9 +777,25 @@ namespace vk
 enum class SpecializationConstantId : uint32_t
 {
     LineRasterEmulation = 0,
+    SurfaceRotation     = 1,
 
-    InvalidEnum = 1,
-    EnumCount   = 1,
+    InvalidEnum = 2,
+    EnumCount   = InvalidEnum,
+};
+
+enum class SurfaceRotation : uint32_t
+{
+    Identity,
+    Rotated90Degrees,
+    Rotated180Degrees,
+    Rotated270Degrees,
+    FlippedIdentity,
+    FlippedRotated90Degrees,
+    FlippedRotated180Degrees,
+    FlippedRotated270Degrees,
+
+    InvalidEnum,
+    EnumCount = InvalidEnum,
 };
 
 // Interface block name containing the aggregate default uniforms

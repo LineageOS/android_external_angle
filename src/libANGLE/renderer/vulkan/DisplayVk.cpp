@@ -26,8 +26,7 @@ DisplayVk::DisplayVk(const egl::DisplayState &state)
     : DisplayImpl(state),
       vk::Context(new RendererVk()),
       mScratchBuffer(1000u),
-      mSavedError({VK_SUCCESS, "", "", 0}),
-      mHasSurfaceWithRobustInit(false)
+      mSavedError({VK_SUCCESS, "", "", 0})
 {}
 
 DisplayVk::~DisplayVk()
@@ -48,7 +47,7 @@ void DisplayVk::terminate()
     mRenderer->reloadVolkIfNeeded();
 
     ASSERT(mRenderer);
-    mRenderer->onDestroy();
+    mRenderer->onDestroy(this);
 }
 
 egl::Error DisplayVk::makeCurrent(egl::Display * /*display*/,
@@ -114,22 +113,12 @@ SurfaceImpl *DisplayVk::createWindowSurface(const egl::SurfaceState &state,
                                             EGLNativeWindowType window,
                                             const egl::AttributeMap &attribs)
 {
-    if (attribs.get(EGL_ROBUST_RESOURCE_INITIALIZATION_ANGLE, EGL_FALSE) == EGL_TRUE)
-    {
-        mHasSurfaceWithRobustInit = true;
-    }
-
     return createWindowSurfaceVk(state, window);
 }
 
 SurfaceImpl *DisplayVk::createPbufferSurface(const egl::SurfaceState &state,
                                              const egl::AttributeMap &attribs)
 {
-    if (attribs.get(EGL_ROBUST_RESOURCE_INITIALIZATION_ANGLE, EGL_FALSE) == EGL_TRUE)
-    {
-        mHasSurfaceWithRobustInit = true;
-    }
-
     ASSERT(mRenderer);
     return new OffscreenSurfaceVk(state, mRenderer);
 }
@@ -222,8 +211,11 @@ void DisplayVk::generateExtensions(egl::DisplayExtensions *outExtensions) const
     outExtensions->imageNativeBuffer =
         getRenderer()->getFeatures().supportsAndroidHardwareBuffer.enabled;
     outExtensions->surfacelessContext = true;
-    outExtensions->glColorspace = getRenderer()->getFeatures().supportsSwapchainColorspace.enabled;
-    outExtensions->imageGlColorspace = outExtensions->glColorspace;
+    outExtensions->glColorspace =
+        getRenderer()->getFeatures().supportsSwapchainColorspace.enabled &&
+        getRenderer()->getFeatures().supportsImageFormatList.enabled;
+    outExtensions->imageGlColorspace =
+        outExtensions->glColorspace && getRenderer()->getFeatures().supportsImageFormatList.enabled;
 
 #if defined(ANGLE_PLATFORM_ANDROID)
     outExtensions->framebufferTargetANDROID = true;
@@ -297,12 +289,6 @@ egl::Error DisplayVk::getEGLError(EGLint errorCode)
 void DisplayVk::populateFeatureList(angle::FeatureList *features)
 {
     mRenderer->getFeatures().populateFeatureList(features);
-}
-
-bool DisplayVk::isRobustResourceInitEnabled() const
-{
-    // We return true if any surface was created with robust resource init enabled.
-    return mHasSurfaceWithRobustInit;
 }
 
 void ShareGroupVk::onDestroy(const egl::Display *display)

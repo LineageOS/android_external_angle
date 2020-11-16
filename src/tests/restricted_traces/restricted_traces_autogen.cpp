@@ -11,24 +11,26 @@
 
 #include "common/PackedEnums.h"
 
-#include "angry_birds_2_1500/angry_birds_2_1500_capture_context2.h"
-#include "arena_of_valor/arena_of_valor_capture_context3.h"
-#include "brawl_stars/brawl_stars_capture_context2.h"
+#include "angry_birds_2_1500/angry_birds_2_1500_capture_context1.h"
+#include "arena_of_valor/arena_of_valor_capture_context1.h"
+#include "brawl_stars/brawl_stars_capture_context1.h"
 #include "candy_crush_500/candy_crush_500_capture_context1.h"
-#include "cod_mobile/cod_mobile_capture_context4.h"
-#include "dragon_ball_legends/dragon_ball_legends_capture_context3.h"
-#include "egypt_1500/egypt_1500_capture_context6.h"
-#include "fate_grand_order/fate_grand_order_capture_context2.h"
-#include "free_fire/free_fire_capture_context3.h"
-#include "kartrider_rush/kartrider_rush_capture_context3.h"
-#include "manhattan_10/manhattan_10_capture_context6.h"
-#include "marvel_contest_of_champions/marvel_contest_of_champions_capture_context2.h"
-#include "mobile_legends/mobile_legends_capture_context3.h"
+#include "clash_of_clans/clash_of_clans_capture_context1.h"
+#include "cod_mobile/cod_mobile_capture_context1.h"
+#include "dragon_ball_legends/dragon_ball_legends_capture_context1.h"
+#include "egypt_1500/egypt_1500_capture_context1.h"
+#include "fate_grand_order/fate_grand_order_capture_context1.h"
+#include "free_fire/free_fire_capture_context1.h"
+#include "kartrider_rush/kartrider_rush_capture_context1.h"
+#include "manhattan_10/manhattan_10_capture_context1.h"
+#include "marvel_contest_of_champions/marvel_contest_of_champions_capture_context1.h"
+#include "mobile_legends/mobile_legends_capture_context1.h"
 #include "nba2k20_800/nba2k20_800_capture_context1.h"
-#include "pubg_mobile_lite/pubg_mobile_lite_capture_context5.h"
+#include "pubg_mobile_lite/pubg_mobile_lite_capture_context1.h"
+#include "real_commando_secret_mission/real_commando_secret_mission_capture_context1.h"
 #include "temple_run_300/temple_run_300_capture_context1.h"
-#include "trex_200/trex_200_capture_context6.h"
-#include "world_of_tanks_blitz/world_of_tanks_blitz_capture_context3.h"
+#include "trex_200/trex_200_capture_context1.h"
+#include "world_of_tanks_blitz/world_of_tanks_blitz_capture_context1.h"
 
 namespace angle
 {
@@ -50,6 +52,10 @@ constexpr angle::PackedEnumMap<RestrictedTraceID, TraceInfo> kTraceInfos = {
      {candy_crush_500::kReplayFrameStart, candy_crush_500::kReplayFrameEnd,
       candy_crush_500::kReplayDrawSurfaceWidth, candy_crush_500::kReplayDrawSurfaceHeight,
       "candy_crush_500"}},
+    {RestrictedTraceID::clash_of_clans,
+     {clash_of_clans::kReplayFrameStart, clash_of_clans::kReplayFrameEnd,
+      clash_of_clans::kReplayDrawSurfaceWidth, clash_of_clans::kReplayDrawSurfaceHeight,
+      "clash_of_clans"}},
     {RestrictedTraceID::cod_mobile,
      {cod_mobile::kReplayFrameStart, cod_mobile::kReplayFrameEnd,
       cod_mobile::kReplayDrawSurfaceWidth, cod_mobile::kReplayDrawSurfaceHeight, "cod_mobile"}},
@@ -90,6 +96,11 @@ constexpr angle::PackedEnumMap<RestrictedTraceID, TraceInfo> kTraceInfos = {
      {pubg_mobile_lite::kReplayFrameStart, pubg_mobile_lite::kReplayFrameEnd,
       pubg_mobile_lite::kReplayDrawSurfaceWidth, pubg_mobile_lite::kReplayDrawSurfaceHeight,
       "pubg_mobile_lite"}},
+    {RestrictedTraceID::real_commando_secret_mission,
+     {real_commando_secret_mission::kReplayFrameStart,
+      real_commando_secret_mission::kReplayFrameEnd,
+      real_commando_secret_mission::kReplayDrawSurfaceWidth,
+      real_commando_secret_mission::kReplayDrawSurfaceHeight, "real_commando_secret_mission"}},
     {RestrictedTraceID::temple_run_300,
      {temple_run_300::kReplayFrameStart, temple_run_300::kReplayFrameEnd,
       temple_run_300::kReplayDrawSurfaceWidth, temple_run_300::kReplayDrawSurfaceHeight,
@@ -113,58 +124,64 @@ void ReplayFrame(RestrictedTraceID traceID, uint32_t frameIndex)
     switch (traceID)
     {
         case RestrictedTraceID::angry_birds_2_1500:
-            angry_birds_2_1500::ReplayContext2Frame(frameIndex);
+            angry_birds_2_1500::ReplayContext1Frame(frameIndex);
             break;
         case RestrictedTraceID::arena_of_valor:
-            arena_of_valor::ReplayContext3Frame(frameIndex);
+            arena_of_valor::ReplayContext1Frame(frameIndex);
             break;
         case RestrictedTraceID::brawl_stars:
-            brawl_stars::ReplayContext2Frame(frameIndex);
+            brawl_stars::ReplayContext1Frame(frameIndex);
             break;
         case RestrictedTraceID::candy_crush_500:
             candy_crush_500::ReplayContext1Frame(frameIndex);
             break;
+        case RestrictedTraceID::clash_of_clans:
+            clash_of_clans::ReplayContext1Frame(frameIndex);
+            break;
         case RestrictedTraceID::cod_mobile:
-            cod_mobile::ReplayContext4Frame(frameIndex);
+            cod_mobile::ReplayContext1Frame(frameIndex);
             break;
         case RestrictedTraceID::dragon_ball_legends:
-            dragon_ball_legends::ReplayContext3Frame(frameIndex);
+            dragon_ball_legends::ReplayContext1Frame(frameIndex);
             break;
         case RestrictedTraceID::egypt_1500:
-            egypt_1500::ReplayContext6Frame(frameIndex);
+            egypt_1500::ReplayContext1Frame(frameIndex);
             break;
         case RestrictedTraceID::fate_grand_order:
-            fate_grand_order::ReplayContext2Frame(frameIndex);
+            fate_grand_order::ReplayContext1Frame(frameIndex);
             break;
         case RestrictedTraceID::free_fire:
-            free_fire::ReplayContext3Frame(frameIndex);
+            free_fire::ReplayContext1Frame(frameIndex);
             break;
         case RestrictedTraceID::kartrider_rush:
-            kartrider_rush::ReplayContext3Frame(frameIndex);
+            kartrider_rush::ReplayContext1Frame(frameIndex);
             break;
         case RestrictedTraceID::manhattan_10:
-            manhattan_10::ReplayContext6Frame(frameIndex);
+            manhattan_10::ReplayContext1Frame(frameIndex);
             break;
         case RestrictedTraceID::marvel_contest_of_champions:
-            marvel_contest_of_champions::ReplayContext2Frame(frameIndex);
+            marvel_contest_of_champions::ReplayContext1Frame(frameIndex);
             break;
         case RestrictedTraceID::mobile_legends:
-            mobile_legends::ReplayContext3Frame(frameIndex);
+            mobile_legends::ReplayContext1Frame(frameIndex);
             break;
         case RestrictedTraceID::nba2k20_800:
             nba2k20_800::ReplayContext1Frame(frameIndex);
             break;
         case RestrictedTraceID::pubg_mobile_lite:
-            pubg_mobile_lite::ReplayContext5Frame(frameIndex);
+            pubg_mobile_lite::ReplayContext1Frame(frameIndex);
+            break;
+        case RestrictedTraceID::real_commando_secret_mission:
+            real_commando_secret_mission::ReplayContext1Frame(frameIndex);
             break;
         case RestrictedTraceID::temple_run_300:
             temple_run_300::ReplayContext1Frame(frameIndex);
             break;
         case RestrictedTraceID::trex_200:
-            trex_200::ReplayContext6Frame(frameIndex);
+            trex_200::ReplayContext1Frame(frameIndex);
             break;
         case RestrictedTraceID::world_of_tanks_blitz:
-            world_of_tanks_blitz::ReplayContext3Frame(frameIndex);
+            world_of_tanks_blitz::ReplayContext1Frame(frameIndex);
             break;
         default:
             fprintf(stderr, "Error in switch.\n");
@@ -178,58 +195,64 @@ void ResetReplay(RestrictedTraceID traceID)
     switch (traceID)
     {
         case RestrictedTraceID::angry_birds_2_1500:
-            angry_birds_2_1500::ResetContext2Replay();
+            angry_birds_2_1500::ResetContext1Replay();
             break;
         case RestrictedTraceID::arena_of_valor:
-            arena_of_valor::ResetContext3Replay();
+            arena_of_valor::ResetContext1Replay();
             break;
         case RestrictedTraceID::brawl_stars:
-            brawl_stars::ResetContext2Replay();
+            brawl_stars::ResetContext1Replay();
             break;
         case RestrictedTraceID::candy_crush_500:
             candy_crush_500::ResetContext1Replay();
             break;
+        case RestrictedTraceID::clash_of_clans:
+            clash_of_clans::ResetContext1Replay();
+            break;
         case RestrictedTraceID::cod_mobile:
-            cod_mobile::ResetContext4Replay();
+            cod_mobile::ResetContext1Replay();
             break;
         case RestrictedTraceID::dragon_ball_legends:
-            dragon_ball_legends::ResetContext3Replay();
+            dragon_ball_legends::ResetContext1Replay();
             break;
         case RestrictedTraceID::egypt_1500:
-            egypt_1500::ResetContext6Replay();
+            egypt_1500::ResetContext1Replay();
             break;
         case RestrictedTraceID::fate_grand_order:
-            fate_grand_order::ResetContext2Replay();
+            fate_grand_order::ResetContext1Replay();
             break;
         case RestrictedTraceID::free_fire:
-            free_fire::ResetContext3Replay();
+            free_fire::ResetContext1Replay();
             break;
         case RestrictedTraceID::kartrider_rush:
-            kartrider_rush::ResetContext3Replay();
+            kartrider_rush::ResetContext1Replay();
             break;
         case RestrictedTraceID::manhattan_10:
-            manhattan_10::ResetContext6Replay();
+            manhattan_10::ResetContext1Replay();
             break;
         case RestrictedTraceID::marvel_contest_of_champions:
-            marvel_contest_of_champions::ResetContext2Replay();
+            marvel_contest_of_champions::ResetContext1Replay();
             break;
         case RestrictedTraceID::mobile_legends:
-            mobile_legends::ResetContext3Replay();
+            mobile_legends::ResetContext1Replay();
             break;
         case RestrictedTraceID::nba2k20_800:
             nba2k20_800::ResetContext1Replay();
             break;
         case RestrictedTraceID::pubg_mobile_lite:
-            pubg_mobile_lite::ResetContext5Replay();
+            pubg_mobile_lite::ResetContext1Replay();
+            break;
+        case RestrictedTraceID::real_commando_secret_mission:
+            real_commando_secret_mission::ResetContext1Replay();
             break;
         case RestrictedTraceID::temple_run_300:
             temple_run_300::ResetContext1Replay();
             break;
         case RestrictedTraceID::trex_200:
-            trex_200::ResetContext6Replay();
+            trex_200::ResetContext1Replay();
             break;
         case RestrictedTraceID::world_of_tanks_blitz:
-            world_of_tanks_blitz::ResetContext3Replay();
+            world_of_tanks_blitz::ResetContext1Replay();
             break;
         default:
             fprintf(stderr, "Error in switch.\n");
@@ -243,58 +266,64 @@ void SetupReplay(RestrictedTraceID traceID)
     switch (traceID)
     {
         case RestrictedTraceID::angry_birds_2_1500:
-            angry_birds_2_1500::SetupContext2Replay();
+            angry_birds_2_1500::SetupContext1Replay();
             break;
         case RestrictedTraceID::arena_of_valor:
-            arena_of_valor::SetupContext3Replay();
+            arena_of_valor::SetupContext1Replay();
             break;
         case RestrictedTraceID::brawl_stars:
-            brawl_stars::SetupContext2Replay();
+            brawl_stars::SetupContext1Replay();
             break;
         case RestrictedTraceID::candy_crush_500:
             candy_crush_500::SetupContext1Replay();
             break;
+        case RestrictedTraceID::clash_of_clans:
+            clash_of_clans::SetupContext1Replay();
+            break;
         case RestrictedTraceID::cod_mobile:
-            cod_mobile::SetupContext4Replay();
+            cod_mobile::SetupContext1Replay();
             break;
         case RestrictedTraceID::dragon_ball_legends:
-            dragon_ball_legends::SetupContext3Replay();
+            dragon_ball_legends::SetupContext1Replay();
             break;
         case RestrictedTraceID::egypt_1500:
-            egypt_1500::SetupContext6Replay();
+            egypt_1500::SetupContext1Replay();
             break;
         case RestrictedTraceID::fate_grand_order:
-            fate_grand_order::SetupContext2Replay();
+            fate_grand_order::SetupContext1Replay();
             break;
         case RestrictedTraceID::free_fire:
-            free_fire::SetupContext3Replay();
+            free_fire::SetupContext1Replay();
             break;
         case RestrictedTraceID::kartrider_rush:
-            kartrider_rush::SetupContext3Replay();
+            kartrider_rush::SetupContext1Replay();
             break;
         case RestrictedTraceID::manhattan_10:
-            manhattan_10::SetupContext6Replay();
+            manhattan_10::SetupContext1Replay();
             break;
         case RestrictedTraceID::marvel_contest_of_champions:
-            marvel_contest_of_champions::SetupContext2Replay();
+            marvel_contest_of_champions::SetupContext1Replay();
             break;
         case RestrictedTraceID::mobile_legends:
-            mobile_legends::SetupContext3Replay();
+            mobile_legends::SetupContext1Replay();
             break;
         case RestrictedTraceID::nba2k20_800:
             nba2k20_800::SetupContext1Replay();
             break;
         case RestrictedTraceID::pubg_mobile_lite:
-            pubg_mobile_lite::SetupContext5Replay();
+            pubg_mobile_lite::SetupContext1Replay();
+            break;
+        case RestrictedTraceID::real_commando_secret_mission:
+            real_commando_secret_mission::SetupContext1Replay();
             break;
         case RestrictedTraceID::temple_run_300:
             temple_run_300::SetupContext1Replay();
             break;
         case RestrictedTraceID::trex_200:
-            trex_200::SetupContext6Replay();
+            trex_200::SetupContext1Replay();
             break;
         case RestrictedTraceID::world_of_tanks_blitz:
-            world_of_tanks_blitz::SetupContext3Replay();
+            world_of_tanks_blitz::SetupContext1Replay();
             break;
         default:
             fprintf(stderr, "Error in switch.\n");
@@ -318,6 +347,9 @@ void SetBinaryDataDir(RestrictedTraceID traceID, const char *dataDir)
             break;
         case RestrictedTraceID::candy_crush_500:
             candy_crush_500::SetBinaryDataDir(dataDir);
+            break;
+        case RestrictedTraceID::clash_of_clans:
+            clash_of_clans::SetBinaryDataDir(dataDir);
             break;
         case RestrictedTraceID::cod_mobile:
             cod_mobile::SetBinaryDataDir(dataDir);
@@ -352,6 +384,9 @@ void SetBinaryDataDir(RestrictedTraceID traceID, const char *dataDir)
         case RestrictedTraceID::pubg_mobile_lite:
             pubg_mobile_lite::SetBinaryDataDir(dataDir);
             break;
+        case RestrictedTraceID::real_commando_secret_mission:
+            real_commando_secret_mission::SetBinaryDataDir(dataDir);
+            break;
         case RestrictedTraceID::temple_run_300:
             temple_run_300::SetBinaryDataDir(dataDir);
             break;
@@ -383,6 +418,9 @@ void SetBinaryDataDecompressCallback(RestrictedTraceID traceID, DecompressCallba
             break;
         case RestrictedTraceID::candy_crush_500:
             candy_crush_500::SetBinaryDataDecompressCallback(callback);
+            break;
+        case RestrictedTraceID::clash_of_clans:
+            clash_of_clans::SetBinaryDataDecompressCallback(callback);
             break;
         case RestrictedTraceID::cod_mobile:
             cod_mobile::SetBinaryDataDecompressCallback(callback);
@@ -416,6 +454,9 @@ void SetBinaryDataDecompressCallback(RestrictedTraceID traceID, DecompressCallba
             break;
         case RestrictedTraceID::pubg_mobile_lite:
             pubg_mobile_lite::SetBinaryDataDecompressCallback(callback);
+            break;
+        case RestrictedTraceID::real_commando_secret_mission:
+            real_commando_secret_mission::SetBinaryDataDecompressCallback(callback);
             break;
         case RestrictedTraceID::temple_run_300:
             temple_run_300::SetBinaryDataDecompressCallback(callback);
