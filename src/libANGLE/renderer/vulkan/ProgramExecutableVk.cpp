@@ -136,7 +136,7 @@ ProgramInfo::~ProgramInfo() = default;
 angle::Result ProgramInfo::initProgram(ContextVk *contextVk,
                                        const gl::ShaderType shaderType,
                                        const ShaderInfo &shaderInfo,
-                                       ProgramTransformOptionBits optionBits,
+                                       ProgramTransformOptions optionBits,
                                        ProgramExecutableVk *executableVk)
 {
     const ShaderMapInterfaceVariableInfoMap &variableInfoMap =
@@ -144,8 +144,7 @@ angle::Result ProgramInfo::initProgram(ContextVk *contextVk,
     const gl::ShaderMap<SpirvBlob> &originalSpirvBlobs = shaderInfo.getSpirvBlobs();
     const SpirvBlob &originalSpirvBlob                 = originalSpirvBlobs[shaderType];
     bool removeEarlyFragmentTestsOptimization =
-        (shaderType == gl::ShaderType::Fragment &&
-         optionBits[ProgramTransformOption::RemoveEarlyFragmentTestsOptimization]);
+        (shaderType == gl::ShaderType::Fragment && optionBits.removeEarlyFragmentTestsOptimization);
     gl::ShaderMap<SpirvBlob> transformedSpirvBlobs;
     SpirvBlob &transformedSpirvBlob = transformedSpirvBlobs[shaderType];
 
@@ -158,11 +157,10 @@ angle::Result ProgramInfo::initProgram(ContextVk *contextVk,
 
     mProgramHelper.setShader(shaderType, &mShaders[shaderType]);
 
-    if (optionBits[ProgramTransformOption::EnableLineRasterEmulation])
-    {
-        mProgramHelper.enableSpecializationConstant(
-            sh::vk::SpecializationConstantId::LineRasterEmulation);
-    }
+    mProgramHelper.setSpecializationConstant(sh::vk::SpecializationConstantId::LineRasterEmulation,
+                                             optionBits.enableLineRasterEmulation);
+    mProgramHelper.setSpecializationConstant(sh::vk::SpecializationConstantId::SurfaceRotation,
+                                             optionBits.surfaceRotation);
 
     return angle::Result::Continue;
 }
@@ -202,7 +200,7 @@ void ProgramExecutableVk::reset(ContextVk *contextVk)
     mDescriptorSets.fill(VK_NULL_HANDLE);
     mEmptyDescriptorSets.fill(VK_NULL_HANDLE);
     mNumDefaultUniformDescriptors = 0;
-    mTransformOptionBits.reset();
+    mTransformOptions             = {};
 
     for (vk::RefCountedDescriptorPoolBinding &binding : mDescriptorPoolBindings)
     {
@@ -382,8 +380,12 @@ angle::Result ProgramExecutableVk::allocUniformAndXfbDescriptorSet(
     auto iter = mUniformsAndXfbDescriptorSetCache.find(xfbBufferDesc);
     if (iter != mUniformsAndXfbDescriptorSetCache.end())
     {
-        mDescriptorSets[ToUnderlying(DescriptorSetIndex::UniformsAndXfb)] = iter->second;
         *newDescriptorSetAllocated                                        = false;
+        mDescriptorSets[ToUnderlying(DescriptorSetIndex::UniformsAndXfb)] = iter->second;
+        // The descriptor pool that this descriptor set was allocated from needs to be retained each
+        // time the descriptor set is used in a new command.
+        mDescriptorPoolBindings[ToUnderlying(DescriptorSetIndex::UniformsAndXfb)].get().retain(
+            &contextVk->getResourceUseList());
         return angle::Result::Continue;
     }
 
@@ -651,14 +653,13 @@ void ProgramExecutableVk::updateEarlyFragmentTestsOptimization(ContextVk *contex
 {
     const gl::State &glState = contextVk->getState();
 
-    mTransformOptionBits[ProgramTransformOption::RemoveEarlyFragmentTestsOptimization] = false;
+    mTransformOptions.removeEarlyFragmentTestsOptimization = false;
     if (!glState.canEnableEarlyFragmentTestsOptimization())
     {
         ProgramVk *programVk = getShaderProgram(glState, gl::ShaderType::Fragment);
         if (programVk && programVk->getState().hasEarlyFragmentTestsOptimization())
         {
-            mTransformOptionBits[ProgramTransformOption::RemoveEarlyFragmentTestsOptimization] =
-                true;
+            mTransformOptions.removeEarlyFragmentTestsOptimization = true;
         }
     }
 }
@@ -671,23 +672,25 @@ angle::Result ProgramExecutableVk::getGraphicsPipeline(
     const vk::GraphicsPipelineDesc **descPtrOut,
     vk::PipelineHelper **pipelineOut)
 {
-    const gl::State &glState = contextVk->getState();
-    mTransformOptionBits[ProgramTransformOption::EnableLineRasterEmulation] =
-        contextVk->isBresenhamEmulationEnabled(mode);
-    ProgramInfo &programInfo         = getGraphicsProgramInfo(mTransformOptionBits);
-    RendererVk *renderer             = contextVk->getRenderer();
-    vk::PipelineCache *pipelineCache = nullptr;
-
+    const gl::State &glState                  = contextVk->getState();
+    RendererVk *renderer                      = contextVk->getRenderer();
+    vk::PipelineCache *pipelineCache          = nullptr;
     const gl::ProgramExecutable *glExecutable = glState.getProgramExecutable();
     ASSERT(glExecutable && !glExecutable->isCompute());
+
+    mTransformOptions.enableLineRasterEmulation = contextVk->isBresenhamEmulationEnabled(mode);
+    mTransformOptions.surfaceRotation           = static_cast<uint8_t>(desc.getSurfaceRotation());
+
+    // This must be called after mTransformOptions have been set.
+    ProgramInfo &programInfo = getGraphicsProgramInfo(mTransformOptions);
 
     for (const gl::ShaderType shaderType : glExecutable->getLinkedShaderStages())
     {
         ProgramVk *programVk = getShaderProgram(glState, shaderType);
         if (programVk)
         {
-            ANGLE_TRY(programVk->initGraphicsShaderProgram(
-                contextVk, shaderType, mTransformOptionBits, &programInfo, this));
+            ANGLE_TRY(programVk->initGraphicsShaderProgram(contextVk, shaderType, mTransformOptions,
+                                                           &programInfo, this));
         }
     }
 
@@ -1221,8 +1224,6 @@ angle::Result ProgramExecutableVk::updateImagesDescriptorSet(
 
         GetImageNameWithoutIndices(&mappedImageName);
 
-        ASSERT(!imageBinding.unreferenced);
-
         uint32_t arrayOffset = 0;
         uint32_t arraySize   = static_cast<uint32_t>(imageBinding.boundImageUnits.size());
 
@@ -1398,6 +1399,10 @@ angle::Result ProgramExecutableVk::updateTexturesDescriptorSet(ContextVk *contex
     if (iter != mTextureDescriptorsCache.end())
     {
         mDescriptorSets[ToUnderlying(DescriptorSetIndex::Texture)] = iter->second;
+        // The descriptor pool that this descriptor set was allocated from needs to be retained each
+        // time the descriptor set is used in a new command.
+        mDescriptorPoolBindings[ToUnderlying(DescriptorSetIndex::Texture)].get().retain(
+            &contextVk->getResourceUseList());
         return angle::Result::Continue;
     }
 
@@ -1421,9 +1426,6 @@ angle::Result ProgramExecutableVk::updateTexturesDescriptorSet(ContextVk *contex
         {
             const gl::SamplerBinding &samplerBinding =
                 programState->getSamplerBindings()[textureIndex];
-
-            ASSERT(!samplerBinding.unreferenced);
-
             uint32_t uniformIndex = programState->getUniformIndexFromSamplerIndex(textureIndex);
             const gl::LinkedUniform &samplerUniform = programState->getUniforms()[uniformIndex];
             std::string mappedSamplerName = GlslangGetMappedSamplerName(samplerUniform.name);

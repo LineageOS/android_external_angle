@@ -178,6 +178,9 @@ void RendererVk::ensureCapsInitialized() const
 
     mNativeExtensions.setTextureExtensionSupport(mNativeTextureCaps);
 
+    // Enable GL_EXT_buffer_storage
+    mNativeExtensions.bufferStorageEXT = true;
+
     // To ensure that ETC2/EAC formats are enabled only on hardware that supports them natively,
     // this flag is not set by the function above and must be set explicitly. It exposes
     // ANGLE_compressed_texture_etc extension string.
@@ -367,6 +370,13 @@ void RendererVk::ensureCapsInitialized() const
     // maxInterpolationOffset is at least 0.5.
     mNativeExtensions.multisampleInterpolationOES =
         supportSampleRateShading && (mNativeCaps.maxInterpolationOffset >= 0.5);
+    // OES_shader_multisample_interpolation requires OES_sample_variables, disable for now
+    mNativeExtensions.multisampleInterpolationOES = false;
+
+    mNativeExtensions.shaderImageAtomicOES =
+        ((mPhysicalDeviceFeatures.vertexPipelineStoresAndAtomics == VK_TRUE) &&
+         (mPhysicalDeviceFeatures.fragmentStoresAndAtomics == VK_TRUE) &&
+         getFeatures().supportsShaderImageFloat32Atomics.enabled);
 
     // https://vulkan.lunarg.com/doc/view/1.0.30.0/linux/vkspec.chunked/ch31s02.html
     mNativeCaps.maxElementIndex  = std::numeric_limits<GLuint>::max() - 1;
@@ -599,6 +609,17 @@ void RendererVk::ensureCapsInitialized() const
     {
         mNativeCaps.maxShaderAtomicCounters[shaderType] = maxAtomicCounters;
     }
+
+    // Set maxShaderAtomicCounters to zero if atomic is not supported.
+    if (!mPhysicalDeviceFeatures.vertexPipelineStoresAndAtomics)
+    {
+        mNativeCaps.maxShaderAtomicCounters[gl::ShaderType::Vertex] = 0;
+    }
+    if (!mPhysicalDeviceFeatures.fragmentStoresAndAtomics)
+    {
+        mNativeCaps.maxShaderAtomicCounters[gl::ShaderType::Fragment] = 0;
+    }
+
     mNativeCaps.maxCombinedAtomicCounters = maxAtomicCounters;
 
     // GL Images correspond to Vulkan Storage Images.
@@ -712,6 +733,9 @@ void RendererVk::ensureCapsInitialized() const
 
     // Enable GL_NV_fence extension.
     mNativeExtensions.fenceNV = true;
+
+    // Enable GL_EXT_copy_image
+    mNativeExtensions.copyImageEXT = true;
 
     // Geometry shader is optional.
     if (mPhysicalDeviceFeatures.geometryShader)

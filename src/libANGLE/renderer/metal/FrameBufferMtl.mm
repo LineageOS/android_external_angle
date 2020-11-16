@@ -1025,7 +1025,8 @@ angle::Result FramebufferMtl::clearWithDraw(const gl::Context *context,
     {
         if (drawbuffer >= mRenderPassDesc.numColorAttachments)
         {
-            continue;
+            // Iteration over drawbuffer indices always goes in ascending order
+            break;
         }
         RenderTargetMtl *renderTarget = mColorRenderTargets[drawbuffer];
         if (!renderTarget || !renderTarget->getTexture())
@@ -1202,8 +1203,8 @@ gl::Rectangle FramebufferMtl::getCorrectFlippedReadArea(const gl::Context *conte
 angle::Result FramebufferMtl::readPixelsImpl(const gl::Context *context,
                                              const gl::Rectangle &area,
                                              const PackPixelsParams &packPixelsParams,
-                                             RenderTargetMtl *renderTarget,
-                                             uint8_t *pixels)
+                                             const RenderTargetMtl *renderTarget,
+                                             uint8_t *pixels) const
 {
     ContextMtl *contextMtl = mtl::GetImpl(context);
     if (!renderTarget)
@@ -1269,7 +1270,7 @@ angle::Result FramebufferMtl::readPixelsImpl(const gl::Context *context,
 angle::Result FramebufferMtl::readPixelsToPBO(const gl::Context *context,
                                               const gl::Rectangle &area,
                                               const PackPixelsParams &packPixelsParams,
-                                              RenderTargetMtl *renderTarget)
+                                              const RenderTargetMtl *renderTarget) const
 {
     ASSERT(packPixelsParams.packBuffer);
     ASSERT(renderTarget);

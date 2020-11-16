@@ -65,8 +65,7 @@ constexpr size_t kFunctionSizeLimit = 5000;
 // Limit based on MSVC Compiler Error C2026
 constexpr size_t kStringLengthLimit = 16380;
 
-#if defined(ANGLE_PLATFORM_ANDROID)
-
+// Android debug properties that correspond to the above environment variables
 constexpr char kAndroidCaptureEnabled[] = "debug.angle.capture.enabled";
 constexpr char kAndroidOutDir[]         = "debug.angle.capture.out_dir";
 constexpr char kAndroidFrameStart[]     = "debug.angle.capture.frame_start";
@@ -74,84 +73,6 @@ constexpr char kAndroidFrameEnd[]       = "debug.angle.capture.frame_end";
 constexpr char kAndroidCaptureTrigger[] = "debug.angle.capture.trigger";
 constexpr char kAndroidCaptureLabel[]   = "debug.angle.capture.label";
 constexpr char kAndroidCompression[]    = "debug.angle.capture.compression";
-
-constexpr int kStreamSize = 64;
-
-constexpr char kAndroidOutputSubdir[] = "/angle_capture/";
-
-// Call out to 'getprop' on a shell and return a string if the value was set
-std::string AndroidGetEnvFromProp(const char *key)
-{
-    std::string command("getprop ");
-    command += key;
-
-    // Run the command and open a I/O stream to read results
-    char stream[kStreamSize] = {};
-    FILE *pipe               = popen(command.c_str(), "r");
-    if (pipe != nullptr)
-    {
-        fgets(stream, kStreamSize, pipe);
-        pclose(pipe);
-    }
-
-    // Right strip white space
-    std::string result(stream);
-    result.erase(result.find_last_not_of(" \n\r\t") + 1);
-    return result;
-}
-
-void PrimeAndroidEnvironmentVariables()
-{
-    std::string enabled = AndroidGetEnvFromProp(kAndroidCaptureEnabled);
-    if (!enabled.empty())
-    {
-        INFO() << "Frame capture read " << enabled << " from " << kAndroidCaptureEnabled;
-        setenv(kEnabledVarName, enabled.c_str(), 1);
-    }
-
-    std::string outDir = AndroidGetEnvFromProp(kAndroidOutDir);
-    if (!outDir.empty())
-    {
-        INFO() << "Frame capture read " << outDir << " from " << kAndroidOutDir;
-        setenv(kOutDirectoryVarName, outDir.c_str(), 1);
-    }
-
-    std::string frameStart = AndroidGetEnvFromProp(kAndroidFrameStart);
-    if (!frameStart.empty())
-    {
-        INFO() << "Frame capture read " << frameStart << " from " << kAndroidFrameStart;
-        setenv(kFrameStartVarName, frameStart.c_str(), 1);
-    }
-
-    std::string frameEnd = AndroidGetEnvFromProp(kAndroidFrameEnd);
-    if (!frameEnd.empty())
-    {
-        INFO() << "Frame capture read " << frameEnd << " from " << kAndroidFrameEnd;
-        setenv(kFrameEndVarName, frameEnd.c_str(), 1);
-    }
-
-    std::string captureTrigger = AndroidGetEnvFromProp(kAndroidCaptureTrigger);
-    if (!captureTrigger.empty())
-    {
-        INFO() << "Capture trigger read " << captureTrigger << " from " << kAndroidCaptureTrigger;
-        setenv(kCaptureTriggerVarName, captureTrigger.c_str(), 1);
-    }
-
-    std::string captureLabel = AndroidGetEnvFromProp(kAndroidCaptureLabel);
-    if (!captureLabel.empty())
-    {
-        INFO() << "Frame capture read " << captureLabel << " from " << kAndroidCaptureLabel;
-        setenv(kCaptureLabel, captureLabel.c_str(), 1);
-    }
-
-    std::string compression = AndroidGetEnvFromProp(kAndroidCompression);
-    if (!compression.empty())
-    {
-        INFO() << "Frame capture read " << compression << " from " << kAndroidCompression;
-        setenv(kCompression, compression.c_str(), 1);
-    }
-}
-#endif
 
 std::string GetDefaultOutDirectory()
 {
@@ -178,6 +99,7 @@ std::string GetDefaultOutDirectory()
         ERR() << "not able to lookup application id";
     }
 
+    constexpr char kAndroidOutputSubdir[] = "/angle_capture/";
     path += std::string(applicationId) + kAndroidOutputSubdir;
 
     // Check for existance of output path
@@ -196,11 +118,14 @@ std::string GetDefaultOutDirectory()
 
 std::string GetCaptureTrigger()
 {
-#if defined(ANGLE_PLATFORM_ANDROID)
-    return AndroidGetEnvFromProp(kAndroidCaptureTrigger);
-#else
-    return GetEnvironmentVar(kCaptureTriggerVarName);
-#endif  // defined(ANGLE_PLATFORM_ANDROID)
+    return GetEnvironmentVarOrUnCachedAndroidProperty(kCaptureTriggerVarName,
+                                                      kAndroidCaptureTrigger);
+}
+
+std::ostream &operator<<(std::ostream &os, gl::ContextID contextId)
+{
+    os << static_cast<int>(contextId.value);
+    return os;
 }
 
 struct FmtCapturePrefix
@@ -222,7 +147,7 @@ std::ostream &operator<<(std::ostream &os, const FmtCapturePrefix &fmt)
     {
         os << fmt.captureLabel;
     }
-    os << "_capture_context" << static_cast<int>(fmt.contextId);
+    os << "_capture_context" << fmt.contextId;
     return os;
 }
 
@@ -249,7 +174,7 @@ struct FmtReplayFunction
 
 std::ostream &operator<<(std::ostream &os, const FmtReplayFunction &fmt)
 {
-    os << "ReplayContext" << static_cast<int>(fmt.contextId) << "Frame" << fmt.frameIndex;
+    os << "ReplayContext" << fmt.contextId << "Frame" << fmt.frameIndex;
     if (fmt.partId != kNoPartId)
     {
         os << "Part" << fmt.partId;
@@ -270,7 +195,7 @@ struct FmtSetupFunction
 
 std::ostream &operator<<(std::ostream &os, const FmtSetupFunction &fmt)
 {
-    os << "SetupContext" << Str(static_cast<int>(fmt.contextId)) << "Replay";
+    os << "SetupContext" << fmt.contextId << "Replay";
     if (fmt.partId != kNoPartId)
     {
         os << "Part" << fmt.partId;
@@ -288,7 +213,7 @@ struct FmtResetFunction
 
 std::ostream &operator<<(std::ostream &os, const FmtResetFunction &fmt)
 {
-    os << "ResetContext" << Str(static_cast<int>(fmt.contextId)) << "Replay()";
+    os << "ResetContext" << fmt.contextId << "Replay()";
     return os;
 }
 
@@ -331,19 +256,18 @@ std::ostream &operator<<(std::ostream &os, const FmtFunction &fmt)
     return os;
 }
 
-struct FmtGetSerializedContextStateDataFunction
+struct FmtGetSerializedContextStateFunction
 {
-    FmtGetSerializedContextStateDataFunction(gl::ContextID contextIdIn, uint32_t frameIndexIn)
+    FmtGetSerializedContextStateFunction(gl::ContextID contextIdIn, uint32_t frameIndexIn)
         : contextId(contextIdIn), frameIndex(frameIndexIn)
     {}
     gl::ContextID contextId;
     uint32_t frameIndex;
 };
 
-std::ostream &operator<<(std::ostream &os, const FmtGetSerializedContextStateDataFunction &fmt)
+std::ostream &operator<<(std::ostream &os, const FmtGetSerializedContextStateFunction &fmt)
 {
-    os << "GetSerializedContext" << static_cast<int>(fmt.contextId) << "StateFrame"
-       << fmt.frameIndex << "Data()";
+    os << "GetSerializedContext" << fmt.contextId << "StateFrame" << fmt.frameIndex << "Data()";
     return os;
 }
 
@@ -986,6 +910,15 @@ void MaybeResetResources(std::stringstream &out,
                 }
             }
 
+            // Restore buffer bindings as seen during MEC
+            std::vector<CallCapture> &bufferBindingCalls = resourceTracker->getBufferBindingCalls();
+            for (CallCapture &call : bufferBindingCalls)
+            {
+                out << "    ";
+                WriteCppReplayForCall(call, dataTracker, out, header, binaryData);
+                out << ";\n";
+            }
+
             break;
         }
         default:
@@ -1148,14 +1081,10 @@ void WriteCppReplay(bool compression,
             binaryData->resize(serializedContextOffset + serializedContextLength);
             memcpy(binaryData->data() + serializedContextOffset, serializedContextData.data(),
                    serializedContextLength);
-            out << "std::vector<uint8_t> "
-                << FmtGetSerializedContextStateDataFunction(context->id(), frameIndex) << "\n";
+            out << "const uint8_t *"
+                << FmtGetSerializedContextStateFunction(context->id(), frameIndex) << "\n";
             out << "{\n";
-            out << "    std::vector<uint8_t> serializedContextData(" << serializedContextLength
-                << ");\n";
-            out << "    memcpy(serializedContextData.data(), &gBinaryData["
-                << serializedContextOffset << "], " << serializedContextLength << ");\n";
-            out << "    return serializedContextData;\n";
+            out << "    return &gBinaryData[" << serializedContextOffset << "];\n";
             out << "}\n";
             out << "\n";
         }
@@ -1212,6 +1141,20 @@ void WriteCppReplayIndexFiles(bool compression,
     header << "#include <vector>\n";
     header << "#include <unordered_map>\n";
     header << "\n";
+    header << "#if !defined(ANGLE_REPLAY_EXPORT)\n";
+    header << "#    if defined(_WIN32)\n";
+    header << "#        if defined(ANGLE_REPLAY_IMPLEMENTATION)\n";
+    header << "#            define ANGLE_REPLAY_EXPORT __declspec(dllexport)\n";
+    header << "#        else\n";
+    header << "#            define ANGLE_REPLAY_EXPORT __declspec(dllimport)\n";
+    header << "#        endif\n";
+    header << "#    elif defined(__GNUC__)\n";
+    header << "#        define ANGLE_REPLAY_EXPORT __attribute__((visibility(\"default\")))\n";
+    header << "#    else\n";
+    header << "#        define ANGLE_REPLAY_EXPORT\n";
+    header << "#    endif\n";
+    header << "#endif  // !defined(ANGLE_REPLAY_EXPORT)\n";
+    header << "\n";
 
     if (!captureLabel.empty())
     {
@@ -1249,34 +1192,37 @@ void WriteCppReplayIndexFiles(bool compression,
            << ";\n";
     header << "// End Trace Metadata\n";
     header << "\n";
-    header << "void SetupContext" << static_cast<int>(contextId) << "Replay();\n";
-    header << "void ReplayContext" << static_cast<int>(contextId)
+    header << "// Begin Exported Methods\n";
+    header << "ANGLE_REPLAY_EXPORT void SetupContext" << contextId << "Replay();\n";
+    header << "ANGLE_REPLAY_EXPORT void ReplayContext" << contextId
            << "Frame(uint32_t frameIndex);\n";
-    header << "void ResetContext" << static_cast<int>(contextId) << "Replay();\n";
+    header << "ANGLE_REPLAY_EXPORT void ResetContext" << contextId << "Replay();\n";
     if (serializeStateEnabled)
     {
-        header << "std::vector<uint8_t> GetSerializedContext" << static_cast<int>(contextId)
-               << "StateData(uint32_t frameIndex);\n";
+        header << "ANGLE_REPLAY_EXPORT const uint8_t *GetSerializedContext" << contextId
+               << "State(uint32_t frameIndex);\n";
     }
     header << "\n";
     for (uint32_t frameIndex = 1; frameIndex <= frameCount; ++frameIndex)
     {
-        header << "void " << FmtReplayFunction(contextId, frameIndex) << ";\n";
+        header << "ANGLE_REPLAY_EXPORT void " << FmtReplayFunction(contextId, frameIndex) << ";\n";
     }
     header << "\n";
     if (serializeStateEnabled)
     {
         for (uint32_t frameIndex = 1; frameIndex <= frameCount; ++frameIndex)
         {
-            header << "std::vector<uint8_t> "
-                   << FmtGetSerializedContextStateDataFunction(contextId, frameIndex) << ";\n";
+            header << "ANGLE_REPLAY_EXPORT const uint8_t *"
+                   << FmtGetSerializedContextStateFunction(contextId, frameIndex) << ";\n";
         }
         header << "\n";
     }
 
     header << "using DecompressCallback = uint8_t *(*)(const std::vector<uint8_t> &);\n";
-    header << "void SetBinaryDataDecompressCallback(DecompressCallback callback);\n";
-    header << "void SetBinaryDataDir(const char *dataDir);\n";
+    header << "ANGLE_REPLAY_EXPORT void SetBinaryDataDecompressCallback(DecompressCallback "
+              "callback);\n";
+    header << "ANGLE_REPLAY_EXPORT void SetBinaryDataDir(const char *dataDir);\n";
+    header << "// End Exported Methods\n";
     header << "\n";
     header << "// Maps from <captured Program ID, captured location> to run-time location.\n";
     header
@@ -1383,15 +1329,14 @@ void WriteCppReplayIndexFiles(bool compression,
     header << "\n";
 
     source << "\n";
-    source << "void ReplayContext" << static_cast<int>(contextId) << "Frame(uint32_t frameIndex)\n";
+    source << "void ReplayContext" << contextId << "Frame(uint32_t frameIndex)\n";
     source << "{\n";
     source << "    switch (frameIndex)\n";
     source << "    {\n";
     for (uint32_t frameIndex = 1; frameIndex <= frameCount; ++frameIndex)
     {
         source << "        case " << frameIndex << ":\n";
-        source << "            ReplayContext" << static_cast<int>(contextId) << "Frame"
-               << frameIndex << "();\n";
+        source << "            ReplayContext" << contextId << "Frame" << frameIndex << "();\n";
         source << "            break;\n";
     }
     source << "        default:\n";
@@ -1402,7 +1347,7 @@ void WriteCppReplayIndexFiles(bool compression,
 
     if (writeResetContextCall)
     {
-        source << "void ResetContext" << Str(static_cast<int>(contextId)) << "Replay()\n";
+        source << "void ResetContext" << contextId << "Replay()\n";
         source << "{\n";
         source << "    // Reset context is empty because context is destroyed before end "
                   "frame is reached\n";
@@ -1412,8 +1357,8 @@ void WriteCppReplayIndexFiles(bool compression,
 
     if (serializeStateEnabled)
     {
-        source << "std::vector<uint8_t> GetSerializedContext" << static_cast<int>(contextId)
-               << "StateData(uint32_t frameIndex)\n";
+        source << "const uint8_t *GetSerializedContext" << contextId
+               << "State(uint32_t frameIndex)\n";
         source << "{\n";
         source << "    switch (frameIndex)\n";
         source << "    {\n";
@@ -1421,7 +1366,7 @@ void WriteCppReplayIndexFiles(bool compression,
         {
             source << "        case " << frameIndex << ":\n";
             source << "            return "
-                   << FmtGetSerializedContextStateDataFunction(contextId, frameIndex) << ";\n";
+                   << FmtGetSerializedContextStateFunction(contextId, frameIndex) << ";\n";
         }
         source << "        default:\n";
         source << "            return {};\n";
@@ -2275,6 +2220,15 @@ void CaptureBufferResetCalls(const gl::State &replayState,
             CaptureUnmapBuffer(replayState, true, gl::BufferBinding::Array, GL_TRUE));
 }
 
+void CaptureBufferBindingResetCalls(const gl::State &replayState,
+                                    ResourceTracker *resourceTracker,
+                                    gl::BufferBinding binding,
+                                    gl::BufferID id)
+{
+    std::vector<CallCapture> &bufferBindingCalls = resourceTracker->getBufferBindingCalls();
+    Capture(&bufferBindingCalls, CaptureBindBuffer(replayState, true, binding, id));
+}
+
 void CaptureMidExecutionSetup(const gl::Context *context,
                               std::vector<CallCapture> *setupCalls,
                               ResourceTracker *resourceTracker,
@@ -2434,6 +2388,12 @@ void CaptureMidExecutionSetup(const gl::Context *context,
             (!isArray && bufferID.value != 0))
         {
             cap(CaptureBindBuffer(replayState, true, binding, bufferID));
+        }
+
+        // Restore all buffer bindings for Reset
+        if (bufferID.value != 0)
+        {
+            CaptureBufferBindingResetCalls(replayState, resourceTracker, binding, bufferID);
         }
     }
 
@@ -3605,17 +3565,15 @@ FrameCapture::FrameCapture()
 {
     reset();
 
-#if defined(ANGLE_PLATFORM_ANDROID)
-    PrimeAndroidEnvironmentVariables();
-#endif
-
-    std::string enabledFromEnv = angle::GetEnvironmentVar(kEnabledVarName);
+    std::string enabledFromEnv =
+        GetEnvironmentVarOrUnCachedAndroidProperty(kEnabledVarName, kAndroidCaptureEnabled);
     if (enabledFromEnv == "0")
     {
         mEnabled = false;
     }
 
-    std::string pathFromEnv = angle::GetEnvironmentVar(kOutDirectoryVarName);
+    std::string pathFromEnv =
+        GetEnvironmentVarOrUnCachedAndroidProperty(kOutDirectoryVarName, kAndroidOutDir);
     if (pathFromEnv.empty())
     {
         mOutDirectory = GetDefaultOutDirectory();
@@ -3631,19 +3589,22 @@ FrameCapture::FrameCapture()
         mOutDirectory += '/';
     }
 
-    std::string startFromEnv = angle::GetEnvironmentVar(kFrameStartVarName);
+    std::string startFromEnv =
+        GetEnvironmentVarOrUnCachedAndroidProperty(kFrameStartVarName, kAndroidFrameStart);
     if (!startFromEnv.empty())
     {
         mCaptureStartFrame = atoi(startFromEnv.c_str());
     }
 
-    std::string endFromEnv = angle::GetEnvironmentVar(kFrameEndVarName);
+    std::string endFromEnv =
+        GetEnvironmentVarOrUnCachedAndroidProperty(kFrameEndVarName, kAndroidFrameEnd);
     if (!endFromEnv.empty())
     {
         mCaptureEndFrame = atoi(endFromEnv.c_str());
     }
 
-    std::string captureTriggerFromEnv = angle::GetEnvironmentVar(kCaptureTriggerVarName);
+    std::string captureTriggerFromEnv =
+        GetEnvironmentVarOrUnCachedAndroidProperty(kCaptureTriggerVarName, kAndroidCaptureTrigger);
     if (!captureTriggerFromEnv.empty())
     {
         mCaptureTrigger = atoi(captureTriggerFromEnv.c_str());
@@ -3654,14 +3615,16 @@ FrameCapture::FrameCapture()
         INFO() << "Capture trigger detected, disabling capture start/end frame.";
     }
 
-    std::string labelFromEnv = angle::GetEnvironmentVar(kCaptureLabel);
+    std::string labelFromEnv =
+        GetEnvironmentVarOrUnCachedAndroidProperty(kCaptureLabel, kAndroidCaptureLabel);
     if (!labelFromEnv.empty())
     {
         // Optional label to provide unique file names and namespaces
         mCaptureLabel = labelFromEnv;
     }
 
-    std::string compressionFromEnv = angle::GetEnvironmentVar(kCompression);
+    std::string compressionFromEnv =
+        GetEnvironmentVarOrUnCachedAndroidProperty(kCompression, kAndroidCompression);
     if (compressionFromEnv == "0")
     {
         mCompression = false;

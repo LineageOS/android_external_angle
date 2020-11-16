@@ -107,6 +107,7 @@ class DebugAnnotator : angle::NonCopyable
     virtual void logMessage(const LogMessage &msg) const = 0;
 };
 
+bool ShouldBeginScopedEvent();
 void InitializeDebugAnnotations(DebugAnnotator *debugAnnotator);
 void UninitializeDebugAnnotations();
 bool DebugAnnotationsActive();
@@ -259,7 +260,7 @@ std::ostream &FmtHex(std::ostream &os, T value)
             gl::ScopedPerfEventHelper scopedPerfEventHelper##__LINE__(context, entryPoint); \
             do                                                                              \
             {                                                                               \
-                if (gl::DebugAnnotationsActive())                                           \
+                if (gl::ShouldBeginScopedEvent())                                           \
                 {                                                                           \
                     scopedPerfEventHelper##__LINE__.begin("%s(" message ")", function,      \
                                                           __VA_ARGS__);                     \
@@ -270,7 +271,7 @@ std::ostream &FmtHex(std::ostream &os, T value)
             gl::ScopedPerfEventHelper scopedPerfEventHelper(context, entryPoint);            \
             do                                                                               \
             {                                                                                \
-                if (gl::DebugAnnotationsActive())                                            \
+                if (gl::ShouldBeginScopedEvent())                                            \
                 {                                                                            \
                     scopedPerfEventHelper.begin("%s(" message ")", function, ##__VA_ARGS__); \
                 }                                                                            \
@@ -404,6 +405,15 @@ std::ostream &FmtHex(std::ostream &os, T value)
 #else
 #    define ANGLE_DISABLE_EXTRA_SEMI_WARNING
 #    define ANGLE_REENABLE_EXTRA_SEMI_WARNING
+#endif
+
+#if defined(__clang__)
+#    define ANGLE_DISABLE_EXTRA_SEMI_STMT_WARNING \
+        _Pragma("clang diagnostic push") _Pragma("clang diagnostic ignored \"-Wextra-semi-stmt\"")
+#    define ANGLE_REENABLE_EXTRA_SEMI_STMT_WARNING _Pragma("clang diagnostic pop")
+#else
+#    define ANGLE_DISABLE_EXTRA_SEMI_STMT_WARNING
+#    define ANGLE_REENABLE_EXTRA_SEMI_STMT_WARNING
 #endif
 
 #if defined(__clang__)

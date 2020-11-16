@@ -100,6 +100,34 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
                                  bool unpackUnmultiplyAlpha,
                                  const gl::Texture *source) override;
 
+    angle::Result copyRenderbufferSubData(const gl::Context *context,
+                                          const gl::Renderbuffer *srcBuffer,
+                                          GLint srcLevel,
+                                          GLint srcX,
+                                          GLint srcY,
+                                          GLint srcZ,
+                                          GLint dstLevel,
+                                          GLint dstX,
+                                          GLint dstY,
+                                          GLint dstZ,
+                                          GLsizei srcWidth,
+                                          GLsizei srcHeight,
+                                          GLsizei srcDepth) override;
+
+    angle::Result copyTextureSubData(const gl::Context *context,
+                                     const gl::Texture *srcTexture,
+                                     GLint srcLevel,
+                                     GLint srcX,
+                                     GLint srcY,
+                                     GLint srcZ,
+                                     GLint dstLevel,
+                                     GLint dstX,
+                                     GLint dstY,
+                                     GLint dstZ,
+                                     GLsizei srcWidth,
+                                     GLsizei srcHeight,
+                                     GLsizei srcDepth) override;
+
     angle::Result copyCompressedTexture(const gl::Context *context,
                                         const gl::Texture *source) override;
 
@@ -199,7 +227,8 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
     // Normally, initialize the image with enabled mipmap level counts.
     angle::Result ensureImageInitialized(ContextVk *contextVk, ImageMipLevels mipLevels);
 
-    vk::ImageViewSubresourceSerial getImageViewSubresourceSerial() const;
+    vk::ImageViewSubresourceSerial getImageViewSubresourceSerial(
+        const gl::SamplerState &samplerState) const;
 
     void overrideStagingBufferSizeForTesting(size_t initialSizeForTesting)
     {
@@ -296,7 +325,8 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
                                         uint32_t rowLength,
                                         uint32_t imageHeight,
                                         const gl::Box &sourceArea,
-                                        size_t offset);
+                                        size_t offset,
+                                        VkImageAspectFlags aspectFlags);
 
     // Called from syncState to prepare the image for mipmap generation.
     void prepareForGenerateMipmap(ContextVk *contextVk);
@@ -369,14 +399,10 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
     void releaseStagingBuffer(ContextVk *contextVk);
     uint32_t getMipLevelCount(ImageMipLevels mipLevels) const;
     uint32_t getMaxLevelCount() const;
-    // Used when the image is being redefined (for example to add mips or change base level) to copy
-    // each subresource of the image and stage it for another subresource.  When all subresources
-    // are taken care of, the image is recreated.
-    angle::Result copyAndStageImageSubresource(ContextVk *contextVk,
-                                               bool ignoreLayerCount,
-                                               uint32_t currentLayer,
-                                               vk::LevelIndex srcLevelVk,
-                                               gl::LevelIndex dstLevelGL);
+    angle::Result copyAndStageImageData(ContextVk *contextVk,
+                                        gl::LevelIndex previousBaseLevel,
+                                        vk::ImageHelper *srcImage,
+                                        vk::ImageHelper *dstImage);
     angle::Result initImageViews(ContextVk *contextVk,
                                  const vk::Format &format,
                                  const bool sized,

@@ -155,6 +155,14 @@ bool IsConfigSelected()
     return gSelectedConfig[0] != 0;
 }
 
+#if !defined(ANGLE_PLATFORM_APPLE)
+// For Apple platform, see angle_test_instantiate_apple.mm
+bool IsMetalTextureSwizzleAvailable()
+{
+    return false;
+}
+#endif
+
 SystemInfo *GetTestSystemInfo()
 {
     static SystemInfo *sSystemInfo = nullptr;
@@ -225,7 +233,7 @@ bool IsARM64()
 
 bool IsOzone()
 {
-#if defined(USE_OZONE) && defined(USE_X11)
+#if defined(USE_OZONE) && (defined(USE_X11) || defined(ANGLE_USE_VULKAN_DISPLAY))
     // We do not have a proper support for Ozone/Linux yet. Still, we need to figure out how to
     // properly initialize tests and differentiate between X11 and Wayland. Probably, passing a
     // command line argument could be sufficient. At the moment, run tests only for X11 backend
@@ -313,6 +321,11 @@ bool IsNVIDIAShield()
 bool IsIntel()
 {
     return HasSystemVendorID(kVendorID_Intel);
+}
+
+bool IsIntelUHD630Mobile()
+{
+    return HasSystemDeviceID(kVendorID_Intel, kDeviceID_UHD630Mobile);
 }
 
 bool IsAMD()
@@ -502,9 +515,10 @@ bool IsConfigAllowlisted(const SystemInfo &systemInfo, const PlatformParameters 
         switch (param.getRenderer())
         {
             case EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE:
-            case EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE:
-                // Note that system info collection depends on Vulkan support.
                 return true;
+            case EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE:
+                // http://issuetracker.google.com/173004081
+                return !IsIntel() || param.eglParameters.asyncCommandQueueFeatureVulkan != EGL_TRUE;
             default:
                 return false;
         }

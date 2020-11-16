@@ -87,14 +87,16 @@ class OffscreenSurfaceVk : public SurfaceVk
                                  EGLint width,
                                  EGLint height,
                                  const vk::Format &vkFormat,
-                                 GLint samples);
+                                 GLint samples,
+                                 bool isRobustResourceInitEnabled);
 
         angle::Result initializeWithExternalMemory(DisplayVk *displayVk,
                                                    EGLint width,
                                                    EGLint height,
                                                    const vk::Format &vkFormat,
                                                    GLint samples,
-                                                   void *buffer);
+                                                   void *buffer,
+                                                   bool isRobustResourceInitEnabled);
 
         void destroy(const egl::Display *display);
 
@@ -115,21 +117,6 @@ class OffscreenSurfaceVk : public SurfaceVk
 // Data structures used in WindowSurfaceVk
 namespace impl
 {
-// The submission fence of the context used to throttle the CPU.
-struct SwapHistory : angle::NonCopyable
-{
-    SwapHistory();
-    SwapHistory(SwapHistory &&other) = delete;
-    SwapHistory &operator=(SwapHistory &&other) = delete;
-    ~SwapHistory();
-
-    void destroy(RendererVk *renderer);
-
-    angle::Result waitFence(ContextVk *contextVk);
-
-    // Fence associated with the last submitted work to render to this swapchain image.
-    vk::Shared<vk::Fence> sharedFence;
-};
 static constexpr size_t kSwapHistorySize = 2;
 
 // Old swapchain and associated present semaphores that need to be scheduled for destruction when
@@ -287,6 +274,9 @@ class WindowSurfaceVk : public SurfaceVk
     // Called when a swapchain image whose acquisition was deferred must be acquired.  This method
     // will recreate the swapchain (if needed) and call the acquireNextSwapchainImage() method.
     angle::Result doDeferredAcquireNextImage(const gl::Context *context, bool presentOutOfDate);
+    angle::Result computePresentOutOfDate(vk::Context *context,
+                                          VkResult result,
+                                          bool *presentOutOfDate);
     angle::Result present(ContextVk *contextVk,
                           EGLint *rects,
                           EGLint n_rects,
@@ -312,9 +302,9 @@ class WindowSurfaceVk : public SurfaceVk
     VkSurfaceTransformFlagBitsKHR mEmulatedPreTransform;
     VkCompositeAlphaFlagBitsKHR mCompositeAlpha;
 
-    // A circular buffer that stores the submission fence of the context on every swap.  The CPU is
-    // throttled by waiting for the 2nd previous serial to finish.
-    std::array<impl::SwapHistory, impl::kSwapHistorySize> mSwapHistory;
+    // A circular buffer that stores the serial of the submission fence of the context on every
+    // swap. The CPU is throttled by waiting for the 2nd previous serial to finish.
+    std::array<Serial, impl::kSwapHistorySize> mSwapHistory;
     size_t mCurrentSwapHistoryIndex;
 
     // The previous swapchain which needs to be scheduled for destruction when appropriate.  This

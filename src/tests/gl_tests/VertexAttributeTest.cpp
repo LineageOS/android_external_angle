@@ -169,7 +169,8 @@ class VertexAttributeTest : public ANGLETest
               bufferOffset(0),
               source(sourceIn),
               inputData(inputDataIn),
-              expectedData(expectedDataIn)
+              expectedData(expectedDataIn),
+              clearBeforeDraw(false)
         {}
 
         GLenum type;
@@ -179,6 +180,8 @@ class VertexAttributeTest : public ANGLETest
 
         const void *inputData;
         const GLfloat *expectedData;
+
+        bool clearBeforeDraw;
     };
 
     void setupTest(const TestData &test, GLint typeSize)
@@ -268,6 +271,11 @@ class VertexAttributeTest : public ANGLETest
         {
             GLint typeSize = i + 1;
             setupTest(test, typeSize);
+
+            if (test.clearBeforeDraw)
+            {
+                glClear(GL_COLOR_BUFFER_BIT);
+            }
 
             drawQuad(mProgram, "position", 0.5f);
 
@@ -986,6 +994,48 @@ TEST_P(VertexAttributeTestES3, IntNormalized)
     runTest(data);
 }
 
+// Same as IntUnnormalized but with glClear() before running the test to force
+// starting a render pass. This to verify that buffer format conversion within
+// an active render pass works as expected in Metal back-end.
+TEST_P(VertexAttributeTestES3, IntUnnormalizedWithClear)
+{
+    GLint lo                                  = std::numeric_limits<GLint>::min();
+    GLint hi                                  = std::numeric_limits<GLint>::max();
+    std::array<GLint, kVertexCount> inputData = {
+        {0, 1, 2, 3, -1, -2, -3, -4, -1, hi, hi - 1, lo, lo + 1}};
+    std::array<GLfloat, kVertexCount> expectedData;
+    for (size_t i = 0; i < kVertexCount; i++)
+    {
+        expectedData[i] = static_cast<GLfloat>(inputData[i]);
+    }
+
+    TestData data(GL_INT, GL_FALSE, Source::BUFFER, inputData.data(), expectedData.data());
+    data.clearBeforeDraw = true;
+
+    runTest(data);
+}
+
+// Same as IntNormalized but with glClear() before running the test to force
+// starting a render pass. This to verify that buffer format conversion within
+// an active render pass works as expected in Metal back-end.
+TEST_P(VertexAttributeTestES3, IntNormalizedWithClear)
+{
+    GLint lo                                  = std::numeric_limits<GLint>::min();
+    GLint hi                                  = std::numeric_limits<GLint>::max();
+    std::array<GLint, kVertexCount> inputData = {
+        {0, 1, 2, 3, -1, -2, -3, -4, -1, hi, hi - 1, lo, lo + 1}};
+    std::array<GLfloat, kVertexCount> expectedData;
+    for (size_t i = 0; i < kVertexCount; i++)
+    {
+        expectedData[i] = Normalize(inputData[i]);
+    }
+
+    TestData data(GL_INT, GL_TRUE, Source::BUFFER, inputData.data(), expectedData.data());
+    data.clearBeforeDraw = true;
+
+    runTest(data);
+}
+
 TEST_P(VertexAttributeTestES3, UnsignedIntUnnormalized)
 {
     GLuint mid                                 = std::numeric_limits<GLuint>::max() >> 1;
@@ -1015,6 +1065,26 @@ TEST_P(VertexAttributeTestES3, UnsignedIntNormalized)
     }
 
     TestData data(GL_UNSIGNED_INT, GL_TRUE, Source::BUFFER, inputData.data(), expectedData.data());
+    runTest(data);
+}
+
+// Same as UnsignedIntNormalized but with glClear() before running the test to force
+// starting a render pass. This to verify that buffer format conversion within
+// an active render pass works as expected in Metal back-end.
+TEST_P(VertexAttributeTestES3, UnsignedIntNormalizedWithClear)
+{
+    GLuint mid                                 = std::numeric_limits<GLuint>::max() >> 1;
+    GLuint hi                                  = std::numeric_limits<GLuint>::max();
+    std::array<GLuint, kVertexCount> inputData = {
+        {0, 1, 2, 3, 254, 255, 256, mid - 1, mid, mid + 1, hi - 2, hi - 1, hi}};
+    std::array<GLfloat, kVertexCount> expectedData;
+    for (size_t i = 0; i < kVertexCount; i++)
+    {
+        expectedData[i] = Normalize(inputData[i]);
+    }
+
+    TestData data(GL_UNSIGNED_INT, GL_TRUE, Source::BUFFER, inputData.data(), expectedData.data());
+    data.clearBeforeDraw = true;
     runTest(data);
 }
 
@@ -2856,6 +2926,108 @@ void main()
     checkPixels();
 }
 
+// Test that default integer attribute works correctly even if there is a gap in
+// attribute locations.
+TEST_P(VertexAttributeTestES3, DefaultIntAttribWithGap)
+{
+    constexpr char kVertexShader[] = R"(#version 300 es
+layout(location = 0) in vec2 position;
+layout(location = 3) in int actualValue;
+uniform int expectedValue;
+out float result;
+void main()
+{
+    result = (actualValue == expectedValue) ? 1.0 : 0.0;
+    gl_Position = vec4(position, 0, 1);
+})";
+
+    constexpr char kFragmentShader[] = R"(#version 300 es
+in mediump float result;
+layout(location = 0) out lowp vec4 out_color;
+void main()
+{
+    out_color = result > 0.0 ? vec4(0, 1, 0, 1) : vec4(1, 0, 0, 1);
+})";
+
+    ANGLE_GL_PROGRAM(program, kVertexShader, kFragmentShader);
+
+    // Re-link the program to update the attribute locations
+    glLinkProgram(program);
+    ASSERT_TRUE(CheckLinkStatusAndReturnProgram(program, true));
+
+    glUseProgram(program);
+
+    GLint uniLoc = glGetUniformLocation(program, "expectedValue");
+    ASSERT_NE(-1, uniLoc);
+
+    glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, 0, nullptr);
+
+    setupQuadVertexBuffer(0.5f, 1.0f);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(0);
+
+    std::array<GLint, 4> testValues = {{1, 2, 3, 4}};
+    for (GLfloat testValue : testValues)
+    {
+        glUniform1i(uniLoc, testValue);
+        glVertexAttribI4i(3, testValue, 0, 0, 0);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+        ASSERT_GL_NO_ERROR();
+        EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green);
+    }
+}
+
+// Test that default unsigned integer attribute works correctly even if there is a gap in
+// attribute locations.
+TEST_P(VertexAttributeTestES3, DefaultUIntAttribWithGap)
+{
+    constexpr char kVertexShader[] = R"(#version 300 es
+layout(location = 0) in vec2 position;
+layout(location = 3) in uint actualValue;
+uniform uint expectedValue;
+out float result;
+void main()
+{
+    result = (actualValue == expectedValue) ? 1.0 : 0.0;
+    gl_Position = vec4(position, 0, 1);
+})";
+
+    constexpr char kFragmentShader[] = R"(#version 300 es
+in mediump float result;
+layout(location = 0) out lowp vec4 out_color;
+void main()
+{
+    out_color = result > 0.0 ? vec4(0, 1, 0, 1) : vec4(1, 0, 0, 1);
+})";
+
+    ANGLE_GL_PROGRAM(program, kVertexShader, kFragmentShader);
+
+    // Re-link the program to update the attribute locations
+    glLinkProgram(program);
+    ASSERT_TRUE(CheckLinkStatusAndReturnProgram(program, true));
+
+    glUseProgram(program);
+
+    GLint uniLoc = glGetUniformLocation(program, "expectedValue");
+    ASSERT_NE(-1, uniLoc);
+
+    glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, 0, nullptr);
+
+    setupQuadVertexBuffer(0.5f, 1.0f);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(0);
+
+    std::array<GLuint, 4> testValues = {{1, 2, 3, 4}};
+    for (GLfloat testValue : testValues)
+    {
+        glUniform1ui(uniLoc, testValue);
+        glVertexAttribI4ui(3, testValue, 0, 0, 0);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+        ASSERT_GL_NO_ERROR();
+        EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green);
+    }
+}
+
 // Tests that large strides that read past the end of the buffer work correctly.
 // Requires ES 3.1 to query MAX_VERTEX_ATTRIB_STRIDE.
 TEST_P(VertexAttributeTestES31, LargeStride)
@@ -3451,14 +3623,42 @@ void main()
 // tests should be run against.
 // D3D11 Feature Level 9_3 uses different D3D formats for vertex attribs compared to Feature Levels
 // 10_0+, so we should test them separately.
-ANGLE_INSTANTIATE_TEST_ES2_AND_ES3(VertexAttributeTest);
+ANGLE_INSTANTIATE_TEST_ES2_AND_ES3_AND(
+    VertexAttributeTest,
+    WithMetalMemoryBarrierAndCheapRenderPass(ES3_METAL(),
+                                             /* hasBarrier */ false,
+                                             /* cheapRenderPass */ true),
+    WithMetalMemoryBarrierAndCheapRenderPass(ES3_METAL(),
+                                             /* hasBarrier */ false,
+                                             /* cheapRenderPass */ false));
 
-ANGLE_INSTANTIATE_TEST_ES2_AND_ES3(VertexAttributeOORTest);
+ANGLE_INSTANTIATE_TEST_ES2_AND_ES3_AND(
+    VertexAttributeOORTest,
+    WithMetalMemoryBarrierAndCheapRenderPass(ES3_METAL(),
+                                             /* hasBarrier */ false,
+                                             /* cheapRenderPass */ true),
+    WithMetalMemoryBarrierAndCheapRenderPass(ES3_METAL(),
+                                             /* hasBarrier */ false,
+                                             /* cheapRenderPass */ false));
 
-ANGLE_INSTANTIATE_TEST_ES3(VertexAttributeTestES3);
+ANGLE_INSTANTIATE_TEST_ES3_AND(
+    VertexAttributeTestES3,
+    WithMetalMemoryBarrierAndCheapRenderPass(ES3_METAL(),
+                                             /* hasBarrier */ false,
+                                             /* cheapRenderPass */ true),
+    WithMetalMemoryBarrierAndCheapRenderPass(ES3_METAL(),
+                                             /* hasBarrier */ false,
+                                             /* cheapRenderPass */ false));
 
 ANGLE_INSTANTIATE_TEST_ES31(VertexAttributeTestES31);
 
-ANGLE_INSTANTIATE_TEST_ES2_AND_ES3(VertexAttributeCachingTest);
+ANGLE_INSTANTIATE_TEST_ES2_AND_ES3_AND(
+    VertexAttributeCachingTest,
+    WithMetalMemoryBarrierAndCheapRenderPass(ES3_METAL(),
+                                             /* hasBarrier */ false,
+                                             /* cheapRenderPass */ true),
+    WithMetalMemoryBarrierAndCheapRenderPass(ES3_METAL(),
+                                             /* hasBarrier */ false,
+                                             /* cheapRenderPass */ false));
 
 }  // anonymous namespace

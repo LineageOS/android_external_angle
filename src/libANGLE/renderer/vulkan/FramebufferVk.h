@@ -116,7 +116,7 @@ class FramebufferVk : public FramebufferImpl
     RenderTargetVk *getColorReadRenderTarget() const;
 
     angle::Result startNewRenderPass(ContextVk *contextVk,
-                                     const gl::Rectangle &renderArea,
+                                     const gl::Rectangle &scissoredRenderArea,
                                      vk::CommandBuffer **commandBufferOut);
 
     RenderTargetVk *getFirstRenderTarget() const;
@@ -129,7 +129,7 @@ class FramebufferVk : public FramebufferImpl
                                  const vk::ImageView *resolveImageViewIn);
 
     bool hasDeferredClears() const { return !mDeferredClears.empty(); }
-    angle::Result flushDeferredClears(ContextVk *contextVk, const gl::Rectangle &renderArea);
+    angle::Result flushDeferredClears(ContextVk *contextVk);
     void setReadOnlyDepthFeedbackLoopMode(bool readOnlyDepthFeedbackModeEnabled)
     {
         mReadOnlyDepthFeedbackLoopMode = readOnlyDepthFeedbackModeEnabled;
@@ -198,7 +198,8 @@ class FramebufferVk : public FramebufferImpl
     angle::Result invalidateImpl(ContextVk *contextVk,
                                  size_t count,
                                  const GLenum *attachments,
-                                 bool isSubInvalidate);
+                                 bool isSubInvalidate,
+                                 const gl::Rectangle &invalidateArea);
     // Release all FramebufferVk objects in the cache and clear cache
     void clearCache(ContextVk *contextVk);
     angle::Result updateDepthStencilAttachment(const gl::Context *context, bool deferClears);

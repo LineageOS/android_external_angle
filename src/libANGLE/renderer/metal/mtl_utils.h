@@ -23,6 +23,9 @@
 
 namespace rx
 {
+
+class ContextMtl;
+
 namespace mtl
 {
 
@@ -126,7 +129,7 @@ PrimitiveTopologyClass GetPrimitiveTopologyClass(gl::PrimitiveMode mode);
 MTLPrimitiveType GetPrimitiveType(gl::PrimitiveMode mode);
 MTLIndexType GetIndexType(gl::DrawElementsType type);
 
-#if defined(__IPHONE_13_0) || defined(__MAC_10_15)
+#if ANGLE_MTL_SWIZZLE_AVAILABLE
 MTLTextureSwizzle GetTextureSwizzle(GLenum swizzle);
 #endif
 
@@ -145,6 +148,12 @@ gl::Box MTLRegionToGLBox(const MTLRegion &mtlRegion);
 
 MipmapNativeLevel GetNativeMipLevel(GLuint level, GLuint base);
 GLuint GetGLMipLevel(const MipmapNativeLevel &nativeLevel, GLuint base);
+
+angle::Result TriangleFanBoundCheck(ContextMtl *context, size_t numTris);
+
+angle::Result GetTriangleFanIndicesCount(ContextMtl *context,
+                                         GLsizei vetexCount,
+                                         uint32_t *numElemsOut);
 
 NS_ASSUME_NONNULL_END
 }  // namespace mtl

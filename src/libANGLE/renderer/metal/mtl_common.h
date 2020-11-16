@@ -36,6 +36,12 @@
 #    define TARGET_OS_MACCATALYST 0
 #endif
 
+#if defined(__ARM_ARCH)
+#    define ANGLE_MTL_ARM (__ARM_ARCH != 0)
+#else
+#    define ANGLE_MTL_ARM 0
+#endif
+
 #define ANGLE_MTL_OBJC_SCOPE @autoreleasepool
 
 #if !__has_feature(objc_arc)
@@ -173,10 +179,14 @@ constexpr MTLBlitOption kBlitOptionRowLinearPVRTC          = MTLBlitOptionRowLin
 #endif
 
 #if defined(__IPHONE_13_0) || defined(__MAC_10_15)
+#    define ANGLE_MTL_SWIZZLE_AVAILABLE 1
+using TextureSwizzleChannels                   = MTLTextureSwizzleChannels;
 using RenderStages                             = MTLRenderStages;
 constexpr MTLRenderStages kRenderStageVertex   = MTLRenderStageVertex;
 constexpr MTLRenderStages kRenderStageFragment = MTLRenderStageFragment;
 #else
+#    define ANGLE_MTL_SWIZZLE_AVAILABLE 0
+using TextureSwizzleChannels                               = int;
 using RenderStages                                         = int;
 constexpr RenderStages kRenderStageVertex                  = 1;
 constexpr RenderStages kRenderStageFragment                = 2;

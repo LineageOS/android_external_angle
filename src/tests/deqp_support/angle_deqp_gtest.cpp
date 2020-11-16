@@ -69,21 +69,32 @@ const char *gTestExpectationsSearchPaths[] = {
 
 #define OPENGL_CTS_DIR(PATH) "/external/openglcts/data/mustpass/gles/" PATH
 
-const char *gCaseListFiles[] = {OPENGL_CTS_DIR("aosp_mustpass/master/gles2-master.txt"),
-                                OPENGL_CTS_DIR("aosp_mustpass/master/gles3-master.txt"),
-                                OPENGL_CTS_DIR("aosp_mustpass/master/gles31-master.txt"),
-                                "/android/cts/master/egl-master.txt",
-                                OPENGL_CTS_DIR("khronos_mustpass/master/gles2-khr-master.txt"),
-                                OPENGL_CTS_DIR("khronos_mustpass/master/gles3-khr-master.txt"),
-                                OPENGL_CTS_DIR("khronos_mustpass/master/gles31-khr-master.txt")};
+const char *gCaseListFiles[] = {
+    OPENGL_CTS_DIR("aosp_mustpass/master/gles2-master.txt"),
+    OPENGL_CTS_DIR("aosp_mustpass/master/gles3-master.txt"),
+    OPENGL_CTS_DIR("aosp_mustpass/master/gles31-master.txt"),
+    "/android/cts/master/egl-master.txt",
+    OPENGL_CTS_DIR("khronos_mustpass/master/gles2-khr-master.txt"),
+    OPENGL_CTS_DIR("khronos_mustpass/master/gles3-khr-master.txt"),
+    OPENGL_CTS_DIR("khronos_mustpass/master/gles31-khr-master.txt"),
+    OPENGL_CTS_DIR("aosp_mustpass/master/gles3-rotate-landscape.txt"),
+    OPENGL_CTS_DIR("aosp_mustpass/master/gles3-rotate-reverse-portrait.txt"),
+    OPENGL_CTS_DIR("aosp_mustpass/master/gles3-rotate-reverse-landscape.txt"),
+    OPENGL_CTS_DIR("aosp_mustpass/master/gles31-rotate-landscape.txt"),
+    OPENGL_CTS_DIR("aosp_mustpass/master/gles31-rotate-reverse-portrait.txt"),
+    OPENGL_CTS_DIR("aosp_mustpass/master/gles31-rotate-reverse-landscape.txt"),
+};
 
 #undef OPENGL_CTS_DIR
 
 const char *gTestExpectationsFiles[] = {
-    "deqp_gles2_test_expectations.txt",      "deqp_gles3_test_expectations.txt",
-    "deqp_gles31_test_expectations.txt",     "deqp_egl_test_expectations.txt",
-    "deqp_khr_gles2_test_expectations.txt",  "deqp_khr_gles3_test_expectations.txt",
-    "deqp_khr_gles31_test_expectations.txt",
+    "deqp_gles2_test_expectations.txt",         "deqp_gles3_test_expectations.txt",
+    "deqp_gles31_test_expectations.txt",        "deqp_egl_test_expectations.txt",
+    "deqp_khr_gles2_test_expectations.txt",     "deqp_khr_gles3_test_expectations.txt",
+    "deqp_khr_gles31_test_expectations.txt",    "deqp_gles3_rotate_test_expectations.txt",
+    "deqp_gles3_rotate_test_expectations.txt",  "deqp_gles3_rotate_test_expectations.txt",
+    "deqp_gles31_rotate_test_expectations.txt", "deqp_gles31_rotate_test_expectations.txt",
+    "deqp_gles31_rotate_test_expectations.txt",
 };
 
 using APIInfo = std::pair<const char *, GPUTestConfig::API>;
@@ -99,14 +110,27 @@ constexpr APIInfo kEGLDisplayAPIs[] = {
     {"angle-vulkan", GPUTestConfig::kAPIVulkan},
 };
 
-constexpr char kdEQPEGLString[]  = "--deqp-egl-display-type=";
-constexpr char kANGLEEGLString[] = "--use-angle=";
-constexpr char kdEQPCaseString[] = "--deqp-case=";
-constexpr char kBatchIdString[]  = "--batch-id=";
+constexpr char kdEQPEGLString[]    = "--deqp-egl-display-type=";
+constexpr char kANGLEEGLString[]   = "--use-angle=";
+constexpr char kANGLEPreRotation[] = "--emulated-pre-rotation=";
+constexpr char kdEQPCaseString[]   = "--deqp-case=";
+constexpr char kBatchIdString[]    = "--batch-id=";
 
 std::array<char, 500> gCaseStringBuffer;
 
+// For angle_deqp_gles3*_rotateN_tests, default gPreRotation to N.
+#if defined(ANGLE_DEQP_GLES3_ROTATE90_TESTS) || defined(ANGLE_DEQP_GLES31_ROTATE90_TESTS)
+constexpr uint32_t kDefaultPreRotation = 90;
+#elif defined(ANGLE_DEQP_GLES3_ROTATE180_TESTS) || defined(ANGLE_DEQP_GLES31_ROTATE180_TESTS)
+constexpr uint32_t kDefaultPreRotation = 180;
+#elif defined(ANGLE_DEQP_GLES3_ROTATE270_TESTS) || defined(ANGLE_DEQP_GLES31_ROTATE270_TESTS)
+constexpr uint32_t kDefaultPreRotation = 270;
+#else
+constexpr uint32_t kDefaultPreRotation = 0;
+#endif
+
 const APIInfo *gInitAPI = nullptr;
+uint32_t gPreRotation   = kDefaultPreRotation;
 
 constexpr const char *gdEQPEGLConfigNameString = "--deqp-gl-config-name=";
 
@@ -265,7 +289,7 @@ void dEQPCaseList::initialize()
         api = gInitAPI->second;
     }
 
-    GPUTestConfig testConfig = GPUTestConfig(api);
+    GPUTestConfig testConfig = GPUTestConfig(api, gPreRotation);
 
 #if !defined(ANGLE_PLATFORM_ANDROID)
     // Note: These prints mess up parsing of test list when running on Android.
@@ -541,7 +565,7 @@ void dEQPTest<TestModuleIndex>::SetUpTestCase()
 
     // Init the platform.
     if (!deqp_libtester_init_platform(static_cast<int>(argv.size()), argv.data(),
-                                      reinterpret_cast<void *>(&HandlePlatformError)))
+                                      reinterpret_cast<void *>(&HandlePlatformError), gPreRotation))
     {
         std::cout << "Aborting test due to dEQP initialization error." << std::endl;
         exit(1);
@@ -594,6 +618,30 @@ ANGLE_INSTANTIATE_DEQP_TEST_CASE(KHR_GLES3, 5);
 ANGLE_INSTANTIATE_DEQP_TEST_CASE(KHR_GLES31, 6);
 #endif
 
+#ifdef ANGLE_DEQP_GLES3_ROTATE90_TESTS
+ANGLE_INSTANTIATE_DEQP_TEST_CASE(GLES3_ROTATE90, 7);
+#endif
+
+#ifdef ANGLE_DEQP_GLES3_ROTATE180_TESTS
+ANGLE_INSTANTIATE_DEQP_TEST_CASE(GLES3_ROTATE180, 8);
+#endif
+
+#ifdef ANGLE_DEQP_GLES3_ROTATE270_TESTS
+ANGLE_INSTANTIATE_DEQP_TEST_CASE(GLES3_ROTATE270, 9);
+#endif
+
+#ifdef ANGLE_DEQP_GLES31_ROTATE90_TESTS
+ANGLE_INSTANTIATE_DEQP_TEST_CASE(GLES31_ROTATE90, 10);
+#endif
+
+#ifdef ANGLE_DEQP_GLES31_ROTATE180_TESTS
+ANGLE_INSTANTIATE_DEQP_TEST_CASE(GLES31_ROTATE180, 11);
+#endif
+
+#ifdef ANGLE_DEQP_GLES31_ROTATE270_TESTS
+ANGLE_INSTANTIATE_DEQP_TEST_CASE(GLES31_ROTATE270, 12);
+#endif
+
 void HandleDisplayType(const char *displayTypeString)
 {
     std::stringstream argStream;
@@ -619,6 +667,24 @@ void HandleDisplayType(const char *displayTypeString)
         std::cout << "Unknown ANGLE back-end API: " << displayTypeString << std::endl;
         exit(1);
     }
+}
+
+void HandlePreRotation(const char *preRotationString)
+{
+    std::istringstream argStream(preRotationString);
+
+    uint32_t preRotation = 0;
+    argStream >> preRotation;
+
+    if (!argStream ||
+        (preRotation != 0 && preRotation != 90 && preRotation != 180 && preRotation != 270))
+    {
+        std::cout << "Invalid PreRotation '" << preRotationString
+                  << "'; must be either 0, 90, 180 or 270" << std::endl;
+        exit(1);
+    }
+
+    gPreRotation = preRotation;
 }
 
 void HandleEGLConfigName(const char *configNameString)
@@ -665,6 +731,10 @@ void InitTestHarness(int *argc, char **argv)
         {
             HandleDisplayType(argv[argIndex] + strlen(kANGLEEGLString));
         }
+        else if (strncmp(argv[argIndex], kANGLEPreRotation, strlen(kANGLEPreRotation)) == 0)
+        {
+            HandlePreRotation(argv[argIndex] + strlen(kANGLEPreRotation));
+        }
         else if (strncmp(argv[argIndex], gdEQPEGLConfigNameString,
                          strlen(gdEQPEGLConfigNameString)) == 0)
         {
@@ -679,6 +749,18 @@ void InitTestHarness(int *argc, char **argv)
             HandleBatchId(argv[argIndex] + strlen(kBatchIdString));
         }
         argIndex++;
+    }
+
+    GPUTestConfig::API api = GetDefaultAPIInfo()->second;
+    if (gInitAPI)
+    {
+        api = gInitAPI->second;
+    }
+    if (gPreRotation != 0 && api != GPUTestConfig::kAPIVulkan &&
+        api != GPUTestConfig::kAPISwiftShader)
+    {
+        std::cout << "PreRotation is only supported on Vulkan" << std::endl;
+        exit(1);
     }
 }
 }  // namespace angle
