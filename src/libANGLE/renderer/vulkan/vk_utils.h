@@ -30,10 +30,11 @@
     PROC(Context)                \
     PROC(Framebuffer)            \
     PROC(MemoryObject)           \
-    PROC(Query)                  \
     PROC(Overlay)                \
     PROC(Program)                \
     PROC(ProgramPipeline)        \
+    PROC(Query)                  \
+    PROC(Renderbuffer)           \
     PROC(Sampler)                \
     PROC(Semaphore)              \
     PROC(Texture)                \
@@ -71,6 +72,7 @@ namespace rx
 class DisplayVk;
 class ImageVk;
 class ProgramExecutableVk;
+class RenderbufferVk;
 class RenderTargetVk;
 class RendererVk;
 class RenderPassCache;
@@ -173,10 +175,6 @@ class Context : angle::NonCopyable
                              unsigned int line) = 0;
     VkDevice getDevice() const;
     RendererVk *getRenderer() const { return mRenderer; }
-
-    // This is a special override needed so we can determine if we need to initialize images.
-    // It corresponds to the EGL or GL extensions depending on the vk::Context type.
-    virtual bool isRobustResourceInitEnabled() const = 0;
 
   protected:
     RendererVk *const mRenderer;
@@ -679,9 +677,13 @@ class Recycler final : angle::NonCopyable
     std::vector<T> mObjectFreeList;
 };
 
-using SpecializationConstantBitSet =
-    angle::PackedEnumBitSet<sh::vk::SpecializationConstantId, uint32_t>;
-static_assert(sizeof(SpecializationConstantBitSet) == sizeof(uint32_t), "Unexpected size");
+ANGLE_ENABLE_STRUCT_PADDING_WARNINGS
+struct SpecializationConstants final
+{
+    VkBool32 lineRasterEmulation;
+    uint32_t surfaceRotation;
+};
+ANGLE_DISABLE_STRUCT_PADDING_WARNINGS
 
 template <typename T>
 using SpecializationConstantMap = angle::PackedEnumMap<sh::vk::SpecializationConstantId, T>;

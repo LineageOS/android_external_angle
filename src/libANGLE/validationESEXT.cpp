@@ -568,8 +568,15 @@ bool ValidateCopyImageSubDataEXT(const Context *context,
                                  GLsizei srcHeight,
                                  GLsizei srcDepth)
 {
-    UNIMPLEMENTED();
-    return false;
+    if (!context->getExtensions().copyImageEXT)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateCopyImageSubDataBase(context, srcName, srcTarget, srcLevel, srcX, srcY, srcZ,
+                                        dstName, dstTarget, dstLevel, dstX, dstY, dstZ, srcWidth,
+                                        srcHeight, srcDepth);
 }
 
 bool ValidateCopyImageSubDataOES(const Context *context,
@@ -589,8 +596,15 @@ bool ValidateCopyImageSubDataOES(const Context *context,
                                  GLsizei srcHeight,
                                  GLsizei srcDepth)
 {
-    UNIMPLEMENTED();
-    return false;
+    if (!context->getExtensions().copyImageEXT)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateCopyImageSubDataBase(context, srcName, srcTarget, srcLevel, srcX, srcY, srcZ,
+                                        dstName, dstTarget, dstLevel, dstX, dstY, dstZ, srcWidth,
+                                        srcHeight, srcDepth);
 }
 
 bool ValidateBufferStorageMemEXT(const Context *context,
@@ -1148,5 +1162,28 @@ bool ValidateBufferStorageEXT(const Context *context,
     }
 
     return true;
+}
+
+// GL_EXT_external_buffer
+bool ValidateBufferStorageExternalEXT(const Context *context,
+                                      BufferBinding targetPacked,
+                                      GLintptr offset,
+                                      GLsizeiptr size,
+                                      GLeglClientBufferEXT clientBuffer,
+                                      GLbitfield flags)
+{
+    UNIMPLEMENTED();
+    return false;
+}
+
+bool ValidateNamedBufferStorageExternalEXT(const Context *context,
+                                           GLuint buffer,
+                                           GLintptr offset,
+                                           GLsizeiptr size,
+                                           GLeglClientBufferEXT clientBuffer,
+                                           GLbitfield flags)
+{
+    UNIMPLEMENTED();
+    return false;
 }
 }  // namespace gl

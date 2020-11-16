@@ -95,6 +95,15 @@ GLenum ConvertToNearestMipFilterMode(GLenum filterMode)
     }
 }
 
+bool IsMipmapSupported(const TextureType &type)
+{
+    if (type == TextureType::_2DMultisample || type == TextureType::Buffer)
+    {
+        return false;
+    }
+    return true;
+}
+
 SwizzleState::SwizzleState()
     : swizzleRed(GL_RED), swizzleGreen(GL_GREEN), swizzleBlue(GL_BLUE), swizzleAlpha(GL_ALPHA)
 {}
@@ -300,6 +309,12 @@ SamplerFormat TextureState::computeRequiredSamplerFormat(const SamplerState &sam
 bool TextureState::computeSamplerCompleteness(const SamplerState &samplerState,
                                               const State &state) const
 {
+    // Buffer textures cannot be incomplete.
+    if (mType == TextureType::Buffer)
+    {
+        return true;
+    }
+
     if (mBaseLevel > mMaxLevel)
     {
         return false;
@@ -343,7 +358,7 @@ bool TextureState::computeSamplerCompleteness(const SamplerState &samplerState,
         }
     }
 
-    if (mType != TextureType::_2DMultisample && IsMipmapFiltered(samplerState.getMinFilter()))
+    if (IsMipmapSupported(mType) && IsMipmapFiltered(samplerState.getMinFilter()))
     {
         if (!npotSupport)
         {
@@ -722,6 +737,8 @@ void Texture::onDestroy(const Context *context)
     }
 
     (void)(orphanImages(context));
+
+    mState.mBuffer.set(context, nullptr, 0, 0);
 
     if (mTexture)
     {
@@ -1326,6 +1343,52 @@ angle::Result Texture::copySubImage(Context *context,
     return angle::Result::Continue;
 }
 
+angle::Result Texture::copyRenderbufferSubData(Context *context,
+                                               const gl::Renderbuffer *srcBuffer,
+                                               GLint srcLevel,
+                                               GLint srcX,
+                                               GLint srcY,
+                                               GLint srcZ,
+                                               GLint dstLevel,
+                                               GLint dstX,
+                                               GLint dstY,
+                                               GLint dstZ,
+                                               GLsizei srcWidth,
+                                               GLsizei srcHeight,
+                                               GLsizei srcDepth)
+{
+    ANGLE_TRY(mTexture->copyRenderbufferSubData(context, srcBuffer, srcLevel, srcX, srcY, srcZ,
+                                                dstLevel, dstX, dstY, dstZ, srcWidth, srcHeight,
+                                                srcDepth));
+
+    signalDirtyStorage(InitState::Initialized);
+
+    return angle::Result::Continue;
+}
+
+angle::Result Texture::copyTextureSubData(Context *context,
+                                          const gl::Texture *srcTexture,
+                                          GLint srcLevel,
+                                          GLint srcX,
+                                          GLint srcY,
+                                          GLint srcZ,
+                                          GLint dstLevel,
+                                          GLint dstX,
+                                          GLint dstY,
+                                          GLint dstZ,
+                                          GLsizei srcWidth,
+                                          GLsizei srcHeight,
+                                          GLsizei srcDepth)
+{
+    ANGLE_TRY(mTexture->copyTextureSubData(context, srcTexture, srcLevel, srcX, srcY, srcZ,
+                                           dstLevel, dstX, dstY, dstZ, srcWidth, srcHeight,
+                                           srcDepth));
+
+    signalDirtyStorage(InitState::Initialized);
+
+    return angle::Result::Continue;
+}
+
 angle::Result Texture::copyTexture(Context *context,
                                    TextureTarget target,
                                    GLint level,
@@ -1831,6 +1894,34 @@ GLenum Texture::getGenerateMipmapHint() const
     return mState.getGenerateMipmapHint();
 }
 
+angle::Result Texture::setBuffer(const gl::Context *context,
+                                 gl::Buffer *buffer,
+                                 GLenum internalFormat,
+                                 GLintptr offset,
+                                 GLsizeiptr size)
+{
+    mState.mImmutableFormat = true;
+    mState.mBuffer.set(context, buffer, offset, size);
+    ANGLE_TRY(mTexture->setBuffer(context, internalFormat));
+
+    mState.mImmutableLevels = static_cast<GLuint>(1);
+    mState.clearImageDescs();
+    InternalFormat internalFormatInfo = GetSizedInternalFormatInfo(internalFormat);
+    Format format(internalFormat);
+    Extents extents(static_cast<GLuint>(size / internalFormatInfo.pixelBytes), 1, 1);
+    mState.setImageDesc(TextureTarget::Buffer, 0,
+                        ImageDesc(extents, format, InitState::MayNeedInit));
+
+    signalDirtyStorage(InitState::MayNeedInit);
+
+    return angle::Result::Continue;
+}
+
+const OffsetBindingPointer<Buffer> &Texture::getBuffer() const
+{
+    return mState.mBuffer;
+}
+
 void Texture::onAttach(const Context *context, rx::Serial framebufferSerial)
 {
     addRef();
@@ -1890,12 +1981,12 @@ bool Texture::isSamplerComplete(const Context *context, const Sampler *optionalS
 }
 
 Texture::SamplerCompletenessCache::SamplerCompletenessCache()
-    : context(0), samplerState(), samplerComplete(false)
+    : context({0}), samplerState(), samplerComplete(false)
 {}
 
 void Texture::invalidateCompletenessCache() const
 {
-    mCompletenessCache.context = 0;
+    mCompletenessCache.context = {0};
 }
 
 angle::Result Texture::ensureInitialized(const Context *context)

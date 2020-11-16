@@ -419,6 +419,63 @@ angle::Result UploadTextureContents(const gl::Context *context,
     return angle::Result::Continue;
 }
 
+// This might be unused on platform not supporting swizzle.
+ANGLE_MTL_UNUSED
+GLenum OverrideSwizzleValue(const gl::Context *context,
+                            GLenum swizzle,
+                            const mtl::Format &format,
+                            const gl::InternalFormat &glInternalFormat)
+{
+    if (format.actualAngleFormat().depthBits)
+    {
+        ASSERT(!format.swizzled);
+        if (context->getState().getClientMajorVersion() >= 3 && glInternalFormat.sized)
+        {
+            // ES 3.0 spec: treat depth texture as red texture during sampling.
+            if (swizzle == GL_GREEN || swizzle == GL_BLUE)
+            {
+                return GL_NONE;
+            }
+            else if (swizzle == GL_ALPHA)
+            {
+                return GL_ONE;
+            }
+        }
+        else
+        {
+            // https://www.khronos.org/registry/OpenGL/extensions/OES/OES_depth_texture.txt
+            // Treat depth texture as luminance texture during sampling.
+            if (swizzle == GL_GREEN || swizzle == GL_BLUE)
+            {
+                return GL_RED;
+            }
+            else if (swizzle == GL_ALPHA)
+            {
+                return GL_ONE;
+            }
+        }
+    }
+    else if (format.swizzled)
+    {
+        // Combine the swizzles
+        switch (swizzle)
+        {
+            case GL_RED:
+                return format.swizzle[0];
+            case GL_GREEN:
+                return format.swizzle[1];
+            case GL_BLUE:
+                return format.swizzle[2];
+            case GL_ALPHA:
+                return format.swizzle[3];
+            default:
+                break;
+        }
+    }
+
+    return swizzle;
+}
+
 }  // namespace
 
 // TextureMtl implementation
@@ -449,7 +506,8 @@ void TextureMtl::releaseTexture(bool releaseImages, bool releaseTextureObjectsOn
         retainImageDefinitions();
     }
 
-    mNativeTexture = nullptr;
+    mNativeTexture             = nullptr;
+    mNativeSwizzleSamplingView = nullptr;
 
     // Clear render target cache for each texture's image. We don't erase them because they
     // might still be referenced by a framebuffer.
@@ -885,6 +943,18 @@ angle::Result TextureMtl::copyImage(const gl::Context *context,
         angle::Format::InternalFormatToID(internalFormatInfo.sizedInternalFormat);
     const mtl::Format &mtlFormat = contextMtl->getPixelFormat(angleFormatId);
 
+    FramebufferMtl *srcFramebufferMtl = mtl::GetImpl(source);
+    RenderTargetMtl *srcReadRT        = srcFramebufferMtl->getColorReadRenderTarget(context);
+    RenderTargetMtl colorReadRT;
+    if (srcReadRT)
+    {
+        // Need to duplicate RenderTargetMtl since the srcReadRT would be invalidated in
+        // redefineImage(). This can happen if the source and this texture are the same texture.
+        // Duplication ensures the copyImage() will be able to proceed even if the source texture
+        // will be redefined.
+        colorReadRT.duplicateFrom(*srcReadRT);
+    }
+
     ANGLE_TRY(redefineImage(context, index, mtlFormat, newImageSize));
 
     gl::Extents fbSize = source->getReadColorAttachment()->getSize();
@@ -895,7 +965,7 @@ angle::Result TextureMtl::copyImage(const gl::Context *context,
     }
 
     return copySubImageImpl(context, index, gl::Offset(0, 0, 0), sourceArea, internalFormatInfo,
-                            source);
+                            srcFramebufferMtl, &colorReadRT);
 }
 
 angle::Result TextureMtl::copySubImage(const gl::Context *context,
@@ -905,7 +975,10 @@ angle::Result TextureMtl::copySubImage(const gl::Context *context,
                                        gl::Framebuffer *source)
 {
     const gl::InternalFormat &currentFormat = *mState.getImageDesc(index).format.info;
-    return copySubImageImpl(context, index, destOffset, sourceArea, currentFormat, source);
+    FramebufferMtl *srcFramebufferMtl       = mtl::GetImpl(source);
+    RenderTargetMtl *colorReadRT            = srcFramebufferMtl->getColorReadRenderTarget(context);
+    return copySubImageImpl(context, index, destOffset, sourceArea, currentFormat,
+                            srcFramebufferMtl, colorReadRT);
 }
 
 angle::Result TextureMtl::copyTexture(const gl::Context *context,
@@ -1210,7 +1283,8 @@ angle::Result TextureMtl::syncState(const gl::Context *context,
             case gl::Texture::DIRTY_BIT_SWIZZLE_BLUE:
             case gl::Texture::DIRTY_BIT_SWIZZLE_ALPHA:
             {
-                UNIMPLEMENTED();
+                // Recreate swizzle view.
+                mNativeSwizzleSamplingView = nullptr;
             }
             break;
             default:
@@ -1237,6 +1311,36 @@ angle::Result TextureMtl::bindToShader(const gl::Context *context,
     float maxLodClamp;
     id<MTLSamplerState> samplerState;
 
+    if (!mNativeSwizzleSamplingView)
+    {
+#if ANGLE_MTL_SWIZZLE_AVAILABLE
+        ContextMtl *contextMtl = mtl::GetImpl(context);
+
+        if ((mState.getSwizzleState().swizzleRequired() || mFormat.actualAngleFormat().depthBits ||
+             mFormat.swizzled) &&
+            contextMtl->getDisplay()->getFeatures().hasTextureSwizzle.enabled)
+        {
+            const gl::InternalFormat &glInternalFormat = *mState.getBaseLevelDesc().format.info;
+
+            MTLTextureSwizzleChannels swizzle = MTLTextureSwizzleChannelsMake(
+                mtl::GetTextureSwizzle(OverrideSwizzleValue(
+                    context, mState.getSwizzleState().swizzleRed, mFormat, glInternalFormat)),
+                mtl::GetTextureSwizzle(OverrideSwizzleValue(
+                    context, mState.getSwizzleState().swizzleGreen, mFormat, glInternalFormat)),
+                mtl::GetTextureSwizzle(OverrideSwizzleValue(
+                    context, mState.getSwizzleState().swizzleBlue, mFormat, glInternalFormat)),
+                mtl::GetTextureSwizzle(OverrideSwizzleValue(
+                    context, mState.getSwizzleState().swizzleAlpha, mFormat, glInternalFormat)));
+
+            mNativeSwizzleSamplingView = mNativeTexture->createSwizzleView(swizzle);
+        }
+        else
+#endif  // ANGLE_MTL_SWIZZLE_AVAILABLE
+        {
+            mNativeSwizzleSamplingView = mNativeTexture;
+        }
+    }
+
     if (!sampler)
     {
         samplerState = mMetalSamplerState;
@@ -1253,7 +1357,7 @@ angle::Result TextureMtl::bindToShader(const gl::Context *context,
 
     minLodClamp = std::max(minLodClamp, 0.f);
 
-    cmdEncoder->setTexture(shaderType, mNativeTexture, textureSlotIndex);
+    cmdEncoder->setTexture(shaderType, mNativeSwizzleSamplingView, textureSlotIndex);
     cmdEncoder->setSamplerState(shaderType, samplerState, minLodClamp, maxLodClamp,
                                 samplerSlotIndex);
 
@@ -1442,8 +1546,18 @@ angle::Result TextureMtl::setSubImageImpl(const gl::Context *context,
         }
     }
 
-    const angle::Format &srcAngleFormat =
-        angle::Format::Get(angle::Format::InternalFormatToID(formatInfo.sizedInternalFormat));
+    // Get corresponding source data's ANGLE format
+    angle::FormatID srcAngleFormatId;
+    if (formatInfo.sizedInternalFormat == GL_DEPTH_COMPONENT24)
+    {
+        // GL_DEPTH_COMPONENT24 is special case, its supplied data is 32 bit depth.
+        srcAngleFormatId = angle::FormatID::D32_UNORM;
+    }
+    else
+    {
+        srcAngleFormatId = angle::Format::InternalFormatToID(formatInfo.sizedInternalFormat);
+    }
+    const angle::Format &srcAngleFormat = angle::Format::Get(srcAngleFormatId);
 
     const uint8_t *usablePixels = oriPixels + sourceSkipBytes;
 
@@ -1770,9 +1884,16 @@ angle::Result TextureMtl::copySubImageImpl(const gl::Context *context,
                                            const gl::Offset &destOffset,
                                            const gl::Rectangle &sourceArea,
                                            const gl::InternalFormat &internalFormat,
-                                           gl::Framebuffer *source)
+                                           const FramebufferMtl *source,
+                                           const RenderTargetMtl *colorReadRT)
 {
-    gl::Extents fbSize = source->getReadColorAttachment()->getSize();
+    if (!colorReadRT || !colorReadRT->getTexture())
+    {
+        // Is this an error?
+        return angle::Result::Continue;
+    }
+
+    gl::Extents fbSize = colorReadRT->getTexture()->size(colorReadRT->getLevelIndex());
     gl::Rectangle clippedSourceArea;
     if (!ClipRectangle(sourceArea, gl::Rectangle(0, 0, fbSize.width, fbSize.height),
                        &clippedSourceArea))
@@ -1791,12 +1912,12 @@ angle::Result TextureMtl::copySubImageImpl(const gl::Context *context,
     if (!mFormat.getCaps().isRenderable())
     {
         return copySubImageCPU(context, index, modifiedDestOffset, clippedSourceArea,
-                               internalFormat, source);
+                               internalFormat, source, colorReadRT);
     }
 
     // NOTE(hqle): Use compute shader.
     return copySubImageWithDraw(context, index, modifiedDestOffset, clippedSourceArea,
-                                internalFormat, source);
+                                internalFormat, source, colorReadRT);
 }
 
 angle::Result TextureMtl::copySubImageWithDraw(const gl::Context *context,
@@ -1804,19 +1925,11 @@ angle::Result TextureMtl::copySubImageWithDraw(const gl::Context *context,
                                                const gl::Offset &modifiedDestOffset,
                                                const gl::Rectangle &clippedSourceArea,
                                                const gl::InternalFormat &internalFormat,
-                                               gl::Framebuffer *source)
+                                               const FramebufferMtl *source,
+                                               const RenderTargetMtl *colorReadRT)
 {
-    ContextMtl *contextMtl         = mtl::GetImpl(context);
-    DisplayMtl *displayMtl         = contextMtl->getDisplay();
-    FramebufferMtl *framebufferMtl = mtl::GetImpl(source);
-
-    RenderTargetMtl *colorReadRT = framebufferMtl->getColorReadRenderTarget(context);
-
-    if (!colorReadRT || !colorReadRT->getTexture())
-    {
-        // Is this an error?
-        return angle::Result::Continue;
-    }
+    ContextMtl *contextMtl = mtl::GetImpl(context);
+    DisplayMtl *displayMtl = contextMtl->getDisplay();
 
     const RenderTargetMtl &imageRtt = getRenderTarget(index);
 
@@ -1834,7 +1947,7 @@ angle::Result TextureMtl::copySubImageWithDraw(const gl::Context *context,
     blitParams.srcLevel     = colorReadRT->getLevelIndex();
     blitParams.srcLayer     = colorReadRT->getLayerIndex();
     blitParams.srcRect      = clippedSourceArea;
-    blitParams.srcYFlipped  = framebufferMtl->flipY();
+    blitParams.srcYFlipped  = source->flipY();
     blitParams.dstLuminance = internalFormat.isLUMA();
 
     return displayMtl->getUtils().blitColorWithDraw(
@@ -1846,20 +1959,13 @@ angle::Result TextureMtl::copySubImageCPU(const gl::Context *context,
                                           const gl::Offset &modifiedDestOffset,
                                           const gl::Rectangle &clippedSourceArea,
                                           const gl::InternalFormat &internalFormat,
-                                          gl::Framebuffer *source)
+                                          const FramebufferMtl *source,
+                                          const RenderTargetMtl *colorReadRT)
 {
     mtl::TextureRef &image = getImage(index);
     ASSERT(image && image->valid());
 
-    ContextMtl *contextMtl         = mtl::GetImpl(context);
-    FramebufferMtl *framebufferMtl = mtl::GetImpl(source);
-    RenderTargetMtl *colorReadRT   = framebufferMtl->getColorReadRenderTarget(context);
-
-    if (!colorReadRT || !colorReadRT->getTexture())
-    {
-        // Is this an error?
-        return angle::Result::Continue;
-    }
+    ContextMtl *contextMtl = mtl::GetImpl(context);
 
     const angle::Format &dstFormat = angle::Format::Get(mFormat.actualFormatId);
     const int dstRowPitch          = dstFormat.pixelBytes * clippedSourceArea.width;
@@ -1897,11 +2003,9 @@ angle::Result TextureMtl::copySubImageCPU(const gl::Context *context,
         PackPixelsParams packParams(srcRowArea, dstFormat, dstRowPitch, false, nullptr, 0);
 
         // Read pixels from framebuffer to memory:
-        gl::Rectangle flippedSrcRowArea =
-            framebufferMtl->getCorrectFlippedReadArea(context, srcRowArea);
-        ANGLE_TRY(framebufferMtl->readPixelsImpl(context, flippedSrcRowArea, packParams,
-                                                 framebufferMtl->getColorReadRenderTarget(context),
-                                                 conversionRow.data()));
+        gl::Rectangle flippedSrcRowArea = source->getCorrectFlippedReadArea(context, srcRowArea);
+        ANGLE_TRY(source->readPixelsImpl(context, flippedSrcRowArea, packParams, colorReadRT,
+                                         conversionRow.data()));
 
         // Upload to texture
         ANGLE_TRY(UploadTextureContents(context, dstFormat, mtlDstRowArea, mtl::kZeroNativeMipLevel,

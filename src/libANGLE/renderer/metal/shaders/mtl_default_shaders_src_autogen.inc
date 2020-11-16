@@ -725,6 +725,7 @@ struct IndexConversionParams
 {
     uint32_t srcOffset;
     uint32_t indexCount;
+    bool primitiveRestartEnabled;
 };
 
 
@@ -764,7 +765,17 @@ kernel void convertIndexU8ToU16(uint idx[[thread_position_in_grid]],
                                 device ushort *output[[buffer(2)]])
 {
     if (idx >= options.indexCount) { return; };
-    output[idx] = getIndexAligned(input, options.srcOffset, idx);
+
+    uchar value = getIndexAligned(input, options.srcOffset, idx);
+
+    if (options.primitiveRestartEnabled && value == 0xff)
+    {
+        output[idx] = 0xffff;
+    }
+    else
+    {
+        output[idx] = value;
+    }
 }
 
 kernel void convertIndexU16(
@@ -809,16 +820,19 @@ kernel void convertIndexU32(
     output[idx] = value;
 }
 
-struct TriFanArrayParams
+struct IndexFromArrayParams
 {
     uint firstVertex;
-    uint vertexCountFrom3rd;
+
+    uint vertexCount;
 };
-kernel void genTriFanIndicesFromArray(uint idx[[thread_position_in_grid]],
-                                      constant TriFanArrayParams &options[[buffer(0)]],
-                                      device uint *output[[buffer(2)]])
+
+
+kernel void genTriFanIndicesFromArray(uint idx [[thread_position_in_grid]],
+                                      constant IndexFromArrayParams &options [[buffer(0)]],
+                                      device uint *output [[buffer(2)]])
 {
-    if (idx >= options.vertexCountFrom3rd) { return; };
+    if (idx >= options.vertexCount) { return; };
 
     uint vertexIdx = options.firstVertex + 2 + idx;
 
@@ -858,6 +872,7 @@ inline uint getIndexU32(uint offset,
 
 
 
+
 kernel void genTriFanIndicesFromElements(
     uint idx[[thread_position_in_grid]],
     constant IndexConversionParams &options[[buffer(0)]],
@@ -873,6 +888,36 @@ kernel void genTriFanIndicesFromElements(
     output[3 * idx] = getIndexU32(options.srcOffset, 0, inputU8, inputU16, inputU32);
     output[3 * idx + 1] = getIndexU32(options.srcOffset, elemIdx - 1, inputU8, inputU16, inputU32);
     output[3 * idx + 2] = getIndexU32(options.srcOffset, elemIdx, inputU8, inputU16, inputU32);
+}
+
+
+kernel void genLineLoopIndicesFromArray(uint idx [[thread_position_in_grid]],
+                                        constant IndexFromArrayParams &options [[buffer(0)]],
+                                        device uint *output [[buffer(2)]])
+{
+    uint totalIndices = options.vertexCount + 1;
+    if (idx >= totalIndices) { return; };
+
+    output[idx] = options.firstVertex + idx % options.vertexCount;
+}
+
+
+
+kernel void genLineLoopIndicesFromElements(uint idx [[thread_position_in_grid]],
+                                           constant IndexConversionParams &options [[buffer(0)]],
+                                           constant uchar *inputU8
+                                           [[buffer(1), function_constant(kUseSourceBufferU8)]],
+                                           constant ushort *inputU16
+                                           [[buffer(1), function_constant(kUseSourceBufferU16)]],
+                                           constant uint *inputU32
+                                           [[buffer(1), function_constant(kUseSourceBufferU32)]],
+                                           device uint *output [[buffer(2)]])
+{
+    uint totalTargetIndices = options.indexCount + 1;
+    if (idx >= totalTargetIndices) { return; };
+
+    output[idx] =
+        getIndexU32(options.srcOffset, idx % options.indexCount, inputU8, inputU16, inputU32);
 }
 # 4 "temp_master_source.metal" 2
 # 1 "./gen_mipmap.metal" 1
@@ -2564,6 +2609,148 @@ kernel void writeFromUIntTextureToBuffer(ushort2 gIndices [[thread_position_in_g
     }
 
 
+}
+
+
+struct CopyVertexParams
+{
+    uint srcBufferStartOffset;
+    uint srcStride;
+    uint srcComponentBytes;
+    uint srcComponents;
+
+
+
+    uchar4 srcDefaultAlphaData;
+
+    uint dstBufferStartOffset;
+    uint dstStride;
+    uint dstComponents;
+
+    uint vertexCount;
+};
+# 1539 "./copy_buffer.metal"
+template <typename IntType>
+static inline void writeFloatVertex(constant CopyVertexParams &options,
+                                    uint idx,
+                                    vec<IntType, 4> data,
+                                    device uchar *dst)
+{
+    uint dstOffset = idx * options.dstStride + options.dstBufferStartOffset;
+
+    for (uint component = 0; component < options.dstComponents; ++component, dstOffset += 4)
+    {
+        floatToBytes(static_cast<float>(data[component]), dstOffset, dst);
+    }
+}
+
+template <>
+inline void writeFloatVertex(constant CopyVertexParams &options,
+                             uint idx,
+                             vec<float, 4> data,
+                             device uchar *dst)
+{
+    uint dstOffset = idx * options.dstStride + options.dstBufferStartOffset;
+
+    for (uint component = 0; component < options.dstComponents; ++component, dstOffset += 4)
+    {
+        floatToBytes(data[component], dstOffset, dst);
+    }
+}
+
+
+static inline void convertToFloatVertexFormat(uint index,
+                                              constant CopyVertexParams &options,
+                                              constant uchar *srcBuffer,
+                                              device uchar *dstBuffer)
+{
+# 1585 "./copy_buffer.metal"
+    uint bufferOffset = options.srcBufferStartOffset + options.srcStride * index;
+# 1594 "./copy_buffer.metal"
+    switch (kCopyFormatType)
+    {
+        case FormatID::R8_UNORM: { auto data = readR8_UNORM(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R8_SNORM: { auto data = readR8_SNORM(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R8_UINT: { auto data = readR8_UINT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R8_SINT: { auto data = readR8_SINT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R8_USCALED: { auto data = readR8_USCALED(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R8_SSCALED: { auto data = readR8_SSCALED(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R8G8_UNORM: { auto data = readR8G8_UNORM(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R8G8_SNORM: { auto data = readR8G8_SNORM(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R8G8_UINT: { auto data = readR8G8_UINT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R8G8_SINT: { auto data = readR8G8_SINT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R8G8_USCALED: { auto data = readR8G8_USCALED(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R8G8_SSCALED: { auto data = readR8G8_SSCALED(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R8G8B8_UNORM: { auto data = readR8G8B8_UNORM(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R8G8B8_SNORM: { auto data = readR8G8B8_SNORM(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R8G8B8_UINT: { auto data = readR8G8B8_UINT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R8G8B8_SINT: { auto data = readR8G8B8_SINT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R8G8B8_USCALED: { auto data = readR8G8B8_USCALED(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R8G8B8_SSCALED: { auto data = readR8G8B8_SSCALED(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R8G8B8A8_UNORM: { auto data = readR8G8B8A8_UNORM(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R8G8B8A8_SNORM: { auto data = readR8G8B8A8_SNORM(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R8G8B8A8_UINT: { auto data = readR8G8B8A8_UINT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R8G8B8A8_SINT: { auto data = readR8G8B8A8_SINT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R8G8B8A8_USCALED: { auto data = readR8G8B8A8_USCALED(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R8G8B8A8_SSCALED: { auto data = readR8G8B8A8_SSCALED(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R16_UNORM: { auto data = readR16_NORM<ushort>(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R16_SNORM: { auto data = readR16_NORM<short>(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R16_UINT: { auto data = readR16_UINT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R16_SINT: { auto data = readR16_SINT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R16_USCALED: { auto data = readR16_USCALED(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R16_SSCALED: { auto data = readR16_SSCALED(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R16G16_UNORM: { auto data = readR16G16_NORM<ushort>(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R16G16_SNORM: { auto data = readR16G16_NORM<short>(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R16G16_UINT: { auto data = readR16G16_UINT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R16G16_SINT: { auto data = readR16G16_SINT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R16G16_USCALED: { auto data = readR16G16_USCALED(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R16G16_SSCALED: { auto data = readR16G16_SSCALED(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R16G16B16_UNORM: { auto data = readR16G16B16_NORM<ushort>(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R16G16B16_SNORM: { auto data = readR16G16B16_NORM<short>(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R16G16B16_UINT: { auto data = readR16G16B16_UINT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R16G16B16_SINT: { auto data = readR16G16B16_SINT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R16G16B16_USCALED: { auto data = readR16G16B16_USCALED(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R16G16B16_SSCALED: { auto data = readR16G16B16_SSCALED(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R16G16B16A16_UNORM: { auto data = readR16G16B16A16_NORM<ushort>(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R16G16B16A16_SNORM: { auto data = readR16G16B16A16_NORM<short>(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R16G16B16A16_UINT: { auto data = readR16G16B16A16_UINT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R16G16B16A16_SINT: { auto data = readR16G16B16A16_SINT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R16G16B16A16_USCALED: { auto data = readR16G16B16A16_USCALED(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R16G16B16A16_SSCALED: { auto data = readR16G16B16A16_SSCALED(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32_UNORM: { auto data = readR32_NORM<uint>(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32_SNORM: { auto data = readR32_NORM<int>(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32_UINT: { auto data = readR32_UINT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32_SINT: { auto data = readR32_SINT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32_USCALED: { auto data = readR32_USCALED(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32_SSCALED: { auto data = readR32_SSCALED(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32G32_UNORM: { auto data = readR32G32_NORM<uint>(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32G32_SNORM: { auto data = readR32G32_NORM<int>(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32G32_UINT: { auto data = readR32G32_UINT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32G32_SINT: { auto data = readR32G32_SINT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32G32_USCALED: { auto data = readR32G32_USCALED(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32G32_SSCALED: { auto data = readR32G32_SSCALED(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32G32B32_UNORM: { auto data = readR32G32B32_NORM<uint>(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32G32B32_SNORM: { auto data = readR32G32B32_NORM<int>(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32G32B32_UINT: { auto data = readR32G32B32_UINT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32G32B32_SINT: { auto data = readR32G32B32_SINT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32G32B32_USCALED: { auto data = readR32G32B32_USCALED(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32G32B32_SSCALED: { auto data = readR32G32B32_SSCALED(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32G32B32A32_UNORM: { auto data = readR32G32B32A32_NORM<uint>(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32G32B32A32_SNORM: { auto data = readR32G32B32A32_NORM<int>(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32G32B32A32_UINT: { auto data = readR32G32B32A32_UINT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32G32B32A32_SINT: { auto data = readR32G32B32A32_SINT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32G32B32A32_USCALED: { auto data = readR32G32B32A32_USCALED(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32G32B32A32_SSCALED: { auto data = readR32G32B32A32_SSCALED(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R16_FLOAT: { auto data = readR16_FLOAT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R16G16_FLOAT: { auto data = readR16G16_FLOAT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R16G16B16_FLOAT: { auto data = readR16G16B16_FLOAT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R16G16B16A16_FLOAT: { auto data = readR16G16B16A16_FLOAT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32_FLOAT: { auto data = readR32_FLOAT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32G32_FLOAT: { auto data = readR32G32_FLOAT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32G32B32_FLOAT: { auto data = readR32G32B32_FLOAT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32G32B32A32_FLOAT: { auto data = readR32G32B32A32_FLOAT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32_FIXED: { auto data = readR32_FIXED(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32G32_FIXED: { auto data = readR32G32_FIXED(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32G32B32_FIXED: { auto data = readR32G32B32_FIXED(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R32G32B32A32_FIXED: { auto data = readR32G32B32A32_FIXED(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R10G10B10A2_SINT: { auto data = readR10G10B10A2_SINT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R10G10B10A2_UINT: { auto data = readR10G10B10A2_UINT(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R10G10B10A2_SSCALED: { auto data = readR10G10B10A2_SSCALED(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break; case FormatID::R10G10B10A2_USCALED: { auto data = readR10G10B10A2_USCALED(bufferOffset, srcBuffer); writeFloatVertex(options, index, data, dstBuffer); } break;
+    }
+
+
+}
+
+
+kernel void convertToFloatVertexFormatCS(uint index [[thread_position_in_grid]],
+                                         constant CopyVertexParams &options [[buffer(0)]],
+                                         constant uchar *srcBuffer [[buffer(1)]],
+                                         device uchar *dstBuffer [[buffer(2)]])
+{
+    if (index >= options.vertexCount) { return; };
+    convertToFloatVertexFormat(index, options, srcBuffer, dstBuffer);
+}
+
+
+vertex void convertToFloatVertexFormatVS(uint index [[vertex_id]],
+                                         constant CopyVertexParams &options [[buffer(0)]],
+                                         constant uchar *srcBuffer [[buffer(1)]],
+                                         device uchar *dstBuffer [[buffer(2)]])
+{
+    convertToFloatVertexFormat(index, options, srcBuffer, dstBuffer);
+}
+
+
+static inline void expandVertexFormatComponents(uint index,
+                                                constant CopyVertexParams &options,
+                                                constant uchar *srcBuffer,
+                                                device uchar *dstBuffer)
+{
+    uint srcOffset = options.srcBufferStartOffset + options.srcStride * index;
+    uint dstOffset = options.dstBufferStartOffset + options.dstStride * index;
+
+    uint dstComponentsBeforeAlpha = min(options.dstComponents, 3u);
+    uint component;
+    for (component = 0; component < options.srcComponents; ++component,
+        srcOffset += options.srcComponentBytes, dstOffset += options.srcComponentBytes)
+    {
+        for (uint byte = 0; byte < options.srcComponentBytes; ++byte)
+        {
+            dstBuffer[dstOffset + byte] = srcBuffer[srcOffset + byte];
+        }
+    }
+
+    for (; component < dstComponentsBeforeAlpha;
+         ++component, dstOffset += options.srcComponentBytes)
+    {
+        for (uint byte = 0; byte < options.srcComponentBytes; ++byte)
+        {
+            dstBuffer[dstOffset + byte] = 0;
+        }
+    }
+
+    if (component < options.dstComponents)
+    {
+
+        for (uint byte = 0; byte < options.srcComponentBytes; ++byte)
+        {
+            dstBuffer[dstOffset + byte] = options.srcDefaultAlphaData[byte];
+        }
+    }
+}
+
+
+kernel void expandVertexFormatComponentsCS(uint index [[thread_position_in_grid]],
+                                           constant CopyVertexParams &options [[buffer(0)]],
+                                           constant uchar *srcBuffer [[buffer(1)]],
+                                           device uchar *dstBuffer [[buffer(2)]])
+{
+    if (index >= options.vertexCount) { return; };
+
+    expandVertexFormatComponents(index, options, srcBuffer, dstBuffer);
+}
+
+
+vertex void expandVertexFormatComponentsVS(uint index [[vertex_id]],
+                                           constant CopyVertexParams &options [[buffer(0)]],
+                                           constant uchar *srcBuffer [[buffer(1)]],
+                                           device uchar *dstBuffer [[buffer(2)]])
+{
+    expandVertexFormatComponents(index, options, srcBuffer, dstBuffer);
 }
 # 6 "temp_master_source.metal" 2
 # 1 "./visibility.metal" 1
