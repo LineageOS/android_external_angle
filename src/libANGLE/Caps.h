@@ -648,6 +648,9 @@ struct Extensions
     // GL_EXT_buffer_storage
     bool bufferStorageEXT = false;
 
+    // GL_EXT_external_buffer
+    bool externalBufferEXT = false;
+
     // GL_OES_texture_stencil8
     bool stencilIndex8 = false;
 
@@ -657,11 +660,24 @@ struct Extensions
     // OES_shader_multisample_interpolation
     bool multisampleInterpolationOES = false;
 
+    // GL_OES_shader_image_atomic
+    bool shaderImageAtomicOES = false;
+
     // GL_NV_robustness_video_memory_purge
     bool robustnessVideoMemoryPurgeNV = false;
 
     // GL_ANGLE_get_tex_level_parameter
     bool getTexLevelParameterANGLE = false;
+
+    // GL_EXT_copy_image
+    bool copyImageEXT = false;
+
+    // GL_OES_texture_buffer
+    bool textureBufferOES = false;
+    // GL_EXT_texture_buffer
+    bool textureBufferEXT = false;
+    // Any version of the texture buffer extension
+    bool textureBufferAny() const { return (textureBufferOES || textureBufferEXT); }
 };
 
 // Pointer to a boolean memeber of the Extensions struct
@@ -904,6 +920,10 @@ struct Caps
     GLfloat maxSmoothPointSize                  = 0.0f;
     GLfloat minSmoothLineWidth                  = 0.0f;
     GLfloat maxSmoothLineWidth                  = 0.0f;
+
+    // ES 3.2 Table 20.41: Implementation Dependent Values (cont.)
+    GLint maxTextureBufferSize         = 0;
+    GLint textureBufferOffsetAlignment = 0;
 };
 
 Caps GenerateMinimumCaps(const Version &clientVersion, const Extensions &extensions);
@@ -1201,6 +1221,12 @@ struct ClientExtensions
 
     // EGL_ANGLE_platform_angle_context_virtualization
     bool platformANGLEContextVirtualization = false;
+
+    // EGL_ANGLE_platform_angle_device_context_volatile_eagl
+    bool platformANGLEDeviceContextVolatileEagl = false;
+
+    // EGL_ANGLE_platform_angle_device_context_volatile_cgl
+    bool platformANGLEDeviceContextVolatileCgl = false;
 
     // EGL_ANGLE_device_creation
     bool deviceCreation = false;

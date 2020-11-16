@@ -36,14 +36,21 @@ namespace angle
 {
 namespace
 {
-constexpr char kTestTimeoutArg[]       = "--test-timeout=";
+constexpr char kBatchId[]              = "--batch-id=";
 constexpr char kFilterFileArg[]        = "--filter-file=";
-constexpr char kResultFileArg[]        = "--results-file=";
-constexpr char kHistogramJsonFileArg[] = "--histogram-json-file=";
+constexpr char kFlakyRetries[]         = "--flaky-retries=";
 constexpr char kGTestListTests[]       = "--gtest_list_tests";
+constexpr char kHistogramJsonFileArg[] = "--histogram-json-file=";
 constexpr char kListTests[]            = "--list-tests";
 constexpr char kPrintTestStdout[]      = "--print-test-stdout";
-constexpr char kBatchId[]              = "--batch-id=";
+constexpr char kResultFileArg[]        = "--results-file=";
+constexpr char kTestTimeoutArg[]       = "--test-timeout=";
+constexpr char kDisableCrashHandler[]  = "--disable-crash-handler";
+
+constexpr char kStartedTestString[] = "[ RUN      ] ";
+constexpr char kPassedTestString[]  = "[       OK ] ";
+constexpr char kFailedTestString[]  = "[  FAILED  ] ";
+
 #if defined(NDEBUG)
 constexpr int kDefaultTestTimeout = 20;
 #else
@@ -152,7 +159,7 @@ const char *ResultTypeToString(TestResultType type)
             return "FAIL";
         case TestResultType::Pass:
             return "PASS";
-        case TestResultType::Skip:
+        case TestResultType::NoResult:
             return "SKIP";
         case TestResultType::Timeout:
             return "TIMEOUT";
@@ -170,7 +177,7 @@ TestResultType GetResultTypeFromString(const std::string &str)
     if (str == "PASS")
         return TestResultType::Pass;
     if (str == "SKIP")
-        return TestResultType::Skip;
+        return TestResultType::NoResult;
     if (str == "TIMEOUT")
         return TestResultType::Timeout;
     return TestResultType::Unknown;
@@ -243,8 +250,27 @@ void WriteResultsFile(bool interrupted,
 
         counts[result.type]++;
 
-        jsResult.AddMember("expected", "PASS", allocator);
-        jsResult.AddMember("actual", ResultTypeToJSString(result.type, &allocator), allocator);
+        std::string actualResult;
+        for (uint32_t fail = 0; fail < result.flakyFailures; ++fail)
+        {
+            actualResult += "FAIL ";
+        }
+
+        actualResult += ResultTypeToString(result.type);
+
+        std::string expectedResult;
+        if (result.flakyFailures > 0)
+        {
+            expectedResult = "FAIL PASS";
+            jsResult.AddMember("is_flaky", true, allocator);
+        }
+        else
+        {
+            expectedResult = "PASS";
+        }
+
+        jsResult.AddMember("actual", actualResult, allocator);
+        jsResult.AddMember("expected", expectedResult, allocator);
 
         if (result.type != TestResultType::Pass)
         {
@@ -289,14 +315,14 @@ void WriteResultsFile(bool interrupted,
     }
 }
 
-void WriteHistogramJson(const TestResults &testResults,
+void WriteHistogramJson(const HistogramWriter &histogramWriter,
                         const std::string &outputFile,
                         const char *testSuiteName)
 {
     js::Document doc;
     doc.SetArray();
 
-    // TODO: http://anglebug.com/4769 - Implement histogram output.
+    histogramWriter.getAsJSON(&doc);
 
     printf("Writing histogram json to %s\n", outputFile.c_str());
 
@@ -309,6 +335,7 @@ void WriteHistogramJson(const TestResults &testResults,
 void WriteOutputFiles(bool interrupted,
                       const TestResults &testResults,
                       const std::string &resultsFile,
+                      const HistogramWriter &histogramWriter,
                       const std::string &histogramJsonOutputFile,
                       const char *testSuiteName)
 {
@@ -319,7 +346,7 @@ void WriteOutputFiles(bool interrupted,
 
     if (!histogramJsonOutputFile.empty())
     {
-        WriteHistogramJson(testResults, histogramJsonOutputFile, testSuiteName);
+        WriteHistogramJson(histogramWriter, histogramJsonOutputFile, testSuiteName);
     }
 }
 
@@ -330,7 +357,7 @@ void UpdateCurrentTestResult(const testing::TestResult &resultIn, TestResults *r
     // Note: Crashes and Timeouts are detected by the crash handler and a watchdog thread.
     if (resultIn.Skipped())
     {
-        resultOut.type = TestResultType::Skip;
+        resultOut.type = TestResultType::NoResult;
     }
     else if (resultIn.Failed())
     {
@@ -356,11 +383,13 @@ class TestEventListener : public testing::EmptyTestEventListener
     TestEventListener(const std::string &resultsFile,
                       const std::string &histogramJsonFile,
                       const char *testSuiteName,
-                      TestResults *testResults)
+                      TestResults *testResults,
+                      HistogramWriter *histogramWriter)
         : mResultsFile(resultsFile),
           mHistogramJsonFile(histogramJsonFile),
           mTestSuiteName(testSuiteName),
-          mTestResults(testResults)
+          mTestResults(testResults),
+          mHistogramWriter(histogramWriter)
     {}
 
     void OnTestStart(const testing::TestInfo &testInfo) override
@@ -383,7 +412,8 @@ class TestEventListener : public testing::EmptyTestEventListener
     {
         std::lock_guard<std::mutex> guard(mTestResults->currentTestMutex);
         mTestResults->allDone = true;
-        WriteOutputFiles(false, *mTestResults, mResultsFile, mHistogramJsonFile, mTestSuiteName);
+        WriteOutputFiles(false, *mTestResults, mResultsFile, *mHistogramWriter, mHistogramJsonFile,
+                         mTestSuiteName);
     }
 
   private:
@@ -391,6 +421,7 @@ class TestEventListener : public testing::EmptyTestEventListener
     std::string mHistogramJsonFile;
     const char *mTestSuiteName;
     TestResults *mTestResults;
+    HistogramWriter *mHistogramWriter;
 };
 
 bool IsTestDisabled(const testing::TestInfo &testInfo)
@@ -546,18 +577,36 @@ bool GetTestResultsFromJSON(const js::Document &document, TestResults *resultsOu
             return false;
         }
 
-        const std::string expectedStr = expected.GetString();
-        const std::string actualStr   = actual.GetString();
+        const std::string actualStr = actual.GetString();
 
-        if (expectedStr != "PASS")
+        TestResultType resultType = TestResultType::Unknown;
+        int flakyFailures         = 0;
+        if (actualStr.find(' '))
         {
-            return false;
+            std::istringstream strstr(actualStr);
+            std::string token;
+            while (std::getline(strstr, token, ' '))
+            {
+                resultType = GetResultTypeFromString(token);
+                if (resultType == TestResultType::Unknown)
+                {
+                    printf("Failed to parse result type.\n");
+                    return false;
+                }
+                if (resultType != TestResultType::Pass)
+                {
+                    flakyFailures++;
+                }
+            }
         }
-
-        TestResultType resultType = GetResultTypeFromString(actualStr);
-        if (resultType == TestResultType::Unknown)
+        else
         {
-            return false;
+            resultType = GetResultTypeFromString(actualStr);
+            if (resultType == TestResultType::Unknown)
+            {
+                printf("Failed to parse result type.\n");
+                return false;
+            }
         }
 
         double elapsedTimeSeconds = 0.0;
@@ -581,31 +630,43 @@ bool GetTestResultsFromJSON(const js::Document &document, TestResults *resultsOu
         TestResult &result        = resultsOut->results[id];
         result.elapsedTimeSeconds = elapsedTimeSeconds;
         result.type               = resultType;
+        result.flakyFailures      = flakyFailures;
     }
 
     return true;
 }
 
-bool MergeTestResults(const TestResults &input, TestResults *output)
+bool MergeTestResults(TestResults *input, TestResults *output, int flakyRetries)
 {
-    for (const auto &resultsIter : input.results)
+    for (auto &resultsIter : input->results)
     {
-        const TestIdentifier &id      = resultsIter.first;
-        const TestResult &inputResult = resultsIter.second;
-        TestResult &outputResult      = output->results[id];
+        const TestIdentifier &id = resultsIter.first;
+        TestResult &inputResult  = resultsIter.second;
+        TestResult &outputResult = output->results[id];
 
-        // This should probably handle situations where a test is run more than once.
-        if (inputResult.type != TestResultType::Skip)
+        if (inputResult.type != TestResultType::NoResult)
         {
-            if (outputResult.type != TestResultType::Skip)
+            if (outputResult.type != TestResultType::NoResult)
             {
                 printf("Warning: duplicate entry for %s.%s.\n", id.testSuiteName.c_str(),
                        id.testName.c_str());
                 return false;
             }
 
-            outputResult.elapsedTimeSeconds = inputResult.elapsedTimeSeconds;
-            outputResult.type               = inputResult.type;
+            // Mark the tests that haven't exhausted their retries as 'SKIP'. This makes ANGLE
+            // attempt the test again.
+            uint32_t runCount = outputResult.flakyFailures + 1;
+            if (inputResult.type != TestResultType::Pass &&
+                runCount < static_cast<uint32_t>(flakyRetries))
+            {
+                inputResult.type = TestResultType::NoResult;
+                outputResult.flakyFailures++;
+            }
+            else
+            {
+                outputResult.elapsedTimeSeconds = inputResult.elapsedTimeSeconds;
+                outputResult.type               = inputResult.type;
+            }
         }
     }
 
@@ -620,19 +681,19 @@ void PrintTestOutputSnippet(const TestIdentifier &id,
     nameStream << id;
     std::string fullName = nameStream.str();
 
-    size_t runPos = fullOutput.find(std::string("[ RUN      ] ") + fullName);
+    size_t runPos = fullOutput.find(std::string(kStartedTestString) + fullName);
     if (runPos == std::string::npos)
     {
         printf("Cannot locate test output snippet.\n");
         return;
     }
 
-    size_t endPos = fullOutput.find(std::string("[  FAILED  ] ") + fullName, runPos);
+    size_t endPos = fullOutput.find(std::string(kFailedTestString) + fullName, runPos);
     // Only clip the snippet to the "OK" message if the test really
     // succeeded. It still might have e.g. crashed after printing it.
     if (endPos == std::string::npos && result.type == TestResultType::Pass)
     {
-        endPos = fullOutput.find(std::string("[       OK ] ") + fullName, runPos);
+        endPos = fullOutput.find(std::string(kPassedTestString) + fullName, runPos);
     }
     if (endPos != std::string::npos)
     {
@@ -760,6 +821,9 @@ void GTestListTests(const std::map<TestIdentifier, TestResult> &resultsMap)
 }
 }  // namespace
 
+// static
+TestSuite *TestSuite::mInstance = nullptr;
+
 TestIdentifier::TestIdentifier() = default;
 
 TestIdentifier::TestIdentifier(const std::string &suiteNameIn, const std::string &nameIn)
@@ -823,24 +887,25 @@ TestSuite::TestSuite(int *argc, char **argv)
       mGTestListTests(false),
       mListTests(false),
       mPrintTestStdout(false),
+      mDisableCrashHandler(false),
       mBatchSize(kDefaultBatchSize),
       mCurrentResultCount(0),
       mTotalResultCount(0),
       mMaxProcesses(std::min(NumberOfProcessors(), kDefaultMaxProcesses)),
       mTestTimeout(kDefaultTestTimeout),
       mBatchTimeout(kDefaultBatchTimeout),
-      mBatchId(-1)
+      mBatchId(-1),
+      mFlakyRetries(0)
 {
+    ASSERT(mInstance == nullptr);
+    mInstance = this;
+
     Optional<int> filterArgIndex;
     bool alsoRunDisabledTests = false;
 
 #if defined(ANGLE_PLATFORM_WINDOWS)
     testing::GTEST_FLAG(catch_exceptions) = false;
 #endif
-
-    // Note that the crash callback must be owned and not use global constructors.
-    mCrashCallback = [this]() { onCrashOrTimeout(TestResultType::Crash); };
-    InitCrashHandler(&mCrashCallback);
 
     if (*argc <= 0)
     {
@@ -874,6 +939,13 @@ TestSuite::TestSuite(int *argc, char **argv)
             mChildProcessArgs.push_back(argv[argIndex]);
         }
         ++argIndex;
+    }
+
+    if (!mDisableCrashHandler)
+    {
+        // Note that the crash callback must be owned and not use global constructors.
+        mCrashCallback = [this]() { onCrashOrTimeout(TestResultType::Crash); };
+        InitCrashHandler(&mCrashCallback);
     }
 
     std::string envShardIndex = angle::GetEnvironmentVar("GTEST_SHARD_INDEX");
@@ -1030,11 +1102,12 @@ TestSuite::TestSuite(int *argc, char **argv)
     {
         testing::TestEventListeners &listeners = testing::UnitTest::GetInstance()->listeners();
         listeners.Append(new TestEventListener(mResultsFile, mHistogramJsonFile,
-                                               mTestSuiteName.c_str(), &mTestResults));
+                                               mTestSuiteName.c_str(), &mTestResults,
+                                               &mHistogramWriter));
 
         for (const TestIdentifier &id : testSet)
         {
-            mTestResults.results[id].type = TestResultType::Skip;
+            mTestResults.results[id].type = TestResultType::NoResult;
         }
     }
 }
@@ -1057,6 +1130,7 @@ bool TestSuite::parseSingleArg(const char *argument)
             ParseIntArg("--max-processes=", argument, &mMaxProcesses) ||
             ParseIntArg(kTestTimeoutArg, argument, &mTestTimeout) ||
             ParseIntArg("--batch-timeout=", argument, &mBatchTimeout) ||
+            ParseIntArg(kFlakyRetries, argument, &mFlakyRetries) ||
             // Other test functions consume the batch ID, so keep it in the list.
             ParseIntArgNoDelete(kBatchId, argument, &mBatchId) ||
             ParseStringArg("--results-directory=", argument, &mResultsDirectory) ||
@@ -1069,7 +1143,8 @@ bool TestSuite::parseSingleArg(const char *argument)
             ParseFlag("--debug-test-groups", argument, &mDebugTestGroups) ||
             ParseFlag(kGTestListTests, argument, &mGTestListTests) ||
             ParseFlag(kListTests, argument, &mListTests) ||
-            ParseFlag(kPrintTestStdout, argument, &mPrintTestStdout));
+            ParseFlag(kPrintTestStdout, argument, &mPrintTestStdout) ||
+            ParseFlag(kDisableCrashHandler, argument, &mDisableCrashHandler));
 }
 
 void TestSuite::onCrashOrTimeout(TestResultType crashOrTimeout)
@@ -1088,7 +1163,8 @@ void TestSuite::onCrashOrTimeout(TestResultType crashOrTimeout)
         return;
     }
 
-    WriteOutputFiles(true, mTestResults, mResultsFile, mHistogramJsonFile, mTestSuiteName.c_str());
+    WriteOutputFiles(true, mTestResults, mResultsFile, mHistogramWriter, mHistogramJsonFile,
+                     mTestSuiteName.c_str());
 }
 
 bool TestSuite::launchChildTestProcess(uint32_t batchId,
@@ -1150,6 +1226,11 @@ bool TestSuite::launchChildTestProcess(uint32_t batchId,
         args.push_back(arg.c_str());
     }
 
+    if (mDisableCrashHandler)
+    {
+        args.push_back(kDisableCrashHandler);
+    }
+
     std::string timeoutStr;
     if (mTestTimeout != kDefaultTestTimeout)
     {
@@ -1180,6 +1261,19 @@ bool TestSuite::launchChildTestProcess(uint32_t batchId,
     return true;
 }
 
+void ParseTestIdentifierAndSetResult(const std::string &testName,
+                                     TestResultType result,
+                                     TestResults *results)
+{
+    // Trim off any whitespace + extra stuff at the end of the string.
+    std::string modifiedTestName = testName.substr(0, testName.find(' '));
+    modifiedTestName             = modifiedTestName.substr(0, testName.find('\r'));
+    TestIdentifier id;
+    bool ok = TestIdentifier::ParseFromString(modifiedTestName, &id);
+    ASSERT(ok);
+    results->results[id] = {result};
+}
+
 bool TestSuite::finishProcess(ProcessInfo *processInfo)
 {
     // Get test results and merge into master list.
@@ -1187,11 +1281,45 @@ bool TestSuite::finishProcess(ProcessInfo *processInfo)
 
     if (!GetTestResultsFromFile(processInfo->resultsFileName.c_str(), &batchResults))
     {
-        std::cerr << "Error reading test results from child process.\n";
-        return false;
+        std::cerr << "Warning: could not find test results file from child process.\n";
+
+        // First assume all tests get skipped.
+        for (const TestIdentifier &id : processInfo->testsInBatch)
+        {
+            batchResults.results[id] = {TestResultType::NoResult};
+        }
+
+        // Attempt to reconstruct passing list from stdout snippets.
+        const std::string &batchStdout = processInfo->process->getStdout();
+        std::istringstream linesStream(batchStdout);
+
+        std::string line;
+        while (std::getline(linesStream, line))
+        {
+            size_t startPos = line.find(kStartedTestString);
+            size_t failPos  = line.find(kFailedTestString);
+            size_t passPos  = line.find(kPassedTestString);
+
+            if (startPos != std::string::npos)
+            {
+                // Assume a test that's started crashed until we see it completed.
+                std::string testName = line.substr(strlen(kStartedTestString));
+                ParseTestIdentifierAndSetResult(testName, TestResultType::Crash, &batchResults);
+            }
+            else if (failPos != std::string::npos)
+            {
+                std::string testName = line.substr(strlen(kFailedTestString));
+                ParseTestIdentifierAndSetResult(testName, TestResultType::Fail, &batchResults);
+            }
+            else if (passPos != std::string::npos)
+            {
+                std::string testName = line.substr(strlen(kPassedTestString));
+                ParseTestIdentifierAndSetResult(testName, TestResultType::Pass, &batchResults);
+            }
+        }
     }
 
-    if (!MergeTestResults(batchResults, &mTestResults))
+    if (!MergeTestResults(&batchResults, &mTestResults, mFlakyRetries))
     {
         std::cerr << "Error merging batch test results.\n";
         return false;
@@ -1206,7 +1334,7 @@ bool TestSuite::finishProcess(ProcessInfo *processInfo)
         for (const auto &resultIter : batchResults.results)
         {
             const TestResult &result = resultIter.second;
-            if (result.type != TestResultType::Skip && result.type != TestResultType::Pass)
+            if (result.type != TestResultType::NoResult && result.type != TestResultType::Pass)
             {
                 printf("To reproduce the batch, use filter:\n%s\n",
                        processInfo->filterString.c_str());
@@ -1222,7 +1350,7 @@ bool TestSuite::finishProcess(ProcessInfo *processInfo)
         const TestResult &result = resultIter.second;
 
         // Skip results aren't procesed since they're added back to the test queue below.
-        if (result.type == TestResultType::Skip)
+        if (result.type == TestResultType::NoResult)
         {
             continue;
         }
@@ -1255,21 +1383,20 @@ bool TestSuite::finishProcess(ProcessInfo *processInfo)
     }
 
     // On unexpected exit, re-queue any unfinished tests.
-    if (processInfo->process->getExitCode() != 0)
+    std::vector<TestIdentifier> unfinishedTests;
+    for (const auto &resultIter : batchResults.results)
     {
-        std::vector<TestIdentifier> unfinishedTests;
+        const TestIdentifier &id = resultIter.first;
+        const TestResult &result = resultIter.second;
 
-        for (const auto &resultIter : batchResults.results)
+        if (result.type == TestResultType::NoResult)
         {
-            const TestIdentifier &id = resultIter.first;
-            const TestResult &result = resultIter.second;
-
-            if (result.type == TestResultType::Skip)
-            {
-                unfinishedTests.push_back(id);
-            }
+            unfinishedTests.push_back(id);
         }
+    }
 
+    if (!unfinishedTests.empty())
+    {
         mTestQueue.emplace(std::move(unfinishedTests));
     }
 
@@ -1408,7 +1535,8 @@ int TestSuite::run()
     }
 
     // Dump combined results.
-    WriteOutputFiles(false, mTestResults, mResultsFile, mHistogramJsonFile, mTestSuiteName.c_str());
+    WriteOutputFiles(false, mTestResults, mResultsFile, mHistogramWriter, mHistogramJsonFile,
+                     mTestSuiteName.c_str());
 
     totalRunTime.stop();
     printf("Tests completed in %lf seconds\n", totalRunTime.getElapsedTime());
@@ -1473,6 +1601,14 @@ void TestSuite::startWatchdog()
     mWatchdogThread = std::thread(watchdogMain);
 }
 
+void TestSuite::addHistogramSample(const std::string &measurement,
+                                   const std::string &story,
+                                   double value,
+                                   const std::string &units)
+{
+    mHistogramWriter.addSample(measurement, story, value, units);
+}
+
 bool GetTestResultsFromFile(const char *fileName, TestResults *resultsOut)
 {
     std::ifstream ifs(fileName);
@@ -1509,8 +1645,8 @@ const char *TestResultTypeToString(TestResultType type)
             return "Crash";
         case TestResultType::Fail:
             return "Fail";
-        case TestResultType::Skip:
-            return "Skip";
+        case TestResultType::NoResult:
+            return "NoResult";
         case TestResultType::Pass:
             return "Pass";
         case TestResultType::Timeout:

@@ -425,6 +425,7 @@ reinterpret_cast_to_dict = {
     "GLsync": "uintptr_t",
     "GLDEBUGPROC": "uintptr_t",
     "GLDEBUGPROCKHR": "uintptr_t",
+    "GLeglClientBufferEXT": "uintptr_t",
     "GLeglImageOES": "uintptr_t",
 }
 
@@ -436,6 +437,7 @@ format_dict = {
     "GLDEBUGPROC": "0x%016\" PRIxPTR \"",
     "GLDEBUGPROCKHR": "0x%016\" PRIxPTR \"",
     "GLdouble": "%f",
+    "GLeglClientBufferEXT": "0x%016\" PRIxPTR \"",
     "GLeglImageOES": "0x%016\" PRIxPTR \"",
     "GLenum": "%s",
     "GLfixed": "0x%X",
@@ -782,13 +784,13 @@ def param_print_argument(command_node, param):
 
 def param_format_string(param):
     if "*" in param:
-        return param + " = 0x%016\" PRIxPTR \""
+        return just_the_name(param) + " = 0x%016\" PRIxPTR \""
     else:
         type_only = just_the_type(param)
         if type_only not in format_dict:
             raise Exception(type_only + " is not a known type in 'format_dict'")
 
-        return param + " = " + format_dict[type_only]
+        return just_the_name(param) + " = " + format_dict[type_only]
 
 
 def default_return_value(cmd_name, return_type):

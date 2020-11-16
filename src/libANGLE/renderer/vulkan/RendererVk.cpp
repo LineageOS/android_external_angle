@@ -64,8 +64,6 @@ constexpr uint32_t kPipelineCacheVkUpdatePeriod = 60;
 // version of Vulkan.
 constexpr uint32_t kPreferredVulkanAPIVersion = VK_API_VERSION_1_1;
 
-constexpr bool kOutputVmaStatsString = false;
-
 angle::vk::ICD ChooseICDFromAttribs(const egl::AttributeMap &attribs)
 {
 #if !defined(ANGLE_PLATFORM_ANDROID)
@@ -95,14 +93,14 @@ bool StrLess(const char *a, const char *b)
     return strcmp(a, b) < 0;
 }
 
-bool ExtensionFound(const char *needle, const RendererVk::ExtensionNameList &haystack)
+bool ExtensionFound(const char *needle, const vk::ExtensionNameList &haystack)
 {
     // NOTE: The list must be sorted.
     return std::binary_search(haystack.begin(), haystack.end(), needle, StrLess);
 }
 
-VkResult VerifyExtensionsPresent(const RendererVk::ExtensionNameList &haystack,
-                                 const RendererVk::ExtensionNameList &needles)
+VkResult VerifyExtensionsPresent(const vk::ExtensionNameList &haystack,
+                                 const vk::ExtensionNameList &needles)
 {
     // NOTE: The lists must be sorted.
     if (std::includes(haystack.begin(), haystack.end(), needles.begin(), needles.end(), StrLess))
@@ -131,19 +129,15 @@ constexpr const char *kSkippedMessages[] = {
     "VUID-VkPipelineInputAssemblyStateCreateInfo-topology-00428",
     // http://anglebug.com/4063
     "VUID-VkDeviceCreateInfo-pNext-pNext",
-    "VUID-VkPipelineRasterizationStateCreateInfo-pNext-pNext",
-    "VUID_Undefined",
+    "VUID-VkPipelineRasterizationStateCreateInfo-pNext-pNext", "VUID_Undefined",
     // https://issuetracker.google.com/issues/159493191
-    "VUID-vkCmdDraw-None-02690",
-    "VUID-vkCmdDrawIndexed-None-02690",
+    "VUID-vkCmdDraw-None-02690", "VUID-vkCmdDrawIndexed-None-02690",
     // http://anglebug.com/4975
-    "VUID-vkCmdDraw-None-02687",
-    "VUID-vkCmdDrawIndexed-None-02687",
+    "VUID-vkCmdDraw-None-02687", "VUID-vkCmdDrawIndexed-None-02687",
     // Best Practices Skips https://issuetracker.google.com/issues/166641492
     // https://issuetracker.google.com/issues/166793850
     "UNASSIGNED-BestPractices-vkCreateCommandPool-command-buffer-reset",
-    "UNASSIGNED-BestPractices-pipeline-stage-flags",
-    "UNASSIGNED-BestPractices-Error-Result",
+    "UNASSIGNED-BestPractices-pipeline-stage-flags", "UNASSIGNED-BestPractices-Error-Result",
     "UNASSIGNED-BestPractices-vkAllocateMemory-small-allocation",
     "UNASSIGNED-BestPractices-vkBindMemory-small-dedicated-allocation",
     "UNASSIGNED-BestPractices-vkAllocateMemory-too-many-objects",
@@ -156,7 +150,14 @@ constexpr const char *kSkippedMessages[] = {
     "VUID-vkMapMemory-memory-00683",
     // http://anglebug.com/5027
     "UNASSIGNED-CoreValidation-Shader-PushConstantOutOfRange",
-};
+    // http://anglebug.com/5304
+    "VUID-vkCmdDraw-magFilter-04553", "VUID-vkCmdDrawIndexed-magFilter-04553",
+    // http://anglebug.com/5309
+    "VUID-VkImageViewCreateInfo-usage-02652",
+    // http://anglebug.com/5336
+    "UNASSIGNED-BestPractices-vkCreateDevice-specialuse-extension",
+    // http://anglebug.com/5331
+    "VUID-VkSubpassDescriptionDepthStencilResolve-stencilResolveMode-parameter"};
 
 // Suppress validation errors that are known
 //  return "true" if given code/prefix/message is known, else return "false"
@@ -464,8 +465,6 @@ RendererVk::RendererVk()
       mMinImportedHostPointerAlignment(1),
       mDefaultUniformBufferSize(kPreferredDefaultUniformBufferSize),
       mDevice(VK_NULL_HANDLE),
-      mLastCompletedQueueSerial(mQueueSerialFactory.generate()),
-      mCurrentQueueSerial(mQueueSerialFactory.generate()),
       mDeviceLost(false),
       mPipelineCacheVkUpdateTimeout(kPipelineCacheVkUpdatePeriod),
       mPipelineCacheDirty(false),
@@ -503,30 +502,21 @@ void RendererVk::releaseSharedResources(vk::ResourceUseList *resourceList)
     resourceList->releaseResourceUses();
 }
 
-void RendererVk::onDestroy()
+void RendererVk::onDestroy(vk::Context *context)
 {
-    if (getFeatures().enableCommandProcessingThread.enabled)
+    if (mFeatures.asyncCommandQueue.enabled)
     {
         // Shutdown worker thread
         mCommandProcessor.shutdown(&mCommandProcessorThread);
     }
-
-    // Force all commands to finish by flushing all queues.
-    for (VkQueue queue : mQueues)
+    else
     {
-        if (queue != VK_NULL_HANDLE)
-        {
-            vkQueueWaitIdle(queue);
-        }
+        std::lock_guard<std::mutex> lock(mCommandQueueMutex);
+        mCommandQueue.destroy(this);
     }
 
-    // Then assign an infinite "last completed" serial to force garbage to delete.
-    {
-        std::lock_guard<std::mutex> lock(mQueueSerialMutex);
-        mLastCompletedQueueSerial = Serial::Infinite();
-    }
-
-    (void)cleanupGarbage(true);
+    // Assigns an infinite "last completed" serial to force garbage to delete.
+    (void)cleanupGarbage(Serial::Infinite());
     ASSERT(!hasSharedGarbage());
 
     for (PendingOneOffCommands &pending : mPendingOneOffCommands)
@@ -548,6 +538,12 @@ void RendererVk::onDestroy()
     mPipelineCache.destroy(mDevice);
     mSamplerCache.destroy(this);
     mYuvConversionCache.destroy(this);
+
+    for (vk::CommandBufferHelper *commandBufferHelper : mCommandBufferHelperFreeList)
+    {
+        SafeDelete(commandBufferHelper);
+    }
+    mCommandBufferHelperFreeList.clear();
 
     mAllocator.destroy();
 
@@ -586,10 +582,6 @@ void RendererVk::onDestroy()
 
 void RendererVk::notifyDeviceLost()
 {
-    {
-        std::lock_guard<std::mutex> lock(mQueueSerialMutex);
-        mLastCompletedQueueSerial = getLastSubmittedQueueSerial();
-    }
     mDeviceLost = true;
     mDisplay->notifyDeviceLost();
 }
@@ -668,7 +660,7 @@ angle::Result RendererVk::initialize(DisplayVk *displayVk,
                                     instanceExtensionProps.data() + previousExtensionCount));
     }
 
-    ExtensionNameList instanceExtensionNames;
+    vk::ExtensionNameList instanceExtensionNames;
     if (!instanceExtensionProps.empty())
     {
         for (const VkExtensionProperties &i : instanceExtensionProps)
@@ -678,7 +670,7 @@ angle::Result RendererVk::initialize(DisplayVk *displayVk,
         std::sort(instanceExtensionNames.begin(), instanceExtensionNames.end(), StrLess);
     }
 
-    ExtensionNameList enabledInstanceExtensions;
+    vk::ExtensionNameList enabledInstanceExtensions;
     enabledInstanceExtensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
     enabledInstanceExtensions.push_back(wsiExtension);
     mEnableDebugUtils = mEnableValidationLayers &&
@@ -914,17 +906,10 @@ angle::Result RendererVk::initialize(DisplayVk *displayVk,
 
     setGlobalDebugAnnotator();
 
-    if (getFeatures().enableCommandProcessingThread.enabled)
-    {
-        mCommandProcessorThread =
-            std::thread(&vk::CommandProcessor::processTasks, &mCommandProcessor);
-        mCommandProcessor.waitForWorkComplete(nullptr);
-    }
-
     return angle::Result::Continue;
 }
 
-void RendererVk::queryDeviceExtensionFeatures(const ExtensionNameList &deviceExtensionNames)
+void RendererVk::queryDeviceExtensionFeatures(const vk::ExtensionNameList &deviceExtensionNames)
 {
     // Default initialize all extension features to false.
     mLineRasterizationFeatures = {};
@@ -960,6 +945,10 @@ void RendererVk::queryDeviceExtensionFeatures(const ExtensionNameList &deviceExt
     mShaderFloat16Int8Features = {};
     mShaderFloat16Int8Features.sType =
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES;
+
+    mShaderAtomicFloatFeature = {};
+    mShaderAtomicFloatFeature.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT;
 
     mDepthStencilResolveProperties = {};
     mDepthStencilResolveProperties.sType =
@@ -1036,6 +1025,12 @@ void RendererVk::queryDeviceExtensionFeatures(const ExtensionNameList &deviceExt
         vk::AddToPNextChain(&deviceFeatures, &mShaderFloat16Int8Features);
     }
 
+    // Query shader atomic float features
+    if (ExtensionFound(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME, deviceExtensionNames))
+    {
+        vk::AddToPNextChain(&deviceFeatures, &mShaderAtomicFloatFeature);
+    }
+
     // Query depth/stencil resolve properties
     if (ExtensionFound(VK_KHR_DEPTH_STENCIL_RESOLVE_EXTENSION_NAME, deviceExtensionNames))
     {
@@ -1080,6 +1075,7 @@ void RendererVk::queryDeviceExtensionFeatures(const ExtensionNameList &deviceExt
     mSubgroupProperties.pNext               = nullptr;
     mExternalMemoryHostProperties.pNext     = nullptr;
     mShaderFloat16Int8Features.pNext        = nullptr;
+    mShaderAtomicFloatFeature.pNext         = nullptr;
     mDepthStencilResolveProperties.pNext    = nullptr;
     mSamplerYcbcrConversionFeatures.pNext   = nullptr;
 }
@@ -1138,7 +1134,7 @@ angle::Result RendererVk::initializeDevice(DisplayVk *displayVk, uint32_t queueF
                                     deviceExtensionProps.data() + previousExtensionCount));
     }
 
-    ExtensionNameList deviceExtensionNames;
+    vk::ExtensionNameList deviceExtensionNames;
     if (!deviceExtensionProps.empty())
     {
         ASSERT(deviceExtensionNames.size() <= deviceExtensionProps.size());
@@ -1149,7 +1145,7 @@ angle::Result RendererVk::initializeDevice(DisplayVk *displayVk, uint32_t queueF
         std::sort(deviceExtensionNames.begin(), deviceExtensionNames.end(), StrLess);
     }
 
-    ExtensionNameList enabledDeviceExtensions;
+    vk::ExtensionNameList enabledDeviceExtensions;
     enabledDeviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
 
     // Queues: map low, med, high priority to whatever is supported up to 3 queues
@@ -1315,6 +1311,11 @@ angle::Result RendererVk::initializeDevice(DisplayVk *displayVk, uint32_t queueF
         enabledDeviceExtensions.push_back(VK_QCOM_render_pass_store_ops_EXTENSION_NAME);
     }
 
+    if (getFeatures().supportsImageFormatList.enabled)
+    {
+        enabledDeviceExtensions.push_back(VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME);
+    }
+
     std::sort(enabledDeviceExtensions.begin(), enabledDeviceExtensions.end(), StrLess);
     ANGLE_VK_TRY(displayVk, VerifyExtensionsPresent(deviceExtensionNames, enabledDeviceExtensions));
 
@@ -1431,6 +1432,12 @@ angle::Result RendererVk::initializeDevice(DisplayVk *displayVk, uint32_t queueF
         vk::AddToPNextChain(&createInfo, &mShaderFloat16Int8Features);
     }
 
+    if (getFeatures().supportsShaderImageFloat32Atomics.enabled)
+    {
+        enabledDeviceExtensions.push_back(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
+        vk::AddToPNextChain(&createInfo, &mShaderAtomicFloatFeature);
+    }
+
     createInfo.sType                 = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     createInfo.flags                 = 0;
     createInfo.queueCreateInfoCount  = 1;
@@ -1453,11 +1460,13 @@ angle::Result RendererVk::initializeDevice(DisplayVk *displayVk, uint32_t queueF
     mCurrentQueueFamilyIndex = queueFamilyIndex;
 
     // When only 1 Queue, use same for all, Low index. Identify as Medium, since it's default.
+    vk::DeviceQueueMap queueMap;
+
     VkQueue queue;
     vkGetDeviceQueue(mDevice, mCurrentQueueFamilyIndex, kQueueIndexLow, &queue);
-    mQueues[egl::ContextPriority::Low]        = queue;
-    mQueues[egl::ContextPriority::Medium]     = queue;
-    mQueues[egl::ContextPriority::High]       = queue;
+    queueMap[egl::ContextPriority::Low]       = queue;
+    queueMap[egl::ContextPriority::Medium]    = queue;
+    queueMap[egl::ContextPriority::High]      = queue;
     mPriorities[egl::ContextPriority::Low]    = egl::ContextPriority::Medium;
     mPriorities[egl::ContextPriority::Medium] = egl::ContextPriority::Medium;
     mPriorities[egl::ContextPriority::High]   = egl::ContextPriority::Medium;
@@ -1466,15 +1475,26 @@ angle::Result RendererVk::initializeDevice(DisplayVk *displayVk, uint32_t queueF
     if (queueCount > 1)
     {
         vkGetDeviceQueue(mDevice, mCurrentQueueFamilyIndex, kQueueIndexHigh,
-                         &mQueues[egl::ContextPriority::High]);
+                         &queueMap[egl::ContextPriority::High]);
         mPriorities[egl::ContextPriority::High] = egl::ContextPriority::High;
     }
     // If at least 3 queues, Medium has its own queue. Adjust Low priority.
     if (queueCount > 2)
     {
         vkGetDeviceQueue(mDevice, mCurrentQueueFamilyIndex, kQueueIndexMedium,
-                         &mQueues[egl::ContextPriority::Medium]);
+                         &queueMap[egl::ContextPriority::Medium]);
         mPriorities[egl::ContextPriority::Low] = egl::ContextPriority::Low;
+    }
+
+    if (mFeatures.asyncCommandQueue.enabled)
+    {
+        mCommandProcessorThread =
+            std::thread(&vk::CommandProcessor::processTasks, &mCommandProcessor, queueMap);
+        waitForCommandProcessorIdle(displayVk);
+    }
+    else
+    {
+        ANGLE_TRY(mCommandQueue.init(displayVk, queueMap));
     }
 
 #if !defined(ANGLE_SHARED_LIBVULKAN)
@@ -1702,7 +1722,8 @@ gl::Version RendererVk::getMaxConformantESVersion() const
     return LimitVersionTo(getMaxSupportedESVersion(), {3, 1});
 }
 
-void RendererVk::initFeatures(DisplayVk *displayVk, const ExtensionNameList &deviceExtensionNames)
+void RendererVk::initFeatures(DisplayVk *displayVk,
+                              const vk::ExtensionNameList &deviceExtensionNames)
 {
     if (displayVk->getState().featuresAllDisabled)
     {
@@ -1914,16 +1935,16 @@ void RendererVk::initFeatures(DisplayVk *displayVk, const ExtensionNameList &dev
     ANGLE_FEATURE_CONDITION(&mFeatures, preferAggregateBarrierCalls, isNvidia || isAMD || isIntel);
 
     // Currently disabled by default: http://anglebug.com/4324
-    ANGLE_FEATURE_CONDITION(&mFeatures, enableCommandProcessingThread, false);
-
-    // Currently disabled by default: http://anglebug.com/4324
-    ANGLE_FEATURE_CONDITION(&mFeatures, asynchronousCommandProcessing, false);
+    ANGLE_FEATURE_CONDITION(&mFeatures, asyncCommandQueue, false);
 
     ANGLE_FEATURE_CONDITION(&mFeatures, supportsYUVSamplerConversion,
                             mSamplerYcbcrConversionFeatures.samplerYcbcrConversion != VK_FALSE);
 
     ANGLE_FEATURE_CONDITION(&mFeatures, supportsShaderFloat16,
                             mShaderFloat16Int8Features.shaderFloat16 == VK_TRUE);
+
+    ANGLE_FEATURE_CONDITION(&mFeatures, supportsShaderImageFloat32Atomics,
+                            mShaderAtomicFloatFeature.shaderImageFloat32Atomics == VK_TRUE);
 
     // The compute shader used to generate mipmaps uses a 256-wide workgroup.  This path is only
     // enabled on devices that meet this minimum requirement.  Furthermore,
@@ -1944,6 +1965,10 @@ void RendererVk::initFeatures(DisplayVk *displayVk, const ExtensionNameList &dev
 
     bool isAdreno540 = mPhysicalDeviceProperties.deviceID == angle::kDeviceID_Adreno540;
     ANGLE_FEATURE_CONDITION(&mFeatures, forceMaxUniformBufferSize16KB, isQualcomm && isAdreno540);
+
+    ANGLE_FEATURE_CONDITION(
+        &mFeatures, supportsImageFormatList,
+        (ExtensionFound(VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME, deviceExtensionNames)) && isAMD);
 
     // Feature disabled due to driver bugs:
     //
@@ -1969,16 +1994,6 @@ void RendererVk::initFeatures(DisplayVk *displayVk, const ExtensionNameList &dev
 
     // Android mistakenly destroys the old swapchain when creating a new one.
     ANGLE_FEATURE_CONDITION(&mFeatures, waitIdleBeforeSwapchainRecreation, IsAndroid() && isARM);
-
-    for (size_t lodOffsetFeatureIdx = 0;
-         lodOffsetFeatureIdx < mFeatures.forceTextureLODOffset.size(); lodOffsetFeatureIdx++)
-    {
-        ANGLE_FEATURE_CONDITION(&mFeatures, forceTextureLODOffset[lodOffsetFeatureIdx], false);
-    }
-    ANGLE_FEATURE_CONDITION(&mFeatures, forceNearestFiltering, false);
-    ANGLE_FEATURE_CONDITION(&mFeatures, forceNearestMipFiltering, false);
-
-    ANGLE_FEATURE_CONDITION(&mFeatures, compressVertexData, false);
 
     ANGLE_FEATURE_CONDITION(
         &mFeatures, preferDrawClearOverVkCmdClearAttachments,
@@ -2208,119 +2223,54 @@ void RendererVk::outputVmaStatString()
     mAllocator.freeStatsString(statsString);
 }
 
-angle::Result RendererVk::queueSubmit(vk::Context *context,
-                                      egl::ContextPriority priority,
-                                      const VkSubmitInfo &submitInfo,
-                                      vk::ResourceUseList *resourceList,
-                                      const vk::Fence *fence,
-                                      Serial *serialOut)
-{
-    if (kOutputVmaStatsString)
-    {
-        outputVmaStatString();
-    }
-
-    ASSERT(!getFeatures().enableCommandProcessingThread.enabled);
-
-    {
-        std::lock_guard<decltype(mQueueMutex)> lock(mQueueMutex);
-        std::lock_guard<std::mutex> serialLock(mQueueSerialMutex);
-        VkFence handle = fence ? fence->getHandle() : VK_NULL_HANDLE;
-        ANGLE_VK_TRY(context, vkQueueSubmit(mQueues[priority], 1, &submitInfo, handle));
-
-        if (resourceList)
-        {
-            resourceList->releaseResourceUsesAndUpdateSerials(mCurrentQueueSerial);
-        }
-        *serialOut                = mCurrentQueueSerial;
-        mLastSubmittedQueueSerial = mCurrentQueueSerial;
-        mCurrentQueueSerial       = mQueueSerialFactory.generate();
-    }
-
-    ANGLE_TRY(cleanupGarbage(false));
-
-    return angle::Result::Continue;
-}
-
 angle::Result RendererVk::queueSubmitOneOff(vk::Context *context,
                                             vk::PrimaryCommandBuffer &&primary,
                                             egl::ContextPriority priority,
                                             const vk::Fence *fence,
                                             Serial *serialOut)
 {
-    if (getFeatures().enableCommandProcessingThread.enabled)
-    {
-        vk::CommandProcessorTask oneOffQueueSubmit;
-        oneOffQueueSubmit.initOneOffQueueSubmit(primary.getHandle(), priority, fence);
-        queueCommand(context, &oneOffQueueSubmit);
-        waitForCommandProcessorIdle(context);
-        *serialOut = getLastSubmittedQueueSerial();
+    ANGLE_TRACE_EVENT0("gpu.angle", "RendererVk::queueSubmitOneOff");
+    Serial submitQueueSerial;
 
-        ANGLE_TRY(cleanupGarbage(false));
+    if (mFeatures.asyncCommandQueue.enabled)
+    {
+        std::lock_guard<std::mutex> commandQueueLock(mCommandQueueMutex);
+        submitQueueSerial = mCommandProcessor.reserveSubmitSerial();
+
+        vk::CommandProcessorTask oneOffQueueSubmit;
+        oneOffQueueSubmit.initOneOffQueueSubmit(primary.getHandle(), priority, fence,
+                                                submitQueueSerial);
+        queueCommand(context, &oneOffQueueSubmit);
+        // TODO: https://issuetracker.google.com/170312581 - should go away with improved fence
+        // management
+        waitForCommandProcessorIdle(context);
     }
     else
     {
+        std::lock_guard<std::mutex> commandQueueLock(mCommandQueueMutex);
 
-        VkSubmitInfo submitInfo       = {};
-        submitInfo.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers    = primary.ptr();
+        VkSubmitInfo submitInfo = {};
+        submitInfo.sType        = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-        ANGLE_TRY(queueSubmit(context, priority, submitInfo, nullptr, fence, serialOut));
+        if (primary.valid())
+        {
+            submitInfo.commandBufferCount = 1;
+            submitInfo.pCommandBuffers    = primary.ptr();
+        }
+
+        submitQueueSerial = mCommandQueue.reserveSubmitSerial();
+        ANGLE_TRY(
+            mCommandQueue.queueSubmit(context, priority, submitInfo, fence, submitQueueSerial));
     }
 
-    mPendingOneOffCommands.push_back({*serialOut, std::move(primary)});
+    *serialOut = submitQueueSerial;
+
+    if (primary.valid())
+    {
+        mPendingOneOffCommands.push_back({*serialOut, std::move(primary)});
+    }
 
     return angle::Result::Continue;
-}
-
-angle::Result RendererVk::queueWaitIdle(vk::Context *context, egl::ContextPriority priority)
-{
-    if (getFeatures().enableCommandProcessingThread.enabled)
-    {
-        // Wait for all pending commands to get sent before issuing vkQueueWaitIdle
-        waitForCommandProcessorIdle(context);
-    }
-    {
-        std::lock_guard<decltype(mQueueMutex)> lock(mQueueMutex);
-        ANGLE_VK_TRY(context, vkQueueWaitIdle(mQueues[priority]));
-    }
-
-    ANGLE_TRY(cleanupGarbage(false));
-
-    return angle::Result::Continue;
-}
-
-angle::Result RendererVk::deviceWaitIdle(vk::Context *context)
-{
-    if (getFeatures().enableCommandProcessingThread.enabled)
-    {
-        // Wait for all pending commands to get sent before issuing vkQueueWaitIdle
-        waitForCommandProcessorIdle(context);
-    }
-    {
-        std::lock_guard<decltype(mQueueMutex)> lock(mQueueMutex);
-        ANGLE_VK_TRY(context, vkDeviceWaitIdle(mDevice));
-    }
-
-    ANGLE_TRY(cleanupGarbage(false));
-
-    return angle::Result::Continue;
-}
-
-VkResult RendererVk::queuePresent(egl::ContextPriority priority,
-                                  const VkPresentInfoKHR &presentInfo)
-{
-    ANGLE_TRACE_EVENT0("gpu.angle", "RendererVk::queuePresent");
-
-    ASSERT(!getFeatures().enableCommandProcessingThread.enabled);
-
-    std::lock_guard<decltype(mQueueMutex)> lock(mQueueMutex);
-
-    {
-        ANGLE_TRACE_EVENT0("gpu.angle", "vkQueuePresentKHR");
-        return vkQueuePresentKHR(mQueues[priority], &presentInfo);
-    }
 }
 
 angle::Result RendererVk::newSharedFence(vk::Context *context,
@@ -2411,9 +2361,8 @@ bool RendererVk::hasFormatFeatureBits(VkFormat format, const VkFormatFeatureFlag
     return IsMaskFlagSet(getFormatFeatureBits<features>(format, featureBits), featureBits);
 }
 
-angle::Result RendererVk::cleanupGarbage(bool block)
+angle::Result RendererVk::cleanupGarbage(Serial lastCompletedQueueSerial)
 {
-    Serial lastCompletedQueueSerial = getLastCompletedQueueSerial();
     std::lock_guard<std::mutex> lock(mGarbageMutex);
 
     for (auto garbageIter = mSharedGarbage.begin(); garbageIter != mSharedGarbage.end();)
@@ -2454,15 +2403,6 @@ uint64_t RendererVk::getMaxFenceWaitTimeNs() const
     return kMaxFenceWaitTimeNs;
 }
 
-void RendererVk::onCompletedSerial(Serial serial)
-{
-    std::lock_guard<std::mutex> lock(mQueueSerialMutex);
-    if (serial > mLastCompletedQueueSerial)
-    {
-        mLastCompletedQueueSerial = serial;
-    }
-}
-
 void RendererVk::setGlobalDebugAnnotator()
 {
     // If the vkCmd*DebugUtilsLabelEXT functions exist, and if the kEnableDebugMarkersVarName
@@ -2472,21 +2412,28 @@ void RendererVk::setGlobalDebugAnnotator()
     bool enableDebugAnnotatorVk = false;
     if (vkCmdBeginDebugUtilsLabelEXT)
     {
-        std::string enabled = angle::GetEnvironmentVarFromAndroidProperty(
+        std::string enabled = angle::GetEnvironmentVarOrAndroidProperty(
             kEnableDebugMarkersVarName, kEnableDebugMarkersPropertyName);
         if (!enabled.empty() && enabled.compare("0") != 0)
         {
             enableDebugAnnotatorVk = true;
         }
     }
+#if defined(ANGLE_ENABLE_TRACE_ANDROID_LOGCAT)
+    // This will log all API commands to Android's logcat as well as create Vulkan debug markers.
+    enableDebugAnnotatorVk = true;
+#endif
 
     if (enableDebugAnnotatorVk)
     {
+        // Install DebugAnnotatorVk so that GLES API commands will generate Vulkan debug markers
         gl::InitializeDebugAnnotations(&mAnnotator);
     }
     else
     {
-        gl::UninitializeDebugAnnotations();
+        // Install LoggingAnnotator so that other debug functionality will still work (e.g. Vulkan
+        // validation errors will cause dEQP tests to fail).
+        mDisplay->setGlobalDebugAnnotator();
     }
 }
 
@@ -2541,5 +2488,253 @@ angle::Result RendererVk::getCommandBufferOneOff(vk::Context *context,
     ANGLE_VK_TRY(context, commandBufferOut->begin(beginInfo));
 
     return angle::Result::Continue;
+}
+
+void RendererVk::commandProcessorSyncErrors(vk::Context *context)
+{
+    while (hasPendingError())
+    {
+        vk::Error error = getAndClearPendingError();
+        if (error.mErrorCode != VK_SUCCESS)
+        {
+            context->handleError(error.mErrorCode, error.mFile, error.mFunction, error.mLine);
+        }
+    }
+}
+
+void RendererVk::commandProcessorSyncErrorsAndQueueCommand(vk::Context *context,
+                                                           vk::CommandProcessorTask *command)
+{
+    commandProcessorSyncErrors(context);
+    queueCommand(context, command);
+}
+
+angle::Result RendererVk::submitFrame(vk::Context *context,
+                                      egl::ContextPriority contextPriority,
+                                      std::vector<VkSemaphore> &&waitSemaphores,
+                                      std::vector<VkPipelineStageFlags> &&waitSemaphoreStageMasks,
+                                      const vk::Semaphore *signalSemaphore,
+                                      vk::ResourceUseList &&resourceUseList,
+                                      vk::GarbageList &&currentGarbage,
+                                      vk::CommandPool *commandPool)
+{
+    Serial submitQueueSerial;
+
+    if (mFeatures.asyncCommandQueue.enabled)
+    {
+        std::lock_guard<std::mutex> commandQueueLock(mCommandQueueMutex);
+        submitQueueSerial = mCommandProcessor.reserveSubmitSerial();
+
+        vk::CommandProcessorTask flushAndQueueSubmit;
+        flushAndQueueSubmit.initFlushAndQueueSubmit(
+            std::move(waitSemaphores), std::move(waitSemaphoreStageMasks), signalSemaphore,
+            contextPriority, std::move(currentGarbage), submitQueueSerial);
+
+        commandProcessorSyncErrorsAndQueueCommand(context, &flushAndQueueSubmit);
+    }
+    else
+    {
+        std::lock_guard<std::mutex> commandQueueLock(mCommandQueueMutex);
+
+        submitQueueSerial = mCommandQueue.reserveSubmitSerial();
+
+        vk::Shared<vk::Fence> submitFence;
+        ANGLE_TRY(newSharedFence(context, &submitFence));
+        ANGLE_TRY(mCommandQueue.submitFrame(
+            context, contextPriority, waitSemaphores, waitSemaphoreStageMasks, signalSemaphore,
+            std::move(submitFence), std::move(currentGarbage), commandPool, submitQueueSerial));
+
+        waitSemaphores.clear();
+        waitSemaphoreStageMasks.clear();
+    }
+
+    resourceUseList.releaseResourceUsesAndUpdateSerials(submitQueueSerial);
+
+    return angle::Result::Continue;
+}
+
+void RendererVk::clearAllGarbage(vk::Context *context)
+{
+    if (mFeatures.asyncCommandQueue.enabled)
+    {
+        // Issue command to CommandProcessor to ensure all work is complete, which will return any
+        // garbage items as well.
+        finishAllWork(context);
+    }
+    else
+    {
+        std::lock_guard<std::mutex> lock(mCommandQueueMutex);
+        mCommandQueue.clearAllGarbage(this);
+    }
+}
+
+void RendererVk::handleDeviceLost()
+{
+    if (mFeatures.asyncCommandQueue.enabled)
+    {
+        mCommandProcessor.handleDeviceLost();
+    }
+    else
+    {
+        std::lock_guard<std::mutex> lock(mCommandQueueMutex);
+        mCommandQueue.handleDeviceLost(this);
+    }
+}
+
+angle::Result RendererVk::finishToSerial(vk::Context *context, Serial serial)
+{
+    if (mFeatures.asyncCommandQueue.enabled)
+    {
+        mCommandProcessor.finishToSerial(context, serial);
+    }
+    else
+    {
+        std::lock_guard<std::mutex> lock(mCommandQueueMutex);
+        ANGLE_TRY(mCommandQueue.finishToSerial(context, serial, getMaxFenceWaitTimeNs()));
+    }
+
+    return angle::Result::Continue;
+}
+
+angle::Result RendererVk::waitForSerialWithUserTimeout(vk::Context *context,
+                                                       Serial serial,
+                                                       uint64_t timeout,
+                                                       VkResult *result)
+{
+    ANGLE_TRACE_EVENT0("gpu.angle", "RendererVk::waitForSerialWithUserTimeout");
+    if (mFeatures.asyncCommandQueue.enabled)
+    {
+        // TODO: https://issuetracker.google.com/170312581 - Wait with timeout.
+        mCommandProcessor.finishToSerial(context, serial);
+    }
+    else
+    {
+        std::lock_guard<std::mutex> lock(mCommandQueueMutex);
+        ANGLE_TRY(mCommandQueue.waitForSerialWithUserTimeout(context, serial, timeout, result));
+    }
+
+    return angle::Result::Continue;
+}
+
+angle::Result RendererVk::finish(vk::Context *context)
+{
+    return finishToSerial(context, getLastSubmittedQueueSerial());
+}
+
+angle::Result RendererVk::checkCompletedCommands(vk::Context *context)
+{
+    if (mFeatures.asyncCommandQueue.enabled)
+    {
+        // TODO: https://issuetracker.google.com/169788986 - would be better if we could just wait
+        // for the work we need but that requires QueryHelper to use the actual serial for the
+        // query.
+        mCommandProcessor.checkCompletedCommands(context);
+    }
+    else
+    {
+        std::lock_guard<std::mutex> lock(mCommandQueueMutex);
+        ANGLE_TRY(mCommandQueue.checkCompletedCommands(context));
+    }
+
+    return angle::Result::Continue;
+}
+
+angle::Result RendererVk::flushRenderPassCommands(vk::Context *context,
+                                                  const vk::RenderPass &renderPass,
+                                                  vk::CommandBufferHelper **renderPassCommands)
+{
+    ANGLE_TRACE_EVENT0("gpu.angle", "RendererVk::flushRenderPassCommands");
+    if (mFeatures.asyncCommandQueue.enabled)
+    {
+        (*renderPassCommands)->markClosed();
+        vk::CommandProcessorTask flushToPrimary;
+        flushToPrimary.initProcessCommands(*renderPassCommands, &renderPass);
+        commandProcessorSyncErrorsAndQueueCommand(context, &flushToPrimary);
+        *renderPassCommands = getCommandBufferHelper(true);
+    }
+    else
+    {
+        std::lock_guard<std::mutex> lock(mCommandQueueMutex);
+        ANGLE_TRY(mCommandQueue.flushRenderPassCommands(context, renderPass, *renderPassCommands));
+    }
+
+    return angle::Result::Continue;
+}
+
+angle::Result RendererVk::flushOutsideRPCommands(vk::Context *context,
+                                                 vk::CommandBufferHelper **outsideRPCommands)
+{
+    ANGLE_TRACE_EVENT0("gpu.angle", "RendererVk::flushOutsideRPCommands");
+    if (mFeatures.asyncCommandQueue.enabled)
+    {
+        (*outsideRPCommands)->markClosed();
+        vk::CommandProcessorTask flushToPrimary;
+        flushToPrimary.initProcessCommands(*outsideRPCommands, nullptr);
+        commandProcessorSyncErrorsAndQueueCommand(context, &flushToPrimary);
+        *outsideRPCommands = getCommandBufferHelper(false);
+    }
+    else
+    {
+        std::lock_guard<std::mutex> lock(mCommandQueueMutex);
+        ANGLE_TRY(mCommandQueue.flushOutsideRPCommands(context, *outsideRPCommands));
+    }
+
+    return angle::Result::Continue;
+}
+
+VkResult RendererVk::queuePresent(vk::Context *context,
+                                  egl::ContextPriority priority,
+                                  const VkPresentInfoKHR &presentInfo)
+{
+    VkResult result = VK_SUCCESS;
+    if (mFeatures.asyncCommandQueue.enabled)
+    {
+        vk::CommandProcessorTask present;
+        present.initPresent(priority, presentInfo);
+
+        ANGLE_TRACE_EVENT0("gpu.angle", "WindowSurfaceVk::present");
+        queueCommand(context, &present);
+
+        // Always return success, when we call acquireNextImage we'll check the return code. This
+        // allows the app to continue working until we really need to know the return code from
+        // present.
+    }
+    else
+    {
+        std::lock_guard<std::mutex> lock(mCommandQueueMutex);
+        result = mCommandQueue.queuePresent(priority, presentInfo);
+    }
+
+    return result;
+}
+
+vk::CommandBufferHelper *RendererVk::getCommandBufferHelper(bool hasRenderPass)
+{
+    ANGLE_TRACE_EVENT0("gpu.angle", "RendererVk::getCommandBufferHelper");
+    std::unique_lock<std::mutex> lock(mCommandBufferHelperFreeListMutex);
+
+    if (mCommandBufferHelperFreeList.empty())
+    {
+        vk::CommandBufferHelper *commandBuffer = new vk::CommandBufferHelper();
+        commandBuffer->initialize(hasRenderPass);
+        return commandBuffer;
+    }
+    else
+    {
+        vk::CommandBufferHelper *commandBuffer = mCommandBufferHelperFreeList.back();
+        mCommandBufferHelperFreeList.pop_back();
+        commandBuffer->setHasRenderPass(hasRenderPass);
+        return commandBuffer;
+    }
+}
+
+void RendererVk::recycleCommandBufferHelper(vk::CommandBufferHelper *commandBuffer)
+{
+    ANGLE_TRACE_EVENT0("gpu.angle", "RendererVk::recycleCommandBufferHelper");
+    std::lock_guard<std::mutex> lock(mCommandBufferHelperFreeListMutex);
+
+    ASSERT(commandBuffer->empty());
+    commandBuffer->markOpen();
+    mCommandBufferHelperFreeList.push_back(commandBuffer);
 }
 }  // namespace rx

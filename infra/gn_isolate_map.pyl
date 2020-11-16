@@ -1,4 +1,4 @@
-## Copyright 2020 The ANGLE Project Authors. All rights reserved.
+# Copyright 2020 The ANGLE Project Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -58,6 +58,36 @@
   },
   "angle_deqp_khr_gles31_tests": {
     "label": "//src/tests:angle_deqp_khr_gles31_tests",
+    "script": "//scripts/run_gtest_angle_test.py",
+    "type": "script",
+  },
+  "angle_deqp_gles3_rotate180_tests": {
+    "label": "//src/tests:angle_deqp_gles3_rotate180_tests",
+    "script": "//scripts/run_gtest_angle_test.py",
+    "type": "script",
+  },
+  "angle_deqp_gles3_rotate270_tests": {
+    "label": "//src/tests:angle_deqp_gles3_rotate270_tests",
+    "script": "//scripts/run_gtest_angle_test.py",
+    "type": "script",
+  },
+  "angle_deqp_gles3_rotate90_tests": {
+    "label": "//src/tests:angle_deqp_gles3_rotate90_tests",
+    "script": "//scripts/run_gtest_angle_test.py",
+    "type": "script",
+  },
+  "angle_deqp_gles31_rotate180_tests": {
+    "label": "//src/tests:angle_deqp_gles31_rotate180_tests",
+    "script": "//scripts/run_gtest_angle_test.py",
+    "type": "script",
+  },
+  "angle_deqp_gles31_rotate270_tests": {
+    "label": "//src/tests:angle_deqp_gles31_rotate270_tests",
+    "script": "//scripts/run_gtest_angle_test.py",
+    "type": "script",
+  },
+  "angle_deqp_gles31_rotate90_tests": {
+    "label": "//src/tests:angle_deqp_gles31_rotate90_tests",
     "script": "//scripts/run_gtest_angle_test.py",
     "type": "script",
   },

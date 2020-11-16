@@ -6,6 +6,18 @@
 #
 # Generates a roll CL within the ANGLE repository of AOSP.
 
+# exit when any command fails
+set -e
+
+# Change the working directory to the ANGLE root directory
+cd "${0%/*}/.."
+
+# Check out depot_tools locally and add it to the path
+DEPOT_TOOLS_DIR=_depot_tools
+rm -rf ${DEPOT_TOOLS_DIR}
+git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git ${DEPOT_TOOLS_DIR}
+export PATH=`pwd`/${DEPOT_TOOLS_DIR}:$PATH
+
 GN_OUTPUT_DIRECTORY=out/Android
 
 deps=(
@@ -45,7 +57,7 @@ abis=(
     "x64"
 )
 
-rm -r ${GN_OUTPUT_DIRECTORY}
+rm -rf ${GN_OUTPUT_DIRECTORY}
 for abi in ${abis[@]}; do
     # generate gn build files and convert them to blueprints
     gn_args=(
@@ -95,7 +107,7 @@ python scripts/generate_android_bp.py \
     ${GN_OUTPUT_DIRECTORY}/desc.x86.json \
     ${GN_OUTPUT_DIRECTORY}/desc.x64.json > Android.bp
 
-rm -r ${GN_OUTPUT_DIRECTORY}
+rm -rf ${GN_OUTPUT_DIRECTORY}
 git add Android.bp
 
 # Delete the .git files in each dep so that it can be added to this repo. Some deps like jsoncpp
@@ -118,11 +130,12 @@ extra_removal_files=(
 )
 
 for removal_file in ${extra_removal_files[@]}; do
-   rm $removal_file
+   rm -f $removal_file
 done
 
 for dep in ${deps[@]} ${add_only_deps[@]}; do
    git add -f $dep
 done
 
-git commit --amend --no-edit
+# Done with depot_tools
+rm -rf $DEPOT_TOOLS_DIR

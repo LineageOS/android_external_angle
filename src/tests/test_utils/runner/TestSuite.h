@@ -6,6 +6,9 @@
 // TestSuite:
 //   Basic implementation of a test harness in ANGLE.
 
+#ifndef ANGLE_TESTS_TEST_UTILS_TEST_SUITE_H_
+#define ANGLE_TESTS_TEST_UTILS_TEST_SUITE_H_
+
 #include <map>
 #include <memory>
 #include <mutex>
@@ -13,6 +16,7 @@
 #include <string>
 #include <thread>
 
+#include "HistogramWriter.h"
 #include "util/test_utils.h"
 
 namespace angle
@@ -54,7 +58,7 @@ enum class TestResultType
 {
     Crash,
     Fail,
-    Skip,
+    NoResult,
     Pass,
     Timeout,
     Unknown,
@@ -64,8 +68,9 @@ const char *TestResultTypeToString(TestResultType type);
 
 struct TestResult
 {
-    TestResultType type       = TestResultType::Skip;
+    TestResultType type       = TestResultType::NoResult;
     double elapsedTimeSeconds = 0.0;
+    uint32_t flakyFailures    = 0;
 };
 
 inline bool operator==(const TestResult &a, const TestResult &b)
@@ -121,6 +126,12 @@ class TestSuite
 
     int run();
     void onCrashOrTimeout(TestResultType crashOrTimeout);
+    void addHistogramSample(const std::string &measurement,
+                            const std::string &story,
+                            double value,
+                            const std::string &units);
+
+    static TestSuite *GetInstance() { return mInstance; }
 
   private:
     bool parseSingleArg(const char *argument);
@@ -128,6 +139,8 @@ class TestSuite
     bool finishProcess(ProcessInfo *processInfo);
     int printFailuresAndReturnCount() const;
     void startWatchdog();
+
+    static TestSuite *mInstance;
 
     std::string mTestExecutableName;
     std::string mTestSuiteName;
@@ -146,6 +159,7 @@ class TestSuite
     bool mGTestListTests;
     bool mListTests;
     bool mPrintTestStdout;
+    bool mDisableCrashHandler;
     int mBatchSize;
     int mCurrentResultCount;
     int mTotalResultCount;
@@ -153,11 +167,15 @@ class TestSuite
     int mTestTimeout;
     int mBatchTimeout;
     int mBatchId;
+    int mFlakyRetries;
     std::vector<std::string> mChildProcessArgs;
     std::map<TestIdentifier, FileLine> mTestFileLines;
     std::vector<ProcessInfo> mCurrentProcesses;
     std::thread mWatchdogThread;
+    HistogramWriter mHistogramWriter;
 };
 
 bool GetTestResultsFromFile(const char *fileName, TestResults *resultsOut);
 }  // namespace angle
+
+#endif  // ANGLE_TESTS_TEST_UTILS_TEST_SUITE_H_

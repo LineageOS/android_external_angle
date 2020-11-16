@@ -458,12 +458,24 @@ struct DepthStencilEnableFlags final
 constexpr size_t kDepthStencilEnableFlagsSize = sizeof(DepthStencilEnableFlags);
 static_assert(kDepthStencilEnableFlagsSize == 1, "Size check failed");
 
+// We are borrowing three bits here for surface rotation, even though it has nothing to do with
+// depth stencil.
+struct DepthCompareOpAndSurfaceRotation final
+{
+    uint8_t depthCompareOp : 4;
+    uint8_t surfaceRotation : 3;
+    uint8_t padding : 1;
+};
+constexpr size_t kDepthCompareOpAndSurfaceRotationSize = sizeof(DepthCompareOpAndSurfaceRotation);
+static_assert(kDepthCompareOpAndSurfaceRotationSize == 1, "Size check failed");
+
 struct PackedDepthStencilStateInfo final
 {
     DepthStencilEnableFlags enable;
     uint8_t frontStencilReference;
     uint8_t backStencilReference;
-    uint8_t depthCompareOp;  // only needs 4 bits. extra used as padding.
+    DepthCompareOpAndSurfaceRotation depthCompareOpAndSurfaceRotation;
+
     float minDepthBounds;
     float maxDepthBounds;
     PackedStencilOpState front;
@@ -472,6 +484,7 @@ struct PackedDepthStencilStateInfo final
 
 constexpr size_t kPackedDepthStencilStateSize = sizeof(PackedDepthStencilStateInfo);
 static_assert(kPackedDepthStencilStateSize == 20, "Size check failed");
+static_assert(static_cast<int>(SurfaceRotation::EnumCount) <= 8, "Size check failed");
 
 struct LogicOpState final
 {
@@ -569,7 +582,7 @@ class GraphicsPipelineDesc final
                                      const ShaderModule *vertexModule,
                                      const ShaderModule *fragmentModule,
                                      const ShaderModule *geometryModule,
-                                     vk::SpecializationConstantBitSet specConsts,
+                                     const vk::SpecializationConstants specConsts,
                                      Pipeline *pipelineOut) const;
 
     // Vertex input state. For ES 3.1 this should be separated into binding and attribute.
@@ -694,6 +707,14 @@ class GraphicsPipelineDesc final
     void nextSubpass(GraphicsPipelineTransitionBits *transition);
     void setSubpass(uint32_t subpass);
     uint32_t getSubpass() const;
+
+    void updateSurfaceRotation(GraphicsPipelineTransitionBits *transition,
+                               const SurfaceRotation surfaceRotation);
+    SurfaceRotation getSurfaceRotation() const
+    {
+        return static_cast<SurfaceRotation>(
+            mDepthStencilStateInfo.depthCompareOpAndSurfaceRotation.surfaceRotation);
+    }
 
   private:
     void updateSubpass(GraphicsPipelineTransitionBits *transition, uint32_t subpass);
@@ -988,15 +1009,17 @@ ANGLE_INLINE PipelineHelper::PipelineHelper(Pipeline &&pipeline) : mPipeline(std
 
 struct ImageSubresourceRange
 {
-    uint16_t level : 10;       // GL max is 1000 (fits in 10 bits).
-    uint16_t levelCount : 6;   // Max 63 levels (2 ** 6 - 1). If we need more, take from layer.
-    uint16_t layer : 15;       // Implementation max is 2048 (11 bits).
-    uint16_t singleLayer : 1;  // true/false only. Not possible to use sub-slices of levels.
+    uint16_t level : 10;            // GL max is 1000 (fits in 10 bits).
+    uint16_t levelCount : 6;        // Max 63 levels (2 ** 6 - 1). If we need more, take from layer.
+    uint16_t layer : 13;            // Implementation max is 2048 (11 bits).
+    uint16_t singleLayer : 1;       // true/false only. Not possible to use sub-slices of levels.
+    uint16_t srgbDecodeMode : 1;    // Values from vk::SrgbDecodeMode.
+    uint16_t srgbOverrideMode : 1;  // Values from gl::SrgbOverride, either Default or SRGB.
 };
 
 static_assert(sizeof(ImageSubresourceRange) == sizeof(uint32_t), "Size mismatch");
 
-constexpr ImageSubresourceRange kInvalidImageSubresourceRange = {0, 0, 0, 0};
+constexpr ImageSubresourceRange kInvalidImageSubresourceRange = {0, 0, 0, 0, 0, 0};
 
 struct ImageViewSubresourceSerial
 {
@@ -1332,7 +1355,7 @@ class GraphicsPipelineCache final : angle::NonCopyable
                                            const vk::ShaderModule *vertexModule,
                                            const vk::ShaderModule *fragmentModule,
                                            const vk::ShaderModule *geometryModule,
-                                           vk::SpecializationConstantBitSet specConsts,
+                                           const vk::SpecializationConstants specConsts,
                                            const vk::GraphicsPipelineDesc &desc,
                                            const vk::GraphicsPipelineDesc **descPtrOut,
                                            vk::PipelineHelper **pipelineOut)
@@ -1361,7 +1384,7 @@ class GraphicsPipelineCache final : angle::NonCopyable
                                  const vk::ShaderModule *vertexModule,
                                  const vk::ShaderModule *fragmentModule,
                                  const vk::ShaderModule *geometryModule,
-                                 vk::SpecializationConstantBitSet specConsts,
+                                 const vk::SpecializationConstants specConsts,
                                  const vk::GraphicsPipelineDesc &desc,
                                  const vk::GraphicsPipelineDesc **descPtrOut,
                                  vk::PipelineHelper **pipelineOut);

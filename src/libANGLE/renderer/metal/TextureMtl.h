@@ -229,19 +229,22 @@ class TextureMtl : public TextureImpl
                                    const gl::Offset &destOffset,
                                    const gl::Rectangle &sourceArea,
                                    const gl::InternalFormat &internalFormat,
-                                   gl::Framebuffer *source);
+                                   const FramebufferMtl *source,
+                                   const RenderTargetMtl *sourceRtt);
     angle::Result copySubImageWithDraw(const gl::Context *context,
                                        const gl::ImageIndex &index,
                                        const gl::Offset &destOffset,
                                        const gl::Rectangle &sourceArea,
                                        const gl::InternalFormat &internalFormat,
-                                       gl::Framebuffer *source);
+                                       const FramebufferMtl *source,
+                                       const RenderTargetMtl *sourceRtt);
     angle::Result copySubImageCPU(const gl::Context *context,
                                   const gl::ImageIndex &index,
                                   const gl::Offset &destOffset,
                                   const gl::Rectangle &sourceArea,
                                   const gl::InternalFormat &internalFormat,
-                                  gl::Framebuffer *source);
+                                  const FramebufferMtl *source,
+                                  const RenderTargetMtl *sourceRtt);
 
     angle::Result copySubTextureImpl(const gl::Context *context,
                                      const gl::ImageIndex &index,
@@ -335,6 +338,9 @@ class TextureMtl : public TextureImpl
 
     // Mipmap views are indexed by native level (ignored base level):
     mtl::NativeTexLevelArray mNativeLevelViews;
+
+    // The swizzled view used for shader sampling.
+    mtl::TextureRef mNativeSwizzleSamplingView;
 
     GLuint mCurrentBaseLevel = 0;
     GLuint mCurrentMaxLevel  = 1000;
