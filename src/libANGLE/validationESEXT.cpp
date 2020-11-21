@@ -12,6 +12,8 @@
 #include "libANGLE/MemoryObject.h"
 #include "libANGLE/validationES.h"
 #include "libANGLE/validationES2.h"
+#include "libANGLE/validationES3.h"
+#include "libANGLE/validationES31.h"
 #include "libANGLE/validationES32.h"
 
 namespace gl
@@ -1001,6 +1003,11 @@ bool ValidateImportSemaphoreZirconHandleANGLE(const Context *context,
     return true;
 }
 
+bool ValidatePatchParameteriEXT(const Context *context, GLenum pname, GLint value)
+{
+    return true;
+}
+
 bool ValidateTexStorageMemFlags2DANGLE(const Context *context,
                                        TextureType targetPacked,
                                        GLsizei levels,
@@ -1119,9 +1126,9 @@ bool ValidateBufferStorageEXT(const Context *context,
         return false;
     }
 
-    if (size < 0)
+    if (size <= 0)
     {
-        context->validationError(GL_INVALID_VALUE, kNegativeSize);
+        context->validationError(GL_INVALID_VALUE, kNonPositiveSize);
         return false;
     }
 
@@ -1172,8 +1179,24 @@ bool ValidateBufferStorageExternalEXT(const Context *context,
                                       GLeglClientBufferEXT clientBuffer,
                                       GLbitfield flags)
 {
-    UNIMPLEMENTED();
-    return false;
+    if (!ValidateBufferStorageEXT(context, targetPacked, size, nullptr, flags))
+    {
+        return false;
+    }
+
+    if (offset != 0)
+    {
+        context->validationError(GL_INVALID_VALUE, kExternalBufferInvalidOffset);
+        return false;
+    }
+
+    if (clientBuffer == nullptr && size > 0)
+    {
+        context->validationError(GL_INVALID_VALUE, kClientBufferInvalid);
+        return false;
+    }
+
+    return true;
 }
 
 bool ValidateNamedBufferStorageExternalEXT(const Context *context,
@@ -1185,5 +1208,656 @@ bool ValidateNamedBufferStorageExternalEXT(const Context *context,
 {
     UNIMPLEMENTED();
     return false;
+}
+
+// GL_EXT_separate_shader_objects
+bool ValidateActiveShaderProgramEXT(const Context *context,
+                                    ProgramPipelineID pipelinePacked,
+                                    ShaderProgramID programPacked)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateActiveShaderProgramBase(context, pipelinePacked, programPacked);
+}
+
+bool ValidateBindProgramPipelineEXT(const Context *context, ProgramPipelineID pipelinePacked)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateBindProgramPipelineBase(context, pipelinePacked);
+}
+
+bool ValidateCreateShaderProgramvEXT(const Context *context,
+                                     ShaderType typePacked,
+                                     GLsizei count,
+                                     const GLchar **strings)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateCreateShaderProgramvBase(context, typePacked, count, strings);
+}
+
+bool ValidateDeleteProgramPipelinesEXT(const Context *context,
+                                       GLsizei n,
+                                       const ProgramPipelineID *pipelinesPacked)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateDeleteProgramPipelinesBase(context, n, pipelinesPacked);
+}
+
+bool ValidateGenProgramPipelinesEXT(const Context *context,
+                                    GLsizei n,
+                                    const ProgramPipelineID *pipelinesPacked)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateGenProgramPipelinesBase(context, n, pipelinesPacked);
+}
+
+bool ValidateGetProgramPipelineInfoLogEXT(const Context *context,
+                                          ProgramPipelineID pipelinePacked,
+                                          GLsizei bufSize,
+                                          const GLsizei *length,
+                                          const GLchar *infoLog)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateGetProgramPipelineInfoLogBase(context, pipelinePacked, bufSize, length, infoLog);
+}
+
+bool ValidateGetProgramPipelineivEXT(const Context *context,
+                                     ProgramPipelineID pipelinePacked,
+                                     GLenum pname,
+                                     const GLint *params)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateGetProgramPipelineivBase(context, pipelinePacked, pname, params);
+}
+
+bool ValidateIsProgramPipelineEXT(const Context *context, ProgramPipelineID pipelinePacked)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateIsProgramPipelineBase(context, pipelinePacked);
+}
+
+bool ValidateProgramParameteriEXT(const Context *context,
+                                  ShaderProgramID programPacked,
+                                  GLenum pname,
+                                  GLint value)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramParameteriBase(context, programPacked, pname, value);
+}
+
+bool ValidateProgramUniform1fEXT(const Context *context,
+                                 ShaderProgramID programPacked,
+                                 UniformLocation locationPacked,
+                                 GLfloat v0)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniform1fBase(context, programPacked, locationPacked, v0);
+}
+
+bool ValidateProgramUniform1fvEXT(const Context *context,
+                                  ShaderProgramID programPacked,
+                                  UniformLocation locationPacked,
+                                  GLsizei count,
+                                  const GLfloat *value)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniform1fvBase(context, programPacked, locationPacked, count, value);
+}
+
+bool ValidateProgramUniform1iEXT(const Context *context,
+                                 ShaderProgramID programPacked,
+                                 UniformLocation locationPacked,
+                                 GLint v0)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniform1iBase(context, programPacked, locationPacked, v0);
+}
+
+bool ValidateProgramUniform1ivEXT(const Context *context,
+                                  ShaderProgramID programPacked,
+                                  UniformLocation locationPacked,
+                                  GLsizei count,
+                                  const GLint *value)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniform1ivBase(context, programPacked, locationPacked, count, value);
+}
+
+bool ValidateProgramUniform1uiEXT(const Context *context,
+                                  ShaderProgramID programPacked,
+                                  UniformLocation locationPacked,
+                                  GLuint v0)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniform1uiBase(context, programPacked, locationPacked, v0);
+}
+
+bool ValidateProgramUniform1uivEXT(const Context *context,
+                                   ShaderProgramID programPacked,
+                                   UniformLocation locationPacked,
+                                   GLsizei count,
+                                   const GLuint *value)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniform1uivBase(context, programPacked, locationPacked, count, value);
+}
+
+bool ValidateProgramUniform2fEXT(const Context *context,
+                                 ShaderProgramID programPacked,
+                                 UniformLocation locationPacked,
+                                 GLfloat v0,
+                                 GLfloat v1)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniform2fBase(context, programPacked, locationPacked, v0, v1);
+}
+
+bool ValidateProgramUniform2fvEXT(const Context *context,
+                                  ShaderProgramID programPacked,
+                                  UniformLocation locationPacked,
+                                  GLsizei count,
+                                  const GLfloat *value)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniform2fvBase(context, programPacked, locationPacked, count, value);
+}
+
+bool ValidateProgramUniform2iEXT(const Context *context,
+                                 ShaderProgramID programPacked,
+                                 UniformLocation locationPacked,
+                                 GLint v0,
+                                 GLint v1)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniform2iBase(context, programPacked, locationPacked, v0, v1);
+}
+
+bool ValidateProgramUniform2ivEXT(const Context *context,
+                                  ShaderProgramID programPacked,
+                                  UniformLocation locationPacked,
+                                  GLsizei count,
+                                  const GLint *value)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniform2ivBase(context, programPacked, locationPacked, count, value);
+}
+
+bool ValidateProgramUniform2uiEXT(const Context *context,
+                                  ShaderProgramID programPacked,
+                                  UniformLocation locationPacked,
+                                  GLuint v0,
+                                  GLuint v1)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniform2uiBase(context, programPacked, locationPacked, v0, v1);
+}
+
+bool ValidateProgramUniform2uivEXT(const Context *context,
+                                   ShaderProgramID programPacked,
+                                   UniformLocation locationPacked,
+                                   GLsizei count,
+                                   const GLuint *value)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniform2uivBase(context, programPacked, locationPacked, count, value);
+}
+
+bool ValidateProgramUniform3fEXT(const Context *context,
+                                 ShaderProgramID programPacked,
+                                 UniformLocation locationPacked,
+                                 GLfloat v0,
+                                 GLfloat v1,
+                                 GLfloat v2)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniform3fBase(context, programPacked, locationPacked, v0, v1, v2);
+}
+
+bool ValidateProgramUniform3fvEXT(const Context *context,
+                                  ShaderProgramID programPacked,
+                                  UniformLocation locationPacked,
+                                  GLsizei count,
+                                  const GLfloat *value)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniform3fvBase(context, programPacked, locationPacked, count, value);
+}
+
+bool ValidateProgramUniform3iEXT(const Context *context,
+                                 ShaderProgramID programPacked,
+                                 UniformLocation locationPacked,
+                                 GLint v0,
+                                 GLint v1,
+                                 GLint v2)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniform3iBase(context, programPacked, locationPacked, v0, v1, v2);
+}
+
+bool ValidateProgramUniform3ivEXT(const Context *context,
+                                  ShaderProgramID programPacked,
+                                  UniformLocation locationPacked,
+                                  GLsizei count,
+                                  const GLint *value)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniform3ivBase(context, programPacked, locationPacked, count, value);
+}
+
+bool ValidateProgramUniform3uiEXT(const Context *context,
+                                  ShaderProgramID programPacked,
+                                  UniformLocation locationPacked,
+                                  GLuint v0,
+                                  GLuint v1,
+                                  GLuint v2)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniform3uiBase(context, programPacked, locationPacked, v0, v1, v2);
+}
+
+bool ValidateProgramUniform3uivEXT(const Context *context,
+                                   ShaderProgramID programPacked,
+                                   UniformLocation locationPacked,
+                                   GLsizei count,
+                                   const GLuint *value)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniform3uivBase(context, programPacked, locationPacked, count, value);
+}
+
+bool ValidateProgramUniform4fEXT(const Context *context,
+                                 ShaderProgramID programPacked,
+                                 UniformLocation locationPacked,
+                                 GLfloat v0,
+                                 GLfloat v1,
+                                 GLfloat v2,
+                                 GLfloat v3)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniform4fBase(context, programPacked, locationPacked, v0, v1, v2, v3);
+}
+
+bool ValidateProgramUniform4fvEXT(const Context *context,
+                                  ShaderProgramID programPacked,
+                                  UniformLocation locationPacked,
+                                  GLsizei count,
+                                  const GLfloat *value)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniform4fvBase(context, programPacked, locationPacked, count, value);
+}
+
+bool ValidateProgramUniform4iEXT(const Context *context,
+                                 ShaderProgramID programPacked,
+                                 UniformLocation locationPacked,
+                                 GLint v0,
+                                 GLint v1,
+                                 GLint v2,
+                                 GLint v3)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniform4iBase(context, programPacked, locationPacked, v0, v1, v2, v3);
+}
+
+bool ValidateProgramUniform4ivEXT(const Context *context,
+                                  ShaderProgramID programPacked,
+                                  UniformLocation locationPacked,
+                                  GLsizei count,
+                                  const GLint *value)
+{
+    return ValidateProgramUniform4ivBase(context, programPacked, locationPacked, count, value);
+}
+
+bool ValidateProgramUniform4uiEXT(const Context *context,
+                                  ShaderProgramID programPacked,
+                                  UniformLocation locationPacked,
+                                  GLuint v0,
+                                  GLuint v1,
+                                  GLuint v2,
+                                  GLuint v3)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniform4uiBase(context, programPacked, locationPacked, v0, v1, v2, v3);
+}
+
+bool ValidateProgramUniform4uivEXT(const Context *context,
+                                   ShaderProgramID programPacked,
+                                   UniformLocation locationPacked,
+                                   GLsizei count,
+                                   const GLuint *value)
+{
+    return ValidateProgramUniform4uivBase(context, programPacked, locationPacked, count, value);
+}
+
+bool ValidateProgramUniformMatrix2fvEXT(const Context *context,
+                                        ShaderProgramID programPacked,
+                                        UniformLocation locationPacked,
+                                        GLsizei count,
+                                        GLboolean transpose,
+                                        const GLfloat *value)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniformMatrix2fvBase(context, programPacked, locationPacked, count,
+                                               transpose, value);
+}
+
+bool ValidateProgramUniformMatrix2x3fvEXT(const Context *context,
+                                          ShaderProgramID programPacked,
+                                          UniformLocation locationPacked,
+                                          GLsizei count,
+                                          GLboolean transpose,
+                                          const GLfloat *value)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniformMatrix2x3fvBase(context, programPacked, locationPacked, count,
+                                                 transpose, value);
+}
+
+bool ValidateProgramUniformMatrix2x4fvEXT(const Context *context,
+                                          ShaderProgramID programPacked,
+                                          UniformLocation locationPacked,
+                                          GLsizei count,
+                                          GLboolean transpose,
+                                          const GLfloat *value)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniformMatrix2x4fvBase(context, programPacked, locationPacked, count,
+                                                 transpose, value);
+}
+
+bool ValidateProgramUniformMatrix3fvEXT(const Context *context,
+                                        ShaderProgramID programPacked,
+                                        UniformLocation locationPacked,
+                                        GLsizei count,
+                                        GLboolean transpose,
+                                        const GLfloat *value)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniformMatrix3fvBase(context, programPacked, locationPacked, count,
+                                               transpose, value);
+}
+
+bool ValidateProgramUniformMatrix3x2fvEXT(const Context *context,
+                                          ShaderProgramID programPacked,
+                                          UniformLocation locationPacked,
+                                          GLsizei count,
+                                          GLboolean transpose,
+                                          const GLfloat *value)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniformMatrix3x2fvBase(context, programPacked, locationPacked, count,
+                                                 transpose, value);
+}
+
+bool ValidateProgramUniformMatrix3x4fvEXT(const Context *context,
+                                          ShaderProgramID programPacked,
+                                          UniformLocation locationPacked,
+                                          GLsizei count,
+                                          GLboolean transpose,
+                                          const GLfloat *value)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniformMatrix3x4fvBase(context, programPacked, locationPacked, count,
+                                                 transpose, value);
+}
+
+bool ValidateProgramUniformMatrix4fvEXT(const Context *context,
+                                        ShaderProgramID programPacked,
+                                        UniformLocation locationPacked,
+                                        GLsizei count,
+                                        GLboolean transpose,
+                                        const GLfloat *value)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniformMatrix4fvBase(context, programPacked, locationPacked, count,
+                                               transpose, value);
+}
+
+bool ValidateProgramUniformMatrix4x2fvEXT(const Context *context,
+                                          ShaderProgramID programPacked,
+                                          UniformLocation locationPacked,
+                                          GLsizei count,
+                                          GLboolean transpose,
+                                          const GLfloat *value)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniformMatrix4x2fvBase(context, programPacked, locationPacked, count,
+                                                 transpose, value);
+}
+
+bool ValidateProgramUniformMatrix4x3fvEXT(const Context *context,
+                                          ShaderProgramID programPacked,
+                                          UniformLocation locationPacked,
+                                          GLsizei count,
+                                          GLboolean transpose,
+                                          const GLfloat *value)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateProgramUniformMatrix4x3fvBase(context, programPacked, locationPacked, count,
+                                                 transpose, value);
+}
+
+bool ValidateUseProgramStagesEXT(const Context *context,
+                                 ProgramPipelineID pipelinePacked,
+                                 GLbitfield stages,
+                                 ShaderProgramID programPacked)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateUseProgramStagesBase(context, pipelinePacked, stages, programPacked);
+}
+
+bool ValidateValidateProgramPipelineEXT(const Context *context, ProgramPipelineID pipelinePacked)
+{
+    if (!context->getExtensions().separateShaderObjects)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateValidateProgramPipelineBase(context, pipelinePacked);
 }
 }  // namespace gl

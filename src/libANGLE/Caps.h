@@ -571,6 +571,9 @@ struct Extensions
     // GL_KHR_parallel_shader_compile
     bool parallelShaderCompile = false;
 
+    // GL_EXT_separate_shader_objects
+    bool separateShaderObjects = false;
+
     // GL_OES_texture_storage_multisample_2d_array
     bool textureStorageMultisample2DArrayOES = false;
 
@@ -663,6 +666,9 @@ struct Extensions
     // GL_OES_shader_image_atomic
     bool shaderImageAtomicOES = false;
 
+    // GL_OES_sample_variables
+    bool sampleVariablesOES = false;
+
     // GL_NV_robustness_video_memory_purge
     bool robustnessVideoMemoryPurgeNV = false;
 
@@ -678,6 +684,9 @@ struct Extensions
     bool textureBufferEXT = false;
     // Any version of the texture buffer extension
     bool textureBufferAny() const { return (textureBufferOES || textureBufferEXT); }
+
+    // GL_EXT_YUV_target
+    bool yuvTargetEXT = false;
 };
 
 // Pointer to a boolean memeber of the Extensions struct
