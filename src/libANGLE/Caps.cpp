@@ -1016,6 +1016,7 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_ANGLE_explicit_context_gles1"] = enableableExtension(&Extensions::explicitContextGles1);
         map["GL_ANGLE_explicit_context"] = enableableExtension(&Extensions::explicitContext);
         map["GL_KHR_parallel_shader_compile"] = enableableExtension(&Extensions::parallelShaderCompile);
+        map["GL_EXT_separate_shader_objects"] = enableableExtension(&Extensions::separateShaderObjects);
         map["GL_OES_texture_storage_multisample_2d_array"] = enableableExtension(&Extensions::textureStorageMultisample2DArrayOES);
         map["GL_ANGLE_multiview_multisample"] = enableableExtension(&Extensions::multiviewMultisample);
         map["GL_EXT_blend_func_extended"] = enableableExtension(&Extensions::blendFuncExtended);
@@ -1039,11 +1040,13 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_OES_sample_shading"] = enableableExtension(&Extensions::sampleShadingOES);
         map["GL_OES_shader_multisample_interpolation"] = enableableExtension(&Extensions::multisampleInterpolationOES);
         map["GL_OES_shader_image_atomic"] = enableableExtension(&Extensions::shaderImageAtomicOES);
+        map["GL_OES_sample_variables"] = enableableExtension(&Extensions::sampleVariablesOES);
         map["GL_NV_robustness_video_memory_purge"] = esOnlyExtension(&Extensions::robustnessVideoMemoryPurgeNV);
         map["GL_ANGLE_get_tex_level_parameter"] = enableableExtension(&Extensions::getTexLevelParameterANGLE);
         map["GL_EXT_copy_image"] = enableableExtension(&Extensions::copyImageEXT);
         map["GL_OES_texture_buffer"] = enableableExtension(&Extensions::textureBufferOES);
         map["GL_EXT_texture_buffer"] = enableableExtension(&Extensions::textureBufferEXT);
+        map["GL_EXT_YUV_target"] = enableableExtension(&Extensions::yuvTargetEXT);
         // GLES1 extensions
         map["GL_OES_point_size_array"] = enableableExtension(&Extensions::pointSizeArrayOES);
         map["GL_OES_texture_cube_map"] = enableableExtension(&Extensions::textureCubeMapOES);

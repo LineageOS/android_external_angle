@@ -323,6 +323,7 @@ class ProgramState final : angle::NonCopyable
 
     bool hasImages() const { return !getImageBindings().empty(); }
     bool hasEarlyFragmentTestsOptimization() const { return mEarlyFramentTestsOptimization; }
+    rx::SpecConstUsageBits getSpecConstUsageBits() const { return mSpecConstUsageBits; }
 
     bool isShaderMarkedForDetach(gl::ShaderType shaderType) const
     {
@@ -344,6 +345,8 @@ class ProgramState final : angle::NonCopyable
     const std::vector<GLenum> &getOutputVariableTypes() const { return mOutputVariableTypes; }
 
     ComponentTypeMask getDrawBufferTypeMask() const { return mDrawBufferTypeMask; }
+
+    bool isYUVOutput() const { return mYUVOutput; }
 
     bool hasBinaryRetrieveableHint() const { return mBinaryRetrieveableHint; }
 
@@ -407,9 +410,14 @@ class ProgramState final : angle::NonCopyable
     std::vector<GLenum> mOutputVariableTypes;
     ComponentTypeMask mDrawBufferTypeMask;
 
+    // GL_EXT_YUV_target. YUV output shaders can only have one ouput and can only write to YUV
+    // framebuffers.
+    bool mYUVOutput;
+
     bool mBinaryRetrieveableHint;
     bool mSeparable;
     bool mEarlyFramentTestsOptimization;
+    rx::SpecConstUsageBits mSpecConstUsageBits;
 
     // ANGLE_multiview.
     int mNumViews;
@@ -796,6 +804,12 @@ class Program final : public LabeledObject, public angle::Subject
     bool usesMultiview() const { return mState.usesMultiview(); }
 
     ComponentTypeMask getDrawBufferTypeMask() const;
+
+    bool isYUVOutput() const
+    {
+        ASSERT(!mLinkingState);
+        return mState.isYUVOutput();
+    }
 
     const std::vector<GLsizei> &getTransformFeedbackStrides() const;
 

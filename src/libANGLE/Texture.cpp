@@ -24,6 +24,10 @@ namespace gl
 
 namespace
 {
+constexpr angle::SubjectIndex kBufferSubjectIndex = 2;
+static_assert(kBufferSubjectIndex != rx::kTextureImageImplObserverMessageIndex, "Index collision");
+static_assert(kBufferSubjectIndex != rx::kTextureImageSiblingMessageIndex, "Index collision");
+
 bool IsPointSampled(const SamplerState &samplerState)
 {
     return (samplerState.getMagFilter() == GL_NEAREST &&
@@ -713,6 +717,7 @@ Texture::Texture(rx::GLImplFactory *factory, TextureID id, TextureType type)
       mState(type),
       mTexture(factory->createTexture(mState)),
       mImplObserver(this, rx::kTextureImageImplObserverMessageIndex),
+      mBufferObserver(this, kBufferSubjectIndex),
       mLabel(),
       mBoundSurface(nullptr),
       mBoundStream(nullptr)
@@ -1874,6 +1879,17 @@ const ColorGeneric &Texture::getBorderColor() const
     return mState.mSamplerState.getBorderColor();
 }
 
+GLint Texture::getRequiredTextureImageUnits(const Context *context) const
+{
+    // Only external texture types can return non-1.
+    if (mState.mType != TextureType::External)
+    {
+        return 1;
+    }
+
+    return mTexture->getRequiredExternalTextureImageUnits(context);
+}
+
 void Texture::setCrop(const Rectangle &rect)
 {
     mState.setCrop(rect);
@@ -1896,16 +1912,34 @@ GLenum Texture::getGenerateMipmapHint() const
 
 angle::Result Texture::setBuffer(const gl::Context *context,
                                  gl::Buffer *buffer,
-                                 GLenum internalFormat,
-                                 GLintptr offset,
-                                 GLsizeiptr size)
+                                 GLenum internalFormat)
+{
+    // Use 0 to indicate that the size is taken from whatever size the buffer has when the texture
+    // buffer is used.
+    return setBufferRange(context, buffer, internalFormat, 0, 0);
+}
+
+angle::Result Texture::setBufferRange(const gl::Context *context,
+                                      gl::Buffer *buffer,
+                                      GLenum internalFormat,
+                                      GLintptr offset,
+                                      GLsizeiptr size)
 {
     mState.mImmutableFormat = true;
     mState.mBuffer.set(context, buffer, offset, size);
     ANGLE_TRY(mTexture->setBuffer(context, internalFormat));
 
-    mState.mImmutableLevels = static_cast<GLuint>(1);
     mState.clearImageDescs();
+    if (buffer == nullptr)
+    {
+        mBufferObserver.reset();
+        signalDirtyStorage(InitState::MayNeedInit);
+        return angle::Result::Continue;
+    }
+
+    size = GetBoundBufferAvailableSize(mState.mBuffer);
+
+    mState.mImmutableLevels           = static_cast<GLuint>(1);
     InternalFormat internalFormatInfo = GetSizedInternalFormatInfo(internalFormat);
     Format format(internalFormat);
     Extents extents(static_cast<GLuint>(size / internalFormatInfo.pixelBytes), 1, 1);
@@ -1913,6 +1947,9 @@ angle::Result Texture::setBuffer(const gl::Context *context,
                         ImageDesc(extents, format, InitState::MayNeedInit));
 
     signalDirtyStorage(InitState::MayNeedInit);
+
+    // Observe modifications to the buffer, so that extents can be updated.
+    mBufferObserver.bind(buffer);
 
     return angle::Result::Continue;
 }
@@ -2125,11 +2162,21 @@ void Texture::onSubjectStateChange(angle::SubjectIndex index, angle::SubjectMess
     switch (message)
     {
         case angle::SubjectMessage::ContentsChanged:
-            // ContentsChange is originates from TextureStorage11::resolveAndReleaseTexture
-            // which resolves the underlying multisampled texture if it exists and so
-            // Texture will signal dirty storage to invalidate its own cache and the
-            // attached framebuffer's cache.
-            signalDirtyStorage(InitState::Initialized);
+            if (index == kBufferSubjectIndex)
+            {
+                // If the contents of the buffer attached to a texture buffer has changed, mark the
+                // texture dirty.
+                signalDirtyState(DIRTY_BIT_IMPLEMENTATION);
+                onStateChange(angle::SubjectMessage::ContentsChanged);
+            }
+            else
+            {
+                // ContentsChange originates from TextureStorage11::resolveAndReleaseTexture
+                // which resolves the underlying multisampled texture if it exists and so
+                // Texture will signal dirty storage to invalidate its own cache and the
+                // attached framebuffer's cache.
+                signalDirtyStorage(InitState::Initialized);
+            }
             break;
         case angle::SubjectMessage::DirtyBitsFlagged:
             signalDirtyState(DIRTY_BIT_IMPLEMENTATION);
@@ -2150,6 +2197,25 @@ void Texture::onSubjectStateChange(angle::SubjectIndex index, angle::SubjectMess
             {
                 notifySiblings(message);
             }
+            else if (index == kBufferSubjectIndex)
+            {
+                const gl::Buffer *buffer = mState.mBuffer.get();
+                ASSERT(buffer != nullptr);
+
+                // Update cached image desc based on buffer size.
+                GLsizeiptr size = GetBoundBufferAvailableSize(mState.mBuffer);
+
+                ImageDesc desc          = mState.getImageDesc(TextureTarget::Buffer, 0);
+                const GLuint pixelBytes = desc.format.info->pixelBytes;
+                desc.size.width         = static_cast<GLuint>(size / pixelBytes);
+
+                mState.setImageDesc(TextureTarget::Buffer, 0, desc);
+            }
+            break;
+        case angle::SubjectMessage::SubjectMapped:
+        case angle::SubjectMessage::SubjectUnmapped:
+        case angle::SubjectMessage::BindingChanged:
+            ASSERT(index == kBufferSubjectIndex);
             break;
         default:
             UNREACHABLE();

@@ -31,6 +31,7 @@
 #include "compiler/translator/tree_ops/EmulateMultiDrawShaderBuiltins.h"
 #include "compiler/translator/tree_ops/EmulatePrecision.h"
 #include "compiler/translator/tree_ops/FoldExpressions.h"
+#include "compiler/translator/tree_ops/ForcePrecisionQualifier.h"
 #include "compiler/translator/tree_ops/InitializeVariables.h"
 #include "compiler/translator/tree_ops/PruneEmptyCases.h"
 #include "compiler/translator/tree_ops/PruneNoOps.h"
@@ -218,6 +219,8 @@ int GetMaxShaderVersionForSpec(ShShaderSpec spec)
         case SH_GLES3_1_SPEC:
         case SH_WEBGL3_SPEC:
             return 310;
+        case SH_GLES3_2_SPEC:
+            return 320;
         case SH_GL_CORE_SPEC:
         case SH_GL_COMPATIBILITY_SPEC:
             return 460;
@@ -451,7 +454,7 @@ bool TCompiler::checkShaderVersion(TParseContext *parseContext)
             }
             else
             {
-                ASSERT(mShaderVersion == 310);
+                ASSERT(mShaderVersion == 310 || mShaderVersion == 320);
                 if (!parseContext->checkCanUseExtension(sh::TSourceLoc(),
                                                         TExtension::EXT_geometry_shader))
                 {
@@ -790,6 +793,14 @@ bool TCompiler::checkAndSimplifyAST(TIntermBlock *root,
         }
     }
 
+    if (compileOptions & SH_FORCE_SHADER_PRECISION_HIGHP_TO_MEDIUMP)
+    {
+        if (!ForceShaderPrecisionToMediump(root, &mSymbolTable, mShaderType))
+        {
+            return false;
+        }
+    }
+
     if (shouldCollectVariables(compileOptions))
     {
         ASSERT(!mVariablesCollected);
@@ -1094,9 +1105,11 @@ void TCompiler::setResourceString()
         << ":OES_shader_image_atomic:" << mResources.OES_shader_image_atomic
         << ":OES_texture_buffer:" << mResources.OES_texture_buffer
         << ":EXT_texture_buffer:" << mResources.EXT_texture_buffer
+        << ":OES_sample_variables:" << mResources.OES_sample_variables
         << ":MinProgramTextureGatherOffset:" << mResources.MinProgramTextureGatherOffset
         << ":MaxProgramTextureGatherOffset:" << mResources.MaxProgramTextureGatherOffset
         << ":MaxImageUnits:" << mResources.MaxImageUnits
+        << ":MaxSamples:" << mResources.MaxSamples
         << ":MaxVertexImageUniforms:" << mResources.MaxVertexImageUniforms
         << ":MaxFragmentImageUniforms:" << mResources.MaxFragmentImageUniforms
         << ":MaxComputeImageUniforms:" << mResources.MaxComputeImageUniforms

@@ -156,8 +156,10 @@ void AdjustBlitAreaForPreRotation(SurfaceRotation framebufferAngle,
     }
 }
 
-void AdjustFramebufferDimensionsForPreRotation(SurfaceRotation framebufferAngle,
-                                               gl::Rectangle *framebufferDimensions)
+void AdjustDimensionsAndFlipForPreRotation(SurfaceRotation framebufferAngle,
+                                           gl::Rectangle *framebufferDimensions,
+                                           bool *flipX,
+                                           bool *flipY)
 {
     switch (framebufferAngle)
     {
@@ -166,11 +168,13 @@ void AdjustFramebufferDimensionsForPreRotation(SurfaceRotation framebufferAngle,
             break;
         case SurfaceRotation::Rotated90Degrees:
             std::swap(framebufferDimensions->width, framebufferDimensions->height);
+            std::swap(*flipX, *flipY);
             break;
         case SurfaceRotation::Rotated180Degrees:
             break;
         case SurfaceRotation::Rotated270Degrees:
             std::swap(framebufferDimensions->width, framebufferDimensions->height);
+            std::swap(*flipX, *flipY);
             break;
         default:
             UNREACHABLE();
@@ -228,17 +232,17 @@ void AdjustBlitResolveParametersForPreRotation(SurfaceRotation framebufferAngle,
             std::swap(params->stretch[0], params->stretch[1]);
             std::swap(params->srcOffset[0], params->srcOffset[1]);
             std::swap(params->rotatedOffsetFactor[0], params->rotatedOffsetFactor[1]);
+            std::swap(params->flipX, params->flipY);
             if (srcFramebufferAngle == framebufferAngle)
             {
                 std::swap(params->destOffset[0], params->destOffset[1]);
                 std::swap(params->stretch[0], params->stretch[1]);
-                std::swap(params->flipX, params->flipY);
             }
             break;
         case SurfaceRotation::Rotated180Degrees:
-            ASSERT(!params->flipX && params->flipY);
-            params->flipX = true;
-            params->flipY = false;
+            // Combine flip info with api flip.
+            params->flipX = !params->flipX;
+            params->flipY = !params->flipY;
             break;
         case SurfaceRotation::Rotated270Degrees:
             std::swap(params->stretch[0], params->stretch[1]);
@@ -248,9 +252,11 @@ void AdjustBlitResolveParametersForPreRotation(SurfaceRotation framebufferAngle,
             {
                 std::swap(params->stretch[0], params->stretch[1]);
             }
-            ASSERT(!params->flipX && !params->flipY);
-            params->flipX = true;
-            params->flipY = true;
+            // Combine flip info with api flip.
+            params->flipX = !params->flipX;
+            params->flipY = !params->flipY;
+            std::swap(params->flipX, params->flipY);
+
             break;
         default:
             UNREACHABLE();
@@ -1008,8 +1014,8 @@ angle::Result FramebufferVk::blit(const gl::Context *context,
             destFramebufferDimensions.height - srcClippedDestArea.y - srcClippedDestArea.height;
     }
 
-    const bool flipX = sourceArea.isReversedX() != destArea.isReversedX();
-    const bool flipY = sourceArea.isReversedY() != destArea.isReversedY();
+    bool flipX = sourceArea.isReversedX() != destArea.isReversedX();
+    bool flipY = sourceArea.isReversedY() != destArea.isReversedY();
 
     // GLES doesn't allow flipping the parameters of glBlitFramebuffer if performing a resolve.
     ASSERT(!isResolve ||
@@ -1029,8 +1035,8 @@ angle::Result FramebufferVk::blit(const gl::Context *context,
     {
         AdjustBlitAreaForPreRotation(srcFramebufferRotation, sourceAreaOld,
                                      srcFramebufferDimensions, &sourceArea);
-        AdjustFramebufferDimensionsForPreRotation(srcFramebufferRotation,
-                                                  &srcFramebufferDimensions);
+        AdjustDimensionsAndFlipForPreRotation(srcFramebufferRotation, &srcFramebufferDimensions,
+                                              &flipX, &flipY);
     }
     SurfaceRotation rememberDestFramebufferRotation = destFramebufferRotation;
     if (srcFramebufferRotation == SurfaceRotation::Rotated90Degrees)
@@ -1272,7 +1278,7 @@ angle::Result FramebufferVk::blit(const gl::Context *context,
 
 void FramebufferVk::updateColorResolveAttachment(
     uint32_t colorIndexGL,
-    vk::ImageViewSubresourceSerial resolveImageViewSerial)
+    vk::ImageOrBufferViewSubresourceSerial resolveImageViewSerial)
 {
     mCurrentFramebufferDesc.updateColorResolve(colorIndexGL, resolveImageViewSerial);
     mFramebuffer = nullptr;
@@ -1282,7 +1288,7 @@ void FramebufferVk::updateColorResolveAttachment(
 void FramebufferVk::removeColorResolveAttachment(uint32_t colorIndexGL)
 {
     mCurrentFramebufferDesc.updateColorResolve(colorIndexGL,
-                                               vk::kInvalidImageViewSubresourceSerial);
+                                               vk::kInvalidImageOrBufferViewSubresourceSerial);
     mFramebuffer = nullptr;
     mRenderPassDesc.removeColorResolveAttachment(colorIndexGL);
 }
@@ -1305,9 +1311,9 @@ angle::Result FramebufferVk::resolveColorWithSubpass(ContextVk *contextVk,
     // - Assign the draw FBO's color attachment Serial to the read FBO's resolve attachment
     // - Deactivate the source Framebuffer, since the description changed
     // - Update the renderpass description to indicate there's a resolve attachment
-    vk::ImageViewSubresourceSerial resolveImageViewSerial =
+    vk::ImageOrBufferViewSubresourceSerial resolveImageViewSerial =
         mCurrentFramebufferDesc.getColorImageViewSerial(drawColorIndexGL);
-    ASSERT(resolveImageViewSerial.imageViewSerial.valid());
+    ASSERT(resolveImageViewSerial.viewSerial.valid());
     srcFramebufferVk->updateColorResolveAttachment(readColorIndexGL, resolveImageViewSerial);
 
     // Since the source FBO was updated with a resolve attachment it didn't have when the render
@@ -1596,7 +1602,8 @@ angle::Result FramebufferVk::updateColorAttachment(const gl::Context *context,
     }
     else
     {
-        mCurrentFramebufferDesc.updateColor(colorIndexGL, vk::kInvalidImageViewSubresourceSerial);
+        mCurrentFramebufferDesc.updateColor(colorIndexGL,
+                                            vk::kInvalidImageOrBufferViewSubresourceSerial);
     }
 
     if (enabledResolve)
@@ -1607,7 +1614,7 @@ angle::Result FramebufferVk::updateColorAttachment(const gl::Context *context,
     else
     {
         mCurrentFramebufferDesc.updateColorResolve(colorIndexGL,
-                                                   vk::kInvalidImageViewSubresourceSerial);
+                                                   vk::kInvalidImageOrBufferViewSubresourceSerial);
     }
 
     return angle::Result::Continue;
@@ -1648,7 +1655,7 @@ void FramebufferVk::updateDepthStencilAttachmentSerial(ContextVk *contextVk)
     }
     else
     {
-        mCurrentFramebufferDesc.updateDepthStencil(vk::kInvalidImageViewSubresourceSerial);
+        mCurrentFramebufferDesc.updateDepthStencil(vk::kInvalidImageOrBufferViewSubresourceSerial);
     }
 
     if (depthStencilRT != nullptr && depthStencilRT->hasResolveAttachment())
@@ -1658,7 +1665,8 @@ void FramebufferVk::updateDepthStencilAttachmentSerial(ContextVk *contextVk)
     }
     else
     {
-        mCurrentFramebufferDesc.updateDepthStencilResolve(vk::kInvalidImageViewSubresourceSerial);
+        mCurrentFramebufferDesc.updateDepthStencilResolve(
+            vk::kInvalidImageOrBufferViewSubresourceSerial);
     }
 }
 
@@ -2456,11 +2464,9 @@ angle::Result FramebufferVk::startNewRenderPass(ContextVk *contextVk,
 
     if (depthStencilRenderTarget)
     {
-        // This must be called after hasDefined*Content() since it will set content to valid. We are
-        // tracking content valid very loosely here that as long as it is attached, it assumes will
-        // have valid content. The only time it has undefined content is between swap and
-        // startNewRenderPass
-        // The actual layout determination will be deferred until endRenderPass time
+        // This must be called after hasDefined*Content() since it will set content to valid.  If
+        // the attachment ends up not used in the render pass, contents will be marked undefined at
+        // endRenderPass.  The actual layout determination is also deferred until the same time.
         depthStencilRenderTarget->onDepthStencilDraw(contextVk);
     }
 

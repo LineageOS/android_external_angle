@@ -595,6 +595,7 @@ void SerializeShaderVariable(gl::BinaryOutputStream *bos, const sh::ShaderVariab
     bos->writeBool(shaderVariable.readonly);
     bos->writeBool(shaderVariable.writeonly);
     bos->writeInt(shaderVariable.index);
+    bos->writeBool(shaderVariable.yuv);
     bos->writeEnum(shaderVariable.interpolation);
     bos->writeBool(shaderVariable.isInvariant);
     bos->writeBool(shaderVariable.texelFetchStaticUse);
@@ -645,6 +646,7 @@ void SerializeShaderState(gl::BinaryOutputStream *bos, const gl::ShaderState &sh
     SerializeShaderVariablesVector(bos, shaderState.getActiveOutputVariables());
     bos->writeBool(shaderState.getEarlyFragmentTestsOptimization());
     bos->writeInt(shaderState.getNumViews());
+    bos->writeInt(shaderState.getSpecConstUsageBits().bits());
     if (shaderState.getGeometryShaderInputPrimitiveType().valid())
     {
         bos->writeEnum(shaderState.getGeometryShaderInputPrimitiveType().value());

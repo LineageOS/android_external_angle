@@ -819,6 +819,8 @@ const char *GLenumToString(GLenumGroup enumGroup, unsigned int value)
                     return "GL_UNKNOWN_CONTEXT_RESET_EXT";
                 case 0x8256:
                     return "GL_RESET_NOTIFICATION_STRATEGY";
+                case 0x8258:
+                    return "GL_PROGRAM_SEPARABLE_EXT";
                 case 0x825A:
                     return "GL_PROGRAM_PIPELINE_BINDING";
                 case 0x825E:
@@ -1144,7 +1146,7 @@ const char *GLenumToString(GLenumGroup enumGroup, unsigned int value)
                 case 0x8B4D:
                     return "GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS";
                 case 0x8B8D:
-                    return "GL_CURRENT_PROGRAM";
+                    return "GL_ACTIVE_PROGRAM_EXT";
                 case 0x8B9C:
                     return "GL_POINT_SIZE_ARRAY_OES";
                 case 0x8B9D:
@@ -1153,6 +1155,8 @@ const char *GLenumToString(GLenumGroup enumGroup, unsigned int value)
                     return "GL_MATRIX_INDEX_ARRAY_BUFFER_BINDING_OES";
                 case 0x8B9F:
                     return "GL_POINT_SIZE_ARRAY_BUFFER_BINDING_OES";
+                case 0x8BE7:
+                    return "GL_SAMPLER_EXTERNAL_2D_Y2Y_EXT";
                 case 0x8C10:
                     return "GL_TEXTURE_RED_TYPE";
                 case 0x8C11:
@@ -1275,6 +1279,12 @@ const char *GLenumToString(GLenumGroup enumGroup, unsigned int value)
                     return "GL_TEXTURE_GEN_STR_OES";
                 case 0x8D62:
                     return "GL_RGB565";
+                case 0x8D65:
+                    return "GL_TEXTURE_EXTERNAL_OES";
+                case 0x8D67:
+                    return "GL_TEXTURE_BINDING_EXTERNAL_OES";
+                case 0x8D68:
+                    return "GL_REQUIRED_TEXTURE_IMAGE_UNITS_OES";
                 case 0x8D69:
                     return "GL_PRIMITIVE_RESTART_FIXED_INDEX";
                 case 0x8D6A:
@@ -1383,6 +1393,8 @@ const char *GLenumToString(GLenumGroup enumGroup, unsigned int value)
                     return "GL_MIN_PROGRAM_TEXTURE_GATHER_OFFSET";
                 case 0x8E5F:
                     return "GL_MAX_PROGRAM_TEXTURE_GATHER_OFFSET";
+                case 0x8E72:
+                    return "GL_PATCH_VERTICES_EXT";
                 case 0x8E75:
                     return "GL_TESS_CONTROL_OUTPUT_VERTICES";
                 case 0x8E76:
@@ -1419,6 +1431,10 @@ const char *GLenumToString(GLenumGroup enumGroup, unsigned int value)
                     return "GL_MAX_TESS_CONTROL_TOTAL_OUTPUT_COMPONENTS";
                 case 0x8E86:
                     return "GL_MAX_TESS_EVALUATION_OUTPUT_COMPONENTS";
+                case 0x8E87:
+                    return "GL_TESS_EVALUATION_SHADER_EXT";
+                case 0x8E88:
+                    return "GL_TESS_CONTROL_SHADER_EXT";
                 case 0x8E89:
                     return "GL_MAX_TESS_CONTROL_UNIFORM_BLOCKS";
                 case 0x8E8A:

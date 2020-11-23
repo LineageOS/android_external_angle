@@ -31,6 +31,25 @@ namespace vk
 {
 namespace
 {
+bool HasShaderImageAtomicsSupport(const RendererVk *rendererVk,
+                                  const gl::Extensions &supportedExtensions)
+{
+    // Only VK_FORMAT_R32_SFLOAT doesn't have mandatory support for the STORAGE_IMAGE_ATOMIC and
+    // STORAGE_TEXEL_BUFFER_ATOMIC features.
+    const vk::Format &formatVk = rendererVk->getFormat(GL_R32F);
+
+    const bool hasImageAtomicSupport = rendererVk->hasImageFormatFeatureBits(
+        formatVk.vkImageFormat, VK_FORMAT_FEATURE_STORAGE_IMAGE_ATOMIC_BIT);
+    bool hasBufferAtomicSupport = true;
+    if (supportedExtensions.textureBufferAny())
+    {
+        hasBufferAtomicSupport = rendererVk->hasBufferFormatFeatureBits(
+            formatVk.vkBufferFormat, VK_FORMAT_FEATURE_STORAGE_TEXEL_BUFFER_ATOMIC_BIT);
+    }
+
+    return hasImageAtomicSupport && hasBufferAtomicSupport;
+}
+
 bool FormatReinterpretationSupported(const std::vector<GLenum> &optionalSizedFormats,
                                      const RendererVk *rendererVk,
                                      bool checkLinearColorspace)
@@ -154,15 +173,87 @@ bool GetTextureSRGBOverrideSupport(const RendererVk *rendererVk,
 
     return true;
 }
+
+bool HasTextureBufferSupport(const RendererVk *rendererVk)
+{
+    // The following formats don't have mandatory UNIFORM_TEXEL_BUFFER support in Vulkan.
+    //
+    //     VK_FORMAT_R32G32B32_UINT
+    //     VK_FORMAT_R32G32B32_SINT
+    //     VK_FORMAT_R32G32B32_SFLOAT
+    //
+    // Additionally, the following formats don't have mandatory STORAGE_TEXEL_BUFFER support:
+    //
+    //     VK_FORMAT_R8_UINT
+    //     VK_FORMAT_R8_SINT
+    //     VK_FORMAT_R8_UNORM
+    //     VK_FORMAT_R8G8_UINT
+    //     VK_FORMAT_R8G8_SINT
+    //     VK_FORMAT_R8G8_UNORM
+    //     VK_FORMAT_R16_UINT
+    //     VK_FORMAT_R16_SINT
+    //     VK_FORMAT_R16_SFLOAT
+    //     VK_FORMAT_R16G16_UINT
+    //     VK_FORMAT_R16G16_SINT
+    //     VK_FORMAT_R16G16_SFLOAT
+    //     VK_FORMAT_R32G32B32_UINT
+    //     VK_FORMAT_R32G32B32_SINT
+    //     VK_FORMAT_R32G32B32_SFLOAT
+    //
+    // The formats that have mandatory support for both features (and don't need to be checked) are:
+    //
+    //     VK_FORMAT_R8G8B8A8_UINT
+    //     VK_FORMAT_R8G8B8A8_SINT
+    //     VK_FORMAT_R8G8B8A8_UNORM
+    //     VK_FORMAT_R16G16B16A16_UINT
+    //     VK_FORMAT_R16G16B16A16_SINT
+    //     VK_FORMAT_R16G16B16A16_SFLOAT
+    //     VK_FORMAT_R32_UINT
+    //     VK_FORMAT_R32_SINT
+    //     VK_FORMAT_R32_SFLOAT
+    //     VK_FORMAT_R32G32_UINT
+    //     VK_FORMAT_R32G32_SINT
+    //     VK_FORMAT_R32G32_SFLOAT
+    //     VK_FORMAT_R32G32B32A32_UINT
+    //     VK_FORMAT_R32G32B32A32_SINT
+    //     VK_FORMAT_R32G32B32A32_SFLOAT
+    //
+
+    // TODO: RGB32 formats currently don't have STORAGE_TEXEL_BUFFER support on any known platform.
+    // Despite this limitation, we expose EXT_texture_buffer.  http://anglebug.com/3573
+    const std::array<GLenum, 12> &optionalFormats = {
+        GL_R8,   GL_R8I,  GL_R8UI,  GL_RG8,   GL_RG8I,  GL_RG8UI,
+        GL_R16F, GL_R16I, GL_R16UI, GL_RG16F, GL_RG16I, GL_RG16UI,
+        // GL_RGB32F,
+        // GL_RGB32I,
+        // GL_RGB32UI,
+    };
+
+    for (GLenum formatGL : optionalFormats)
+    {
+        const vk::Format &formatVk = rendererVk->getFormat(formatGL);
+
+        if (!rendererVk->hasBufferFormatFeatureBits(formatVk.vkBufferFormat,
+                                                    VK_FORMAT_FEATURE_UNIFORM_TEXEL_BUFFER_BIT |
+                                                        VK_FORMAT_FEATURE_STORAGE_TEXEL_BUFFER_BIT))
+        {
+            return false;
+        }
+    }
+    return true;
+}
 }  // namespace
 }  // namespace vk
 
-GLint LimitToInt(const uint32_t physicalDeviceValue)
+template <typename LargerInt>
+GLint LimitToInt(const LargerInt physicalDeviceValue)
 {
+    static_assert(sizeof(LargerInt) >= sizeof(int32_t), "Incorrect usage of LimitToInt");
+
     // Limit to INT_MAX / 2 instead of INT_MAX.  If the limit is queried as float, the imprecision
     // in floating point can cause the value to exceed INT_MAX.  This trips dEQP up.
-    return std::min(physicalDeviceValue,
-                    static_cast<uint32_t>(std::numeric_limits<int32_t>::max() / 2));
+    return static_cast<GLint>(std::min(
+        physicalDeviceValue, static_cast<LargerInt>(std::numeric_limits<int32_t>::max() / 2)));
 }
 
 void RendererVk::ensureCapsInitialized() const
@@ -320,6 +411,9 @@ void RendererVk::ensureCapsInitialized() const
     // Implemented in the translator
     mNativeExtensions.shaderNonConstGlobalInitializersEXT = true;
 
+    // Implemented in the front end
+    mNativeExtensions.separateShaderObjects = true;
+
     // Vulkan has no restrictions of the format of cubemaps, so if the proper formats are supported,
     // creating a cube of any of these formats should be implicitly supported.
     mNativeExtensions.depthTextureCubeMapOES =
@@ -340,6 +434,10 @@ void RendererVk::ensureCapsInitialized() const
     mNativeExtensions.textureCubeMapArrayEXT = mNativeExtensions.textureCubeMapArrayOES;
 
     mNativeExtensions.shadowSamplersEXT = true;
+
+    // Enable EXT_external_buffer on Andoid. External buffers are implemented using Android hadware
+    // buffer (struct AHardwareBuffer).
+    mNativeExtensions.externalBufferEXT = IsAndroid() && (GetAndroidSDKVersion() >= 26);
 
     // From the Vulkan specs:
     // sampleRateShading specifies whether Sample Shading and multisample interpolation are
@@ -373,10 +471,13 @@ void RendererVk::ensureCapsInitialized() const
     // OES_shader_multisample_interpolation requires OES_sample_variables, disable for now
     mNativeExtensions.multisampleInterpolationOES = false;
 
-    mNativeExtensions.shaderImageAtomicOES =
-        ((mPhysicalDeviceFeatures.vertexPipelineStoresAndAtomics == VK_TRUE) &&
-         (mPhysicalDeviceFeatures.fragmentStoresAndAtomics == VK_TRUE) &&
-         getFeatures().supportsShaderImageFloat32Atomics.enabled);
+    // From the SPIR-V spec at 3.21. BuiltIn, SampleId and SamplePosition needs
+    // SampleRateShading. https://www.khronos.org/registry/spir-v/specs/unified1/SPIRV.html
+    // To replace non-constant index to constant 0 index, this extension assumes that ANGLE only
+    // supports the number of samples less than or equal to 32.
+    constexpr unsigned int kNotSupportedSampleCounts = VK_SAMPLE_COUNT_64_BIT;
+    mNativeExtensions.sampleVariablesOES =
+        supportSampleRateShading && (vk_gl::GetMaxSampleCount(kNotSupportedSampleCounts) == 0);
 
     // https://vulkan.lunarg.com/doc/view/1.0.30.0/linux/vkspec.chunked/ch31s02.html
     mNativeCaps.maxElementIndex  = std::numeric_limits<GLuint>::max() - 1;
@@ -736,6 +837,33 @@ void RendererVk::ensureCapsInitialized() const
 
     // Enable GL_EXT_copy_image
     mNativeExtensions.copyImageEXT = true;
+
+    // Enable GL_EXT_texture_buffer and OES variant.  Nearly all formats required for this extension
+    // are also required to have the UNIFORM_TEXEL_BUFFER feature bit in Vulkan, except for
+    // R32G32B32_SFLOAT/UINT/SINT which are optional.  For many formats, the STORAGE_TEXEL_BUFFER
+    // feature is optional though.  This extension is exposed only if the formats specified in
+    // EXT_texture_buffer support the necessary feature bits.
+    if (vk::HasTextureBufferSupport(this))
+    {
+        mNativeExtensions.textureBufferOES = true;
+        mNativeExtensions.textureBufferEXT = true;
+        mNativeCaps.maxTextureBufferSize   = LimitToInt(limitsVk.maxTexelBufferElements);
+        mNativeCaps.textureBufferOffsetAlignment =
+            LimitToInt(limitsVk.minTexelBufferOffsetAlignment);
+    }
+
+    // Atomic image operations in the vertex and fragment shaders require the
+    // vertexPipelineStoresAndAtomics and fragmentStoresAndAtomics Vulkan features respectively.
+    // If either of these features is not present, the number of image uniforms for that stage is
+    // advertized as zero, so image atomic operations support can be agnostic of shader stages.
+    //
+    // GL_OES_shader_image_atomic requires that image atomic functions have support for r32i and
+    // r32ui formats.  These formats have mandatory support for STORAGE_IMAGE_ATOMIC and
+    // STORAGE_TEXEL_BUFFER_ATOMIC features in Vulkan.  Additionally, it requires that
+    // imageAtomicExchange supports r32f.  Exposing this extension is thus restricted to this format
+    // having support for the aforementioned features.
+    mNativeExtensions.shaderImageAtomicOES =
+        vk::HasShaderImageAtomicsSupport(this, mNativeExtensions);
 
     // Geometry shader is optional.
     if (mPhysicalDeviceFeatures.geometryShader)
