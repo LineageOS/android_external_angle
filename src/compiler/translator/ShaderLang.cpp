@@ -182,8 +182,10 @@ void InitBuiltInResources(ShBuiltInResources *resources)
     resources->OES_shader_multisample_interpolation        = 0;
     resources->NV_draw_buffers                             = 0;
     resources->OES_shader_image_atomic                     = 0;
+    resources->EXT_tessellation_shader                     = 0;
     resources->OES_texture_buffer                          = 0;
     resources->EXT_texture_buffer                          = 0;
+    resources->OES_sample_variables                        = 0;
 
     resources->MaxClipDistances = 0;
 
@@ -267,7 +269,30 @@ void InitBuiltInResources(ShBuiltInResources *resources)
     resources->MaxGeometryShaderInvocations     = 32;
     resources->MaxGeometryImageUniforms         = 0;
 
+    resources->MaxTessControlInputComponents       = 64;
+    resources->MaxTessControlOutputComponents      = 64;
+    resources->MaxTessControlTextureImageUnits     = 16;
+    resources->MaxTessControlUniformComponents     = 1024;
+    resources->MaxTessControlTotalOutputComponents = 2048;
+    resources->MaxTessControlImageUniforms         = 0;
+    resources->MaxTessControlAtomicCounters        = 0;
+    resources->MaxTessControlAtomicCounterBuffers  = 0;
+
+    resources->MaxTessPatchComponents = 120;
+    resources->MaxPatchVertices       = 32;
+    resources->MaxTessGenLevel        = 64;
+
+    resources->MaxTessEvaluationInputComponents      = 64;
+    resources->MaxTessEvaluationOutputComponents     = 64;
+    resources->MaxTessEvaluationTextureImageUnits    = 16;
+    resources->MaxTessEvaluationUniformComponents    = 1024;
+    resources->MaxTessEvaluationImageUniforms        = 0;
+    resources->MaxTessEvaluationAtomicCounters       = 0;
+    resources->MaxTessEvaluationAtomicCounterBuffers = 0;
+
     resources->SubPixelBits = 8;
+
+    resources->MaxSamples = 4;
 }
 
 //
@@ -516,6 +541,16 @@ bool HasEarlyFragmentTestsOptimization(const ShHandle handle)
         return false;
     }
     return compiler->isEarlyFragmentTestsOptimized();
+}
+
+uint32_t GetShaderSpecConstUsageBits(const ShHandle handle)
+{
+    TCompiler *compiler = GetCompilerFromHandle(handle);
+    if (compiler == nullptr)
+    {
+        return 0;
+    }
+    return compiler->getSpecConstUsageBits().bits();
 }
 
 bool CheckVariablesWithinPackingLimits(int maxVectors, const std::vector<ShaderVariable> &variables)

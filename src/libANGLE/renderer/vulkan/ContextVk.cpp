@@ -70,7 +70,11 @@ struct GraphicsDriverUniforms
 
     uint32_t xfbActiveUnpaused;
     uint32_t xfbVerticesPerDraw;
-    std::array<int32_t, 3> padding;
+
+    // Used to replace gl_NumSamples. Because gl_NumSamples cannot be recognized in SPIR-V.
+    int32_t numSamples;
+
+    std::array<int32_t, 2> padding;
 
     std::array<int32_t, 4> xfbBufferOffsets;
 
@@ -527,9 +531,6 @@ void ContextVk::onDestroy(const gl::Context *context)
     mShaderLibrary.destroy(device);
     mGpuEventQueryPool.destroy(device);
     mCommandPool.destroy(device);
-
-    // This will clean up any outstanding buffer allocations
-    (void)mRenderer->clearAllGarbage(this);
 }
 
 angle::Result ContextVk::getIncompleteTexture(const gl::Context *context,
@@ -1150,7 +1151,33 @@ ANGLE_INLINE angle::Result ContextVk::handleDirtyTexturesImpl(
     {
         const vk::TextureUnit &unit = mActiveTextures[textureUnit];
         TextureVk *textureVk        = unit.texture;
-        vk::ImageHelper &image      = textureVk->getImage();
+
+        // If it's a texture buffer, get the attached buffer.
+        if (textureVk->getBuffer().get() != nullptr)
+        {
+            BufferVk *bufferVk       = vk::GetImpl(textureVk->getBuffer().get());
+            vk::BufferHelper &buffer = bufferVk->getBuffer();
+
+            gl::ShaderBitSet stages =
+                executable->getSamplerShaderBitsForTextureUnitIndex(textureUnit);
+            ASSERT(stages.any());
+
+            // TODO: accept multiple stages in bufferRead.  http://anglebug.com/3573
+            for (gl::ShaderType stage : stages)
+            {
+                // Note: if another range of the same buffer is simultaneously used for storage,
+                // such as for transform feedback output, or SSBO, unnecessary barriers can be
+                // generated.
+                commandBufferHelper->bufferRead(&mResourceUseList, VK_ACCESS_SHADER_READ_BIT,
+                                                vk::GetPipelineStage(stage), &buffer);
+            }
+
+            textureVk->retainBufferViews(&mResourceUseList);
+
+            continue;
+        }
+
+        vk::ImageHelper &image = textureVk->getImage();
 
         // The image should be flushed and ready to use at this point. There may still be
         // lingering staged updates in its staging buffer for unused texture mip levels or
@@ -1641,6 +1668,8 @@ angle::Result ContextVk::synchronizeCpuGpuTime()
         vk::DeviceScoped<vk::PrimaryCommandBuffer> commandBatch(device);
         vk::PrimaryCommandBuffer &commandBuffer = commandBatch.get();
 
+        vk::ResourceUseList scratchResourceUseList;
+
         ANGLE_TRY(mRenderer->getCommandBufferOneOff(this, &commandBuffer));
 
         commandBuffer.setEvent(gpuReady.get().getHandle(), VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT);
@@ -1648,6 +1677,8 @@ angle::Result ContextVk::synchronizeCpuGpuTime()
                                  VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, 0, nullptr, 0, nullptr, 0,
                                  nullptr);
         timestampQuery.writeTimestampToPrimary(this, &commandBuffer);
+        timestampQuery.retain(&scratchResourceUseList);
+
         commandBuffer.setEvent(gpuDone.get().getHandle(), VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT);
 
         ANGLE_VK_TRY(this, commandBuffer.end());
@@ -1655,6 +1686,7 @@ angle::Result ContextVk::synchronizeCpuGpuTime()
         Serial throwAwaySerial;
         ANGLE_TRY(mRenderer->queueSubmitOneOff(this, std::move(commandBuffer), mContextPriority,
                                                nullptr, &throwAwaySerial));
+        scratchResourceUseList.releaseResourceUsesAndUpdateSerials(throwAwaySerial);
 
         // Wait for GPU to be ready.  This is a short busy wait.
         VkResult result = VK_EVENT_RESET;
@@ -1756,7 +1788,7 @@ angle::Result ContextVk::checkCompletedGpuEvents()
     for (GpuEventQuery &eventQuery : mInFlightGpuEventQueries)
     {
         // Only check the timestamp query if the submission has finished.
-        if (eventQuery.queryHelper.getStoredQueueSerial() > lastCompletedSerial)
+        if (eventQuery.queryHelper.usedInRunningCommands(lastCompletedSerial))
         {
             break;
         }
@@ -1842,13 +1874,12 @@ void ContextVk::flushGpuEvents(double nextSyncGpuTimestampS, double nextSyncCpuT
 
 void ContextVk::clearAllGarbage()
 {
-    ANGLE_TRACE_EVENT0("gpu.angle", "ContextVk::finishAllWork");
+    ANGLE_TRACE_EVENT0("gpu.angle", "ContextVk::clearAllGarbage");
     for (vk::GarbageObject &garbage : mCurrentGarbage)
     {
         garbage.destroy(mRenderer);
     }
     mCurrentGarbage.clear();
-    mRenderer->clearAllGarbage(this);
 }
 
 void ContextVk::handleDeviceLost()
@@ -2471,19 +2502,24 @@ void ContextVk::updateColorMasks(const gl::BlendStateExt &blendStateExt)
                                                  framebufferVk->getState().getEnabledDrawBuffers());
 }
 
-void ContextVk::updateSampleMask(const gl::State &glState)
+void ContextVk::updateSampleMaskWithRasterizationSamples(const uint32_t rasterizationSamples)
 {
+    // FramebufferVk::syncState could have been the origin for this call, at which point the
+    // draw FBO may have changed, retrieve the latest draw FBO.
+    FramebufferVk *drawFramebuffer = vk::GetImpl(mState.getDrawFramebuffer());
+
     // If sample coverage is enabled, emulate it by generating and applying a mask on top of the
     // sample mask.
-    uint32_t coverageSampleCount = GetCoverageSampleCount(glState, mDrawFramebuffer);
+    uint32_t coverageSampleCount = GetCoverageSampleCount(mState, drawFramebuffer);
 
     static_assert(sizeof(uint32_t) == sizeof(GLbitfield), "Vulkan assumes 32-bit sample masks");
-    for (uint32_t maskNumber = 0; maskNumber < glState.getMaxSampleMaskWords(); ++maskNumber)
+    for (uint32_t maskNumber = 0; maskNumber < mState.getMaxSampleMaskWords(); ++maskNumber)
     {
-        uint32_t mask = glState.isSampleMaskEnabled() ? glState.getSampleMaskWord(maskNumber)
-                                                      : std::numeric_limits<uint32_t>::max();
+        uint32_t mask = mState.isSampleMaskEnabled() && rasterizationSamples > 1
+                            ? mState.getSampleMaskWord(maskNumber)
+                            : std::numeric_limits<uint32_t>::max();
 
-        ApplySampleCoverage(glState, coverageSampleCount, maskNumber, &mask);
+        ApplySampleCoverage(mState, coverageSampleCount, maskNumber, &mask);
 
         mGraphicsPipelineDesc->updateSampleMask(&mGraphicsPipelineTransition, maskNumber, mask);
     }
@@ -2582,6 +2618,27 @@ void ContextVk::updateScissor(const gl::State &glState)
         ASSERT(mRenderPassCommands->started());
         mRenderPassCommands->growRenderArea(this, rotatedScissoredArea);
     }
+}
+
+// If the target is a single-sampled target, sampleShading should be disabled, to use Bresenham line
+// raterization feature.
+void ContextVk::updateSampleShadingWithRasterizationSamples(const uint32_t rasterizationSamples)
+{
+    bool sampleShadingEnable =
+        (rasterizationSamples <= 1 ? false : mState.isSampleShadingEnabled());
+
+    mGraphicsPipelineDesc->updateSampleShading(&mGraphicsPipelineTransition, sampleShadingEnable,
+                                               mState.getMinSampleShading());
+}
+
+// If the target is switched between a single-sampled and multisample, the dependency related to the
+// rasterization sample should be updated.
+void ContextVk::updateRasterizationSamples(const uint32_t rasterizationSamples)
+{
+    mGraphicsPipelineDesc->updateRasterizationSamples(&mGraphicsPipelineTransition,
+                                                      rasterizationSamples);
+    updateSampleShadingWithRasterizationSamples(rasterizationSamples);
+    updateSampleMaskWithRasterizationSamples(rasterizationSamples);
 }
 
 void ContextVk::invalidateProgramBindingHelper(const gl::State &glState)
@@ -2705,16 +2762,16 @@ angle::Result ContextVk::syncState(const gl::Context *context,
                 iter.setLaterBit(gl::State::DIRTY_BIT_PROGRAM_EXECUTABLE);
                 break;
             case gl::State::DIRTY_BIT_SAMPLE_COVERAGE_ENABLED:
-                updateSampleMask(glState);
+                updateSampleMaskWithRasterizationSamples(mDrawFramebuffer->getSamples());
                 break;
             case gl::State::DIRTY_BIT_SAMPLE_COVERAGE:
-                updateSampleMask(glState);
+                updateSampleMaskWithRasterizationSamples(mDrawFramebuffer->getSamples());
                 break;
             case gl::State::DIRTY_BIT_SAMPLE_MASK_ENABLED:
-                updateSampleMask(glState);
+                updateSampleMaskWithRasterizationSamples(mDrawFramebuffer->getSamples());
                 break;
             case gl::State::DIRTY_BIT_SAMPLE_MASK:
-                updateSampleMask(glState);
+                updateSampleMaskWithRasterizationSamples(mDrawFramebuffer->getSamples());
                 break;
             case gl::State::DIRTY_BIT_DEPTH_TEST_ENABLED:
             {
@@ -2853,9 +2910,7 @@ angle::Result ContextVk::syncState(const gl::Context *context,
                 updateViewport(mDrawFramebuffer, glState.getViewport(), glState.getNearPlane(),
                                glState.getFarPlane(), isViewportFlipEnabledForDrawFBO());
                 updateColorMasks(glState.getBlendStateExt());
-                updateSampleMask(glState);
-                mGraphicsPipelineDesc->updateRasterizationSamples(&mGraphicsPipelineTransition,
-                                                                  mDrawFramebuffer->getSamples());
+                updateRasterizationSamples(mDrawFramebuffer->getSamples());
                 mGraphicsPipelineDesc->updateFrontFace(&mGraphicsPipelineTransition,
                                                        glState.getRasterizerState(),
                                                        isViewportFlipEnabledForDrawFBO());
@@ -2941,9 +2996,7 @@ angle::Result ContextVk::syncState(const gl::Context *context,
                                                               glState.isSampleAlphaToOneEnabled());
                 break;
             case gl::State::DIRTY_BIT_SAMPLE_SHADING:
-                mGraphicsPipelineDesc->updateSampleShading(&mGraphicsPipelineTransition,
-                                                           glState.isSampleShadingEnabled(),
-                                                           glState.getMinSampleShading());
+                updateSampleShadingWithRasterizationSamples(mDrawFramebuffer->getSamples());
                 break;
             case gl::State::DIRTY_BIT_COVERAGE_MODULATION:
                 break;
@@ -3035,7 +3088,7 @@ angle::Result ContextVk::onUnMakeCurrent(const gl::Context *context)
     if (mRenderer->getFeatures().asyncCommandQueue.enabled)
     {
         ANGLE_TRACE_EVENT0("gpu.angle", "ContextVk::onUnMakeCurrent");
-        mRenderer->finishAllWork(this);
+        ANGLE_TRY(mRenderer->finishAllWork(this));
     }
     mCurrentWindowSurface = nullptr;
     return angle::Result::Continue;
@@ -3278,8 +3331,7 @@ void ContextVk::onFramebufferChange(FramebufferVk *framebufferVk)
     if (mGraphicsPipelineDesc->getRasterizationSamples() !=
         static_cast<uint32_t>(framebufferVk->getSamples()))
     {
-        mGraphicsPipelineDesc->updateRasterizationSamples(&mGraphicsPipelineTransition,
-                                                          framebufferVk->getSamples());
+        updateRasterizationSamples(framebufferVk->getSamples());
     }
 
     // Update scissor.
@@ -3631,6 +3683,7 @@ angle::Result ContextVk::handleDirtyGraphicsDriverUniforms(const gl::Context *co
     float depthRangeNear = mState.getNearPlane();
     float depthRangeFar  = mState.getFarPlane();
     float depthRangeDiff = depthRangeFar - depthRangeNear;
+    int32_t numSamples   = mDrawFramebuffer->getSamples();
 
     // Copy and flush to the device.
     GraphicsDriverUniforms *driverUniforms = reinterpret_cast<GraphicsDriverUniforms *>(ptr);
@@ -3643,6 +3696,7 @@ angle::Result ContextVk::handleDirtyGraphicsDriverUniforms(const gl::Context *co
         mState.getEnabledClipDistances().bits(),
         xfbActiveUnpaused,
         mXfbVertexCountPerInstance,
+        numSamples,
         {},
         {},
         {},
@@ -3852,18 +3906,33 @@ angle::Result ContextVk::updateActiveTextures(const gl::Context *context)
     for (size_t textureUnit : activeTextures)
     {
         gl::Texture *texture        = textures[textureUnit];
-        gl::Sampler *sampler        = mState.getSampler(static_cast<uint32_t>(textureUnit));
         gl::TextureType textureType = textureTypes[textureUnit];
         ASSERT(textureType != gl::TextureType::InvalidEnum);
 
-        vk::TextureUnit &activeTexture = mActiveTextures[textureUnit];
+        const bool isIncompleteTexture = texture == nullptr;
 
         // Null textures represent incomplete textures.
-        if (texture == nullptr)
+        if (isIncompleteTexture)
         {
             ANGLE_TRY(getIncompleteTexture(context, textureType, &texture));
         }
-        else if (shouldSwitchToReadOnlyDepthFeedbackLoopMode(context, texture))
+
+        TextureVk *textureVk = vk::GetImpl(texture);
+        ASSERT(textureVk != nullptr);
+
+        vk::TextureUnit &activeTexture = mActiveTextures[textureUnit];
+
+        // Special handling of texture buffers.  They have a buffer attached instead of an image.
+        if (textureType == gl::TextureType::Buffer)
+        {
+            activeTexture.texture = textureVk;
+            mActiveTexturesDesc.update(textureUnit, textureVk->getBufferViewSerial(),
+                                       vk::SamplerSerial());
+
+            continue;
+        }
+
+        if (!isIncompleteTexture && shouldSwitchToReadOnlyDepthFeedbackLoopMode(context, texture))
         {
             // The "readOnlyDepthMode" feature enables read-only depth-stencil feedback loops. We
             // only switch to "read-only" mode when there's loop. We track the depth-stencil access
@@ -3892,9 +3961,7 @@ angle::Result ContextVk::updateActiveTextures(const gl::Context *context)
             mDrawFramebuffer->setReadOnlyDepthFeedbackLoopMode(true);
         }
 
-        TextureVk *textureVk = vk::GetImpl(texture);
-        ASSERT(textureVk != nullptr);
-
+        gl::Sampler *sampler       = mState.getSampler(static_cast<uint32_t>(textureUnit));
         const SamplerVk *samplerVk = sampler ? vk::GetImpl(sampler) : nullptr;
 
         const vk::SamplerHelper &samplerHelper =
@@ -3912,7 +3979,7 @@ angle::Result ContextVk::updateActiveTextures(const gl::Context *context)
             ANGLE_TRY(textureVk->ensureMutable(this));
         }
 
-        vk::ImageViewSubresourceSerial imageViewSerial =
+        vk::ImageOrBufferViewSubresourceSerial imageViewSerial =
             textureVk->getImageViewSubresourceSerial(samplerState);
         mActiveTexturesDesc.update(textureUnit, imageViewSerial, samplerHelper.getSamplerSerial());
 
@@ -3963,10 +4030,51 @@ angle::Result ContextVk::updateActiveImages(const gl::Context *context,
             continue;
         }
 
-        TextureVk *textureVk   = vk::GetImpl(texture);
-        vk::ImageHelper *image = &textureVk->getImage();
-
+        TextureVk *textureVk          = vk::GetImpl(texture);
         mActiveImages[imageUnitIndex] = textureVk;
+
+        // The image should be flushed and ready to use at this point. There may still be
+        // lingering staged updates in its staging buffer for unused texture mip levels or
+        // layers. Therefore we can't verify it has no staged updates right here.
+        gl::ShaderBitSet shaderStages = activeImageShaderBits[imageUnitIndex];
+
+        // TODO: PPOs don't initialize mActiveImageShaderBits.  http://anglebug.com/5358
+        // Once that is fixed, the following if should be replaced with an assertion:
+        //
+        //     ASSERT(shaderStages.any());
+        if (shaderStages.none())
+        {
+            if (executable->isCompute())
+            {
+                shaderStages.set(gl::ShaderType::Compute);
+            }
+            else
+            {
+                shaderStages.set();
+                shaderStages.reset(gl::ShaderType::Compute);
+            }
+        }
+
+        // Special handling of texture buffers.  They have a buffer attached instead of an image.
+        if (texture->getType() == gl::TextureType::Buffer)
+        {
+            BufferVk *bufferVk       = vk::GetImpl(textureVk->getBuffer().get());
+            vk::BufferHelper &buffer = bufferVk->getBuffer();
+
+            // TODO: accept multiple stages in bufferWrite.  http://anglebug.com/3573
+            for (gl::ShaderType stage : shaderStages)
+            {
+                commandBufferHelper->bufferWrite(
+                    &mResourceUseList, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                    vk::GetPipelineStage(stage), vk::AliasingMode::Disallowed, &buffer);
+            }
+
+            textureVk->retainBufferViews(&mResourceUseList);
+
+            continue;
+        }
+
+        vk::ImageHelper *image = &textureVk->getImage();
 
         if (alreadyProcessed.find(image) != alreadyProcessed.end())
         {
@@ -3974,29 +4082,19 @@ angle::Result ContextVk::updateActiveImages(const gl::Context *context,
         }
         alreadyProcessed.insert(image);
 
-        // The image should be flushed and ready to use at this point. There may still be
-        // lingering staged updates in its staging buffer for unused texture mip levels or
-        // layers. Therefore we can't verify it has no staged updates right here.
         vk::ImageLayout imageLayout;
-        gl::ShaderBitSet shaderBits = activeImageShaderBits[imageUnitIndex];
-        if (shaderBits.any())
-        {
-            gl::ShaderType shader = static_cast<gl::ShaderType>(gl::ScanForward(shaderBits.bits()));
-            shaderBits.reset(shader);
-            // This is accessed by multiple shaders
-            if (shaderBits.any())
-            {
-                imageLayout = vk::ImageLayout::AllGraphicsShadersWrite;
-            }
-            else
-            {
-                imageLayout = kShaderWriteImageLayouts[shader];
-            }
-        }
-        else
+        gl::ShaderType shader = static_cast<gl::ShaderType>(gl::ScanForward(shaderStages.bits()));
+        shaderStages.reset(shader);
+        // This is accessed by multiple shaders
+        if (shaderStages.any())
         {
             imageLayout = vk::ImageLayout::AllGraphicsShadersWrite;
         }
+        else
+        {
+            imageLayout = kShaderWriteImageLayouts[shader];
+        }
+
         VkImageAspectFlags aspectFlags = image->getAspectFlags();
 
         uint32_t layerStart = 0;
@@ -4187,6 +4285,8 @@ angle::Result ContextVk::getTimestamp(uint64_t *timestampOut)
     ANGLE_TRY(timestampQueryPool.get().init(this, VK_QUERY_TYPE_TIMESTAMP, 1));
     ANGLE_TRY(timestampQueryPool.get().allocateQuery(this, &timestampQuery));
 
+    vk::ResourceUseList scratchResourceUseList;
+
     // Record the command buffer
     vk::DeviceScoped<vk::PrimaryCommandBuffer> commandBatch(device);
     vk::PrimaryCommandBuffer &commandBuffer = commandBatch.get();
@@ -4194,6 +4294,7 @@ angle::Result ContextVk::getTimestamp(uint64_t *timestampOut)
     ANGLE_TRY(mRenderer->getCommandBufferOneOff(this, &commandBuffer));
 
     timestampQuery.writeTimestampToPrimary(this, &commandBuffer);
+    timestampQuery.retain(&scratchResourceUseList);
     ANGLE_VK_TRY(this, commandBuffer.end());
 
     // Create fence for the submission
@@ -4222,6 +4323,7 @@ angle::Result ContextVk::getTimestamp(uint64_t *timestampOut)
     // Wait for the submission to finish.  Given no semaphores, there is hope that it would execute
     // in parallel with what's already running on the GPU.
     ANGLE_VK_TRY(this, fence.get().wait(device, mRenderer->getMaxFenceWaitTimeNs()));
+    scratchResourceUseList.releaseResourceUsesAndUpdateSerials(throwAwaySerial);
 
     // Get the query results
     ANGLE_TRY(timestampQuery.getUint64Result(this, timestampOut));

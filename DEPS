@@ -6,16 +6,8 @@
 use_relative_paths = True
 
 gclient_gn_args_file = 'build/config/gclient_args.gni'
-gclient_gn_args = [
-  'mac_xcode_version',
-]
 
 vars = {
-  # This can be overridden, e.g. with custom_vars, to download a nonstandard
-  # Xcode version in build/mac_toolchain.py instead of downloading the
-  # prebuilt pinned revision.
-  'mac_xcode_version': 'default',
-
   'android_git': 'https://android.googlesource.com',
   'chromium_git': 'https://chromium.googlesource.com',
   'chrome_internal_git': 'https://chrome-internal.googlesource.com',
@@ -28,13 +20,13 @@ vars = {
   'checkout_angle_internal': False,
 
   # Version of Chromium our Chromium-based DEPS are mirrored from.
-  'chromium_revision': '28c8eb1aa6b4994e3059f3d9ade6f4a0fc65d581',
+  'chromium_revision': '62214500294fa2ac3b972b8fcad6cee5022f1e95',
   # We never want to checkout chromium,
   # but need a dummy DEPS entry for the autoroller
   'dummy_checkout_chromium': False,
 
   # Current revision of VK-GL-CTS (a.k.a dEQP).
-  'vk_gl_cts_revision': '9e07e4424cd4b64ec55d0050185f93e94f38ed0d',
+  'vk_gl_cts_revision': '524e5bcfba33d1b8dede4b4ec1ec33d24ccf8d2c',
 
   # Current revision of glslang, the Khronos SPIRV compiler.
   'glslang_revision': '142cb87f803d42f5ae3dd2da8dff4f19f6f15e8c',
@@ -80,24 +72,24 @@ vars = {
   'spirv_headers_revision': '05836bdba63e7debce9fa9feaed42f20cd43af9d',
 
   # Current revision of SPIRV-Tools for Vulkan.
-  'spirv_tools_revision': '1cda495274bb3cb67b50ecd5de3ea9caf971e7c7',
+  'spirv_tools_revision': '671914c28e8249f0a555726a0f3f38691fe5c1df',
 
   # Current revision of Khronos Vulkan-Headers.
-  'vulkan_headers_revision': '670ffea9d61b9f4b8f68c919dab7caf33dfd9718',
+  'vulkan_headers_revision': '30e70cbd9850560cb55bffadb8017e90c04c42f5',
 
   # Current revision of Khronos Vulkan-Loader.
-  'vulkan_loader_revision': 'e2b55419a3708880026f84eef10a0ad601d2776b',
+  'vulkan_loader_revision': 'b54d55122868fa614df4b387045188ee31f97c07',
 
   # Current revision of Khronos Vulkan-Tools.
-  'vulkan_tools_revision': '67d0fc6389ffc3cc5802975f8b161f853c11a7ec',
+  'vulkan_tools_revision': '6ef69fbda85ba9a45602ac01cf96c59807561ee3',
 
   # Current revision of Khronos Vulkan-ValidationLayers.
-  'vulkan_validation_revision': '128608f6da3ae0d0a497569a42b7681704472903',
+  'vulkan_validation_revision': 'ec5cd38a0ca6824c1ee55ceeb796806412e3c10b',
 
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling catapult
   # and whatever else without interference from each other.
-  'catapult_revision': 'f92a7636da65f28dad15bc524e6b681d1c311de0',
+  'catapult_revision': '6e44bd85f3a3d28755833326fdc599afdc6b4274',
 
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling luci-go
@@ -108,7 +100,7 @@ vars = {
 deps = {
 
   'build': {
-    'url': '{chromium_git}/chromium/src/build.git@cc35ecde81d1d9aa94183343864c3e4b001850d1',
+    'url': '{chromium_git}/chromium/src/build.git@0e1eb49be66b859bf1cbbc4f08b971180c8bded6',
     'condition': 'not build_with_chromium',
   },
 
@@ -118,12 +110,12 @@ deps = {
   },
 
   'testing': {
-    'url': '{chromium_git}/chromium/src/testing@206a91f9876f97c6f1590a1d1876fbe0abb72e37',
+    'url': '{chromium_git}/chromium/src/testing@a71d13aa1cae3d3653f23abf7121fa061560b5d9',
     'condition': 'not build_with_chromium',
   },
 
   'third_party/abseil-cpp': {
-    'url': '{chromium_git}/chromium/src/third_party/abseil-cpp@57b05d3c2e554abc8367fe6682e3ffbbf1fe3e73',
+    'url': '{chromium_git}/chromium/src/third_party/abseil-cpp@207d48e407ee041bb2254d8246cd2031aa5e83e1',
     'condition': 'not build_with_chromium',
   },
 
@@ -198,7 +190,7 @@ deps = {
   },
 
   'third_party/protobuf': {
-    'url': '{chromium_git}/chromium/src/third_party/protobuf@eedd6353ca8239f3bcefd1143b4a2cc4a0c3b9dd',
+    'url': '{chromium_git}/chromium/src/third_party/protobuf@d2979b278f4139434a2cc16d833da2b28af5a847',
     'condition': 'not build_with_chromium',
   },
 
@@ -249,7 +241,7 @@ deps = {
   },
 
   'third_party/SwiftShader': {
-    'url': '{swiftshader_git}/SwiftShader@e4c1a25cc6797a47043fc415c53b8edcd7b3e37e',
+    'url': '{swiftshader_git}/SwiftShader@de9e649438ed3cc2ecf5c30ebf08f033d01270e6',
     'condition': 'not build_with_chromium',
   },
 
@@ -284,7 +276,7 @@ deps = {
   },
 
   'tools/clang': {
-    'url': '{chromium_git}/chromium/src/tools/clang.git@013c5b992aa88d5446a2b51f94f4ecdb1e19eb78',
+    'url': '{chromium_git}/chromium/src/tools/clang.git@2d30d8744f8824a7a7a26d726f16d2caf88be9f2',
     'condition': 'not build_with_chromium',
   },
 
@@ -319,7 +311,7 @@ deps = {
   },
 
   'tools/mb': {
-    'url': '{chromium_git}/chromium/src/tools/mb@0d3a3334ed3e38bf70b85e83b4f5c54d27ae471a',
+    'url': '{chromium_git}/chromium/src/tools/mb@a63101d578bdfeffa4c420d7d89a1bef54ce77b2',
     'condition': 'not build_with_chromium',
   },
 

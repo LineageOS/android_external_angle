@@ -24,12 +24,17 @@ namespace gl
 // This small structure encapsulates binding sampler uniforms to active GL textures.
 struct SamplerBinding
 {
-    SamplerBinding(TextureType textureTypeIn, SamplerFormat formatIn, size_t elementCount);
+    SamplerBinding(TextureType textureTypeIn,
+                   GLenum samplerTypeIn,
+                   SamplerFormat formatIn,
+                   size_t elementCount);
     SamplerBinding(const SamplerBinding &other);
     ~SamplerBinding();
 
     // Necessary for retrieving active textures from the GL state.
     TextureType textureType;
+
+    GLenum samplerType;
 
     SamplerFormat format;
 
@@ -40,10 +45,13 @@ struct SamplerBinding
 
 struct ImageBinding
 {
-    ImageBinding(size_t count);
-    ImageBinding(GLuint imageUnit, size_t count);
+    ImageBinding(size_t count, TextureType textureTypeIn);
+    ImageBinding(GLuint imageUnit, size_t count, TextureType textureTypeIn);
     ImageBinding(const ImageBinding &other);
     ~ImageBinding();
+
+    // Necessary for distinguishing between textures with images and texture buffers.
+    TextureType textureType;
 
     // List of all textures bound.
     // Cropped by the amount of unused elements reported by the driver.
@@ -177,6 +185,8 @@ class ProgramExecutable final : public angle::Subject
         return mActiveImageShaderBits;
     }
 
+    const ActiveTextureMask &getActiveYUVSamplers() const { return mActiveSamplerYUV; }
+
     const ActiveTextureArray<TextureType> &getActiveSamplerTypes() const
     {
         return mActiveSamplerTypes;
@@ -296,6 +306,8 @@ class ProgramExecutable final : public angle::Subject
     }
     int getLinkedShaderVersion(ShaderType shaderType) { return mLinkedShaderVersions[shaderType]; }
 
+    bool isYUVOutput() const;
+
   private:
     // TODO(timvp): http://anglebug.com/3570: Investigate removing these friend
     // class declarations and accessing the necessary members with getters/setters.
@@ -324,6 +336,7 @@ class ProgramExecutable final : public angle::Subject
     ActiveTextureMask mActiveSamplersMask;
     ActiveTextureArray<uint32_t> mActiveSamplerRefCounts;
     ActiveTextureArray<TextureType> mActiveSamplerTypes;
+    ActiveTextureMask mActiveSamplerYUV;
     ActiveTextureArray<SamplerFormat> mActiveSamplerFormats;
     ActiveTextureArray<ShaderBitSet> mActiveSamplerShaderBits;
 
@@ -337,6 +350,7 @@ class ProgramExecutable final : public angle::Subject
     // to uniforms.
     std::vector<sh::ShaderVariable> mOutputVariables;
     std::vector<VariableLocation> mOutputLocations;
+    bool mYUVOutput;
     // Vertex attributes, Fragment input varyings, etc.
     std::vector<sh::ShaderVariable> mProgramInputs;
     std::vector<TransformFeedbackVarying> mLinkedTransformFeedbackVaryings;
