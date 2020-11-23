@@ -183,15 +183,6 @@ class RendererVk : angle::NonCopyable
                                     const vk::Fence *fence,
                                     Serial *serialOut);
 
-    angle::Result newSharedFence(vk::Context *context, vk::Shared<vk::Fence> *sharedFenceOut);
-    inline void resetSharedFence(vk::Shared<vk::Fence> *sharedFenceIn)
-    {
-        std::lock_guard<std::mutex> lock(mFenceRecyclerMutex);
-        sharedFenceIn->resetAndRecycle(&mFenceRecycler);
-    }
-
-    angle::Result getNextSubmitFence(vk::Shared<vk::Fence> *sharedFenceOut, bool reset);
-
     template <typename... ArgsT>
     void collectGarbageAndReinit(vk::SharedResourceUse *use, ArgsT... garbageIn)
     {
@@ -281,20 +272,19 @@ class RendererVk : angle::NonCopyable
     SamplerYcbcrConversionCache &getYuvConversionCache() { return mYuvConversionCache; }
     vk::ActiveHandleCounter &getActiveHandleCounts() { return mActiveHandleCounts; }
 
-    // Queue commands to worker thread for processing
-    void queueCommand(vk::Context *context, vk::CommandProcessorTask *command)
-    {
-        mCommandProcessor.queueCommand(context, command);
-    }
-    bool hasPendingError() const { return mCommandProcessor.hasPendingError(); }
-    vk::Error getAndClearPendingError() { return mCommandProcessor.getAndClearPendingError(); }
-    void waitForCommandProcessorIdle(vk::Context *context)
+    // TODO(jmadill): Remove. b/172704839
+    angle::Result waitForCommandProcessorIdle(vk::Context *context)
     {
         ASSERT(getFeatures().asyncCommandQueue.enabled);
-        mCommandProcessor.waitForWorkComplete(context);
+        return mCommandProcessor.waitForWorkComplete(context);
     }
 
-    void finishAllWork(vk::Context *context) { mCommandProcessor.finishAllWork(context); }
+    // TODO(jmadill): Remove. b/172704839
+    angle::Result finishAllWork(vk::Context *context)
+    {
+        ASSERT(getFeatures().asyncCommandQueue.enabled);
+        return mCommandProcessor.finishAllWork(context);
+    }
 
     bool getEnableValidationLayers() const { return mEnableValidationLayers; }
 
@@ -315,7 +305,6 @@ class RendererVk : angle::NonCopyable
                               vk::GarbageList &&currentGarbage,
                               vk::CommandPool *commandPool);
 
-    void clearAllGarbage(vk::Context *context);
     void handleDeviceLost();
     angle::Result finishToSerial(vk::Context *context, Serial serial);
     angle::Result waitForSerialWithUserTimeout(vk::Context *context,
@@ -357,12 +346,6 @@ class RendererVk : angle::NonCopyable
     template <VkFormatFeatureFlags VkFormatProperties::*features>
     bool hasFormatFeatureBits(VkFormat format, const VkFormatFeatureFlags featureBits) const;
 
-    // Sync any errors from the command processor
-    void commandProcessorSyncErrors(vk::Context *context);
-    // Sync any error from worker thread and queue up next command for processing
-    void commandProcessorSyncErrorsAndQueueCommand(vk::Context *context,
-                                                   vk::CommandProcessorTask *command);
-
     egl::Display *mDisplay;
 
     mutable bool mCapsInitialized;
@@ -390,7 +373,6 @@ class RendererVk : angle::NonCopyable
     VkPhysicalDeviceSubgroupProperties mSubgroupProperties;
     VkPhysicalDeviceExternalMemoryHostPropertiesEXT mExternalMemoryHostProperties;
     VkPhysicalDeviceShaderFloat16Int8FeaturesKHR mShaderFloat16Int8Features;
-    VkPhysicalDeviceShaderAtomicFloatFeaturesEXT mShaderAtomicFloatFeature;
     VkPhysicalDeviceDepthStencilResolvePropertiesKHR mDepthStencilResolveProperties;
     VkExternalFenceProperties mExternalFenceProperties;
     VkExternalSemaphoreProperties mExternalSemaphoreProperties;
@@ -406,9 +388,6 @@ class RendererVk : angle::NonCopyable
     AtomicSerialFactory mShaderSerialFactory;
 
     bool mDeviceLost;
-
-    std::mutex mFenceRecyclerMutex;
-    vk::Recycler<vk::Fence> mFenceRecycler;
 
     std::mutex mGarbageMutex;
     vk::SharedGarbageList mSharedGarbage;
@@ -456,13 +435,8 @@ class RendererVk : angle::NonCopyable
     std::mutex mCommandBufferHelperFreeListMutex;
     std::vector<vk::CommandBufferHelper *> mCommandBufferHelperFreeList;
 
-    // Command Processor Thread
+    // Async Command Queue
     vk::CommandProcessor mCommandProcessor;
-    std::thread mCommandProcessorThread;
-    // mNextSubmitFence is the fence that's going to be signaled at the next submission.  This is
-    // used to support SyncVk objects, which may outlive the context (as EGLSync objects).
-    vk::Shared<vk::Fence> mNextSubmitFence;
-    std::mutex mNextSubmitFenceMutex;
 
     // track whether we initialized (or released) glslang
     bool mGlslangInitialized;

@@ -292,6 +292,7 @@
     void getTranslatedShaderSource(ShaderProgramID shaderPacked, GLsizei bufsize, GLsizei *length, \
                                    GLchar *source);                                                \
     /* GL_EXT_EGL_image_array */                                                                   \
+    /* GL_EXT_YUV_target */                                                                        \
     /* GL_EXT_blend_func_extended */                                                               \
     void bindFragDataLocation(ShaderProgramID programPacked, GLuint color, const GLchar *name);    \
     void bindFragDataLocationIndexed(ShaderProgramID programPacked, GLuint colorNumber,            \
@@ -384,6 +385,8 @@
                        const TextureID *texturesPacked, const GLenum *srcLayouts);                 \
     /* GL_EXT_semaphore_fd */                                                                      \
     void importSemaphoreFd(SemaphoreID semaphorePacked, HandleType handleTypePacked, GLint fd);    \
+    /* GL_EXT_separate_shader_objects */                                                           \
+    /* GL_EXT_tessellation_shader */                                                               \
     /* GL_EXT_texture_buffer */                                                                    \
     /* GL_EXT_texture_compression_bptc */                                                          \
     /* GL_EXT_texture_compression_dxt1 */                                                          \

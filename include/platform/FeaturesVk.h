@@ -347,14 +347,6 @@ struct FeaturesVk : FeatureSetBase
                                      "and has the shaderFloat16 feature",
                                      &members, "http://anglebug.com/4551"};
 
-    // Whether the VkDevice supports the VK_EXT_shader_atomic_flat extension and has the
-    // shaderImageFloat32Atomics feature
-    Feature supportsShaderImageFloat32Atomics = {
-        "supportsShaderImageFloat32Atomics", FeatureCategory::VulkanFeatures,
-        "VkDevice supports the VK_EXT_shader_atomic_float extension and has the "
-        "shaderImageFloat32Atomics feature.",
-        &members, "http://anglebug.com/3578"};
-
     // Some devices don't meet the limits required to perform mipmap generation using the built-in
     // compute shader.  On some other devices, VK_IMAGE_USAGE_STORAGE_BIT is detrimental to
     // performance, making this solution impractical.
@@ -447,6 +439,13 @@ struct FeaturesVk : FeatureSetBase
     Feature emulatedPrerotation270 = {"emulatedPrerotation270", FeatureCategory::VulkanFeatures,
                                       "Emulate 270-degree prerotation.", &members,
                                       "http://anglebug.com/4901"};
+
+    // Whether we should use driver uniforms over specialization constants for some shader
+    // modifications like yflip and rotation.
+    Feature forceDriverUniformOverSpecConst = {
+        "forceDriverUniformOverSpecConst", FeatureCategory::VulkanWorkarounds,
+        "Forces using driver uniforms instead of specialization constants.", &members,
+        "http://issuetracker.google.com/173636783"};
 };
 
 inline FeaturesVk::FeaturesVk()  = default;

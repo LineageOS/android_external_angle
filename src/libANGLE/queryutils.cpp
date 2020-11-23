@@ -227,7 +227,7 @@ void QueryTexLevelParameterBase(const Texture *texture,
             break;
         case GL_TEXTURE_BUFFER_SIZE:
             *params = CastFromStateValue<ParamType>(
-                pname, static_cast<GLint>(texture->getBuffer().getSize()));
+                pname, static_cast<GLint>(GetBoundBufferAvailableSize(texture->getBuffer())));
             break;
         default:
             UNREACHABLE();
@@ -364,6 +364,10 @@ void QueryTexParameterBase(const Context *context,
         case GL_RESOURCE_INITIALIZED_ANGLE:
             *params = CastFromGLintStateValue<ParamType>(
                 pname, texture->initState() == InitState::Initialized);
+            break;
+        case GL_REQUIRED_TEXTURE_IMAGE_UNITS_OES:
+            *params = CastFromGLintStateValue<ParamType>(
+                pname, texture->getRequiredTextureImageUnits(context));
             break;
         default:
             UNREACHABLE();
