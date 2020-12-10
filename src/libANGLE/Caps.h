@@ -397,6 +397,9 @@ struct Extensions
     // EXT_debug_marker
     bool debugMarker = false;
 
+    // EXT_debug_label
+    bool debugLabel = false;
+
     // GL_OES_EGL_image
     bool eglImageOES = false;
 
@@ -562,6 +565,9 @@ struct Extensions
     // GL_OES_draw_texture
     bool drawTextureOES = false;
 
+    // GL_OES_framebuffer_object
+    bool framebufferObjectOES = false;
+
     // EGL_ANGLE_explicit_context GL subextensions
     // GL_ANGLE_explicit_context_gles1
     bool explicitContextGles1 = false;
@@ -626,6 +632,13 @@ struct Extensions
 
     // GL_EXT_shader_non_constant_global_initializers
     bool shaderNonConstGlobalInitializersEXT = false;
+
+    // GL_OES_shader_io_blocks
+    bool shaderIoBlocksOES = false;
+    // GL_EXT_shader_io_blocks
+    bool shaderIoBlocksEXT = false;
+    // Any version of shader io block extension
+    bool shaderIoBlocksAny() const { return (shaderIoBlocksOES || shaderIoBlocksEXT); }
 
     // GL_EXT_gpu_shader5
     bool gpuShader5EXT = false;
@@ -989,9 +1002,6 @@ struct DisplayExtensions
     // EGL_KHR_create_context
     bool createContext = false;
 
-    // EGL_EXT_device_query
-    bool deviceQuery = false;
-
     // EGL_KHR_image
     bool image = false;
 
@@ -1266,6 +1276,9 @@ struct ClientExtensions
 
     // EGL_ANGLE_platform_angle_device_type_egl_angle
     bool platformANGLEDeviceTypeEGLANGLE = false;
+
+    // EGL_EXT_device_query
+    bool deviceQueryEXT = false;
 };
 
 }  // namespace egl

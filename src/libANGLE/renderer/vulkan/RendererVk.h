@@ -53,6 +53,31 @@ struct Format;
 
 static constexpr size_t kMaxExtensionNames = 200;
 using ExtensionNameList                    = angle::FixedVector<const char *, kMaxExtensionNames>;
+
+// Process GPU memory reports
+class MemoryReport final : angle::NonCopyable
+{
+  public:
+    MemoryReport();
+    void processCallback(const VkDeviceMemoryReportCallbackDataEXT &callbackData, bool logCallback);
+    void logMemoryReportStats() const;
+
+  private:
+    struct MemorySizes
+    {
+        VkDeviceSize allocatedMemory;
+        VkDeviceSize allocatedMemoryMax;
+        VkDeviceSize importedMemory;
+        VkDeviceSize importedMemoryMax;
+    };
+    mutable std::mutex mMemoryReportMutex;
+    VkDeviceSize mCurrentTotalAllocatedMemory;
+    VkDeviceSize mMaxTotalAllocatedMemory;
+    angle::HashMap<VkObjectType, MemorySizes> mSizesPerType;
+    VkDeviceSize mCurrentTotalImportedMemory;
+    VkDeviceSize mMaxTotalImportedMemory;
+    angle::HashMap<uint64_t, int> mUniqueIDCounts;
+};
 }  // namespace vk
 
 // Supports one semaphore from current surface, and one semaphore passed to
@@ -161,6 +186,9 @@ class RendererVk : angle::NonCopyable
     // device (first time only).
     bool hasLinearImageFormatFeatureBits(VkFormat format,
                                          const VkFormatFeatureFlags featureBits) const;
+    VkFormatFeatureFlags getLinearImageFormatFeatureBits(
+        VkFormat format,
+        const VkFormatFeatureFlags featureBits) const;
     VkFormatFeatureFlags getImageFormatFeatureBits(VkFormat format,
                                                    const VkFormatFeatureFlags featureBits) const;
     bool hasImageFormatFeatureBits(VkFormat format, const VkFormatFeatureFlags featureBits) const;
@@ -181,6 +209,7 @@ class RendererVk : angle::NonCopyable
                                     vk::PrimaryCommandBuffer &&primary,
                                     egl::ContextPriority priority,
                                     const vk::Fence *fence,
+                                    vk::SubmitPolicy submitPolicy,
                                     Serial *serialOut);
 
     template <typename... ArgsT>
@@ -294,6 +323,8 @@ class RendererVk : angle::NonCopyable
 
     void outputVmaStatString();
 
+    bool haveSameFormatFeatureBits(VkFormat fmt1, VkFormat fmt2) const;
+
     angle::Result cleanupGarbage(Serial lastCompletedQueueSerial);
 
     angle::Result submitFrame(vk::Context *context,
@@ -326,6 +357,13 @@ class RendererVk : angle::NonCopyable
 
     vk::CommandBufferHelper *getCommandBufferHelper(bool hasRenderPass);
     void recycleCommandBufferHelper(vk::CommandBufferHelper *commandBuffer);
+
+    // Process GPU memory reports
+    void processMemoryReportCallback(const VkDeviceMemoryReportCallbackDataEXT &callbackData)
+    {
+        bool logCallback = getFeatures().logMemoryReportCallbacks.enabled;
+        mMemoryReport.processCallback(callbackData, logCallback);
+    }
 
   private:
     angle::Result initializeDevice(DisplayVk *displayVk, uint32_t queueFamilyIndex);
@@ -371,6 +409,8 @@ class RendererVk : angle::NonCopyable
     VkPhysicalDeviceTransformFeedbackFeaturesEXT mTransformFeedbackFeatures;
     VkPhysicalDeviceIndexTypeUint8FeaturesEXT mIndexTypeUint8Features;
     VkPhysicalDeviceSubgroupProperties mSubgroupProperties;
+    VkPhysicalDeviceDeviceMemoryReportFeaturesEXT mMemoryReportFeatures;
+    VkDeviceDeviceMemoryReportCreateInfoEXT mMemoryReportCallback;
     VkPhysicalDeviceExternalMemoryHostPropertiesEXT mExternalMemoryHostProperties;
     VkPhysicalDeviceShaderFloat16Int8FeaturesKHR mShaderFloat16Int8Features;
     VkPhysicalDeviceDepthStencilResolvePropertiesKHR mDepthStencilResolveProperties;
@@ -448,6 +488,9 @@ class RendererVk : angle::NonCopyable
 
     // Tracks resource serials.
     vk::ResourceSerialFactory mResourceSerialFactory;
+
+    // Process GPU memory reports
+    vk::MemoryReport mMemoryReport;
 };
 
 }  // namespace rx

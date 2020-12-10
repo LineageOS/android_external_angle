@@ -167,6 +167,8 @@ void InitBuiltInResources(ShBuiltInResources *resources)
     resources->EXT_YUV_target                              = 0;
     resources->EXT_geometry_shader                         = 0;
     resources->EXT_gpu_shader5                             = 0;
+    resources->OES_shader_io_blocks                        = 0;
+    resources->EXT_shader_io_blocks                        = 0;
     resources->EXT_shader_non_constant_global_initializers = 0;
     resources->NV_shader_noperspective_interpolation       = 0;
     resources->OES_texture_storage_multisample_2d_array    = 0;
@@ -622,6 +624,18 @@ const std::map<std::string, unsigned int> *GetUniformRegisterMap(const ShHandle 
     ASSERT(translator);
 
     return translator->getUniformRegisterMap();
+#else
+    return nullptr;
+#endif  // ANGLE_ENABLE_HLSL
+}
+
+const std::set<std::string> *GetSlowCompilingUniformBlockSet(const ShHandle handle)
+{
+#ifdef ANGLE_ENABLE_HLSL
+    TranslatorHLSL *translator = GetTranslatorHLSLFromHandle(handle);
+    ASSERT(translator);
+
+    return translator->getSlowCompilingUniformBlockSet();
 #else
     return nullptr;
 #endif  // ANGLE_ENABLE_HLSL

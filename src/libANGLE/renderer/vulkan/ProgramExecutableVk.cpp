@@ -227,6 +227,7 @@ std::unique_ptr<rx::LinkEvent> ProgramExecutableVk::load(gl::BinaryInputStream *
             info->xfbOffset               = stream->readInt<uint32_t>();
             info->xfbStride               = stream->readInt<uint32_t>();
             info->useRelaxedPrecision     = stream->readBool();
+            info->varyingIsInput          = stream->readBool();
             info->varyingIsOutput         = stream->readBool();
             info->attributeComponentCount = stream->readInt<uint8_t>();
             info->attributeLocationCount  = stream->readInt<uint8_t>();
@@ -254,6 +255,7 @@ void ProgramExecutableVk::save(gl::BinaryOutputStream *stream)
             stream->writeInt(it.second.xfbOffset);
             stream->writeInt(it.second.xfbStride);
             stream->writeBool(it.second.useRelaxedPrecision);
+            stream->writeBool(it.second.varyingIsInput);
             stream->writeBool(it.second.varyingIsOutput);
             stream->writeInt(it.second.attributeComponentCount);
             stream->writeInt(it.second.attributeLocationCount);
@@ -286,20 +288,6 @@ ProgramVk *ProgramExecutableVk::getShaderProgram(const gl::State &glState,
     }
 
     return nullptr;
-}
-
-SpecConstUsageBits ProgramExecutableVk::getSpecConstUsageBits() const
-{
-    if (mProgram)
-    {
-        return mProgram->getState().getSpecConstUsageBits();
-    }
-    else if (mProgramPipeline)
-    {
-        return mProgramPipeline->getState().getSpecConstUsageBits();
-    }
-
-    return SpecConstUsageBits();
 }
 
 // TODO: http://anglebug.com/3570: Move/Copy all of the necessary information into
@@ -677,11 +665,10 @@ angle::Result ProgramExecutableVk::getGraphicsPipeline(
     ASSERT(glExecutable && !glExecutable->isCompute());
 
     mTransformOptions.enableLineRasterEmulation = contextVk->isBresenhamEmulationEnabled(mode);
-    mTransformOptions.surfaceRotation           = static_cast<uint8_t>(desc.getSurfaceRotation());
+    mTransformOptions.surfaceRotation           = ToUnderlying(desc.getSurfaceRotation());
 
     // This must be called after mTransformOptions have been set.
     ProgramInfo &programInfo = getGraphicsProgramInfo(mTransformOptions);
-
     for (const gl::ShaderType shaderType : glExecutable->getLinkedShaderStages())
     {
         ProgramVk *programVk = getShaderProgram(glState, shaderType);
@@ -694,6 +681,17 @@ angle::Result ProgramExecutableVk::getGraphicsPipeline(
 
     vk::ShaderProgramHelper *shaderProgram = programInfo.getShaderProgram();
     ASSERT(shaderProgram);
+
+    // Drawable size is part of specialization constant, but does not have its own dedicated
+    // programInfo entry. We pick the programInfo entry based on the mTransformOptions and then
+    // update drawable width/height specialization constant. It will go through desc matching and if
+    // spec constant does not match, it will recompile pipeline program.
+    const vk::PackedExtent &dimensions = desc.getDrawableSize();
+    shaderProgram->setSpecializationConstant(sh::vk::SpecializationConstantId::DrawableWidth,
+                                             dimensions.width);
+    shaderProgram->setSpecializationConstant(sh::vk::SpecializationConstantId::DrawableHeight,
+                                             dimensions.height);
+
     ANGLE_TRY(renderer->getPipelineCache(&pipelineCache));
     return shaderProgram->getGraphicsPipeline(
         contextVk, &contextVk->getRenderPassCache(), *pipelineCache, getPipelineLayout(), desc,
@@ -927,7 +925,7 @@ void ProgramExecutableVk::resolvePrecisionMismatch(const gl::ProgramMergedVaryin
                     // The output is lower precision than the input, adjust the input
                     info = &mVariableInfoMap[mergedVarying.backShaderStage]
                                             [mergedVarying.backShader->mappedName];
-                    info->varyingIsOutput     = false;
+                    info->varyingIsInput      = true;
                     info->useRelaxedPrecision = true;
                 }
             }
@@ -1197,7 +1195,7 @@ angle::Result ProgramExecutableVk::updateImagesDescriptorSet(
     const gl::ActiveTextureArray<TextureVk *> &activeImages = contextVk->getActiveImages();
 
     bool useOldRewriteStructSamplers = contextVk->useOldRewriteStructSamplers();
-    std::unordered_map<std::string, uint32_t> mappedImageNameToArrayOffset;
+    angle::HashMap<std::string, uint32_t> mappedImageNameToArrayOffset;
 
     // Write images.
     for (uint32_t imageIndex = 0; imageIndex < imageBindings.size(); ++imageIndex)
@@ -1453,7 +1451,7 @@ angle::Result ProgramExecutableVk::updateTexturesDescriptorSet(ContextVk *contex
 
     for (const gl::ShaderType shaderType : executable->getLinkedShaderStages())
     {
-        std::unordered_map<std::string, uint32_t> mappedSamplerNameToArrayOffset;
+        angle::HashMap<std::string, uint32_t> mappedSamplerNameToArrayOffset;
         const gl::ProgramState *programState = programStates[shaderType];
         ASSERT(programState);
         for (uint32_t textureIndex = 0; textureIndex < programState->getSamplerBindings().size();

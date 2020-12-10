@@ -64,6 +64,13 @@ struct FeaturesVk : FeatureSetBase
         "The point size range reported from the API is inconsistent with the actual behavior",
         &members, "http://anglebug.com/2970"};
 
+    // On some NVIDIA drivers the depth value is not clamped to [0,1] for floating point depth
+    // buffers. This is NVIDIA bug 3171019, see http://anglebug.com/3970 for details.
+    Feature depthClamping = {
+        "depth_clamping", FeatureCategory::VulkanWorkarounds,
+        "The depth value is not clamped to [0,1] for floating point depth buffers.", &members,
+        "http://anglebug.com/3970"};
+
     // On some android devices, the memory barrier between the compute shader that converts vertex
     // attributes and the vertex shader that reads from it is ineffective.  Only known workaround is
     // to perform a flush after the conversion.  http://anglebug.com/3016
@@ -293,6 +300,17 @@ struct FeaturesVk : FeatureSetBase
         "Fill new allocations with non-zero values to flush out errors.", &members,
         "http://anglebug.com/4384"};
 
+    // Whether to log each callback from the VK_EXT_device_memory_report extension.  This feature is
+    // used for trying to debug GPU memory leaks.
+    Feature logMemoryReportCallbacks = {"logMemoryReportCallbacks", FeatureCategory::VulkanFeatures,
+                                        "Log each callback from VK_EXT_device_memory_report",
+                                        &members};
+
+    // Whether to log statistics from the VK_EXT_device_memory_report extension each eglSwapBuffer.
+    Feature logMemoryReportStats = {"logMemoryReportStats", FeatureCategory::VulkanFeatures,
+                                    "Log stats from VK_EXT_device_memory_report each swap",
+                                    &members};
+
     // Allocate a "shadow" buffer for GL buffer objects. For GPU-read only buffers
     // glMap* latency can be reduced by maintaining a copy of the buffer which is
     // writeable only by the CPU. We then return this shadow buffer on glMap* calls.
@@ -446,6 +464,14 @@ struct FeaturesVk : FeatureSetBase
         "forceDriverUniformOverSpecConst", FeatureCategory::VulkanWorkarounds,
         "Forces using driver uniforms instead of specialization constants.", &members,
         "http://issuetracker.google.com/173636783"};
+
+    // Whether non-conformant configurations and extensions should be exposed.  When an extension is
+    // in development, or a GLES version is not supported on a device, we may still want to expose
+    // them for partial testing.  This feature is enabled by our test harness.
+    Feature exposeNonConformantExtensionsAndVersions = {
+        "exposeNonConformantExtensionsAndVersions", FeatureCategory::VulkanWorkarounds,
+        "Expose GLES versions and extensions that are not conformant.", &members,
+        "http://anglebug.com/5375"};
 };
 
 inline FeaturesVk::FeaturesVk()  = default;

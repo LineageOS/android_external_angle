@@ -328,6 +328,8 @@ void TParseVersions::initializeExtensionBehavior()
     extensionBehavior[E_GL_EXT_blend_func_extended]         = EBhDisable;
     extensionBehavior[E_GL_EXT_shader_implicit_conversions] = EBhDisable;
     extensionBehavior[E_GL_EXT_fragment_shading_rate]       = EBhDisable;
+    extensionBehavior[E_GL_EXT_shader_image_int64]   = EBhDisable;
+    extensionBehavior[E_GL_EXT_terminate_invocation]        = EBhDisable;
 
     // OVR extensions
     extensionBehavior[E_GL_OVR_multiview]                = EBhDisable;
@@ -410,7 +412,7 @@ void TParseVersions::getPreamble(std::string& preamble)
                 preamble += "#define GL_NV_shader_noperspective_interpolation 1\n";
             }
 
-    } else {
+    } else { // !isEsProfile()
         preamble =
             "#define GL_FRAGMENT_PRECISION_HIGH 1\n"
             "#define GL_ARB_texture_rectangle 1\n"
@@ -477,6 +479,7 @@ void TParseVersions::getPreamble(std::string& preamble)
             "#define GL_KHR_shader_subgroup_clustered 1\n"
             "#define GL_KHR_shader_subgroup_quad 1\n"
 
+            "#define GL_EXT_shader_image_int64 1\n"
             "#define GL_EXT_shader_atomic_int64 1\n"
             "#define GL_EXT_shader_realtime_clock 1\n"
             "#define GL_EXT_ray_tracing 1\n"
@@ -560,6 +563,11 @@ void TParseVersions::getPreamble(std::string& preamble)
             "#define GL_GOOGLE_cpp_style_line_directive 1\n"
             "#define GL_GOOGLE_include_directive 1\n"
             "#define GL_KHR_blend_equation_advanced 1\n"
+            ;
+
+    // other general extensions
+    preamble +=
+            "#define GL_EXT_terminate_invocation 1\n"
             ;
 #endif
 

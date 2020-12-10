@@ -462,7 +462,7 @@ SurfaceImpl *DisplayGLX::createPixmapSurface(const egl::SurfaceState &state,
     return new PixmapSurfaceGLX(state, nativePixmap, mGLX.getDisplay(), mGLX, fbConfig);
 }
 
-egl::Error DisplayGLX::validatePixmap(egl::Config *config,
+egl::Error DisplayGLX::validatePixmap(const egl::Config *config,
                                       EGLNativePixmapType pixmap,
                                       const egl::AttributeMap &attributes) const
 {
@@ -493,12 +493,6 @@ ContextImpl *DisplayGLX::createContext(const gl::State &state,
     RobustnessVideoMemoryPurgeStatus robustnessVideoMemoryPurgeStatus =
         GetRobustnessVideoMemoryPurge(attribs);
     return new ContextGL(state, errorSet, mRenderer, robustnessVideoMemoryPurgeStatus);
-}
-
-DeviceImpl *DisplayGLX::createDevice()
-{
-    UNIMPLEMENTED();
-    return nullptr;
 }
 
 egl::Error DisplayGLX::initializeContext(glx::FBConfig config,
@@ -902,6 +896,7 @@ void DisplayGLX::generateExtensions(egl::DisplayExtensions *outExtensions) const
     outExtensions->displaySemaphoreShareGroup = true;
 
     outExtensions->surfacelessContext = true;
+    outExtensions->windowFixedSize    = true;
 
     if (!mRenderer->getFeatures().disableSyncControlSupport.enabled)
     {
