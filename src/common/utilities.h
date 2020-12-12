@@ -62,6 +62,12 @@ int AllocateFirstFreeBits(unsigned int *bits, unsigned int allocationSize, unsig
 // outSubscripts.
 std::string ParseResourceName(const std::string &name, std::vector<unsigned int> *outSubscripts);
 
+bool IsBuiltInName(const char *name);
+ANGLE_INLINE bool IsBuiltInName(const std::string &name)
+{
+    return IsBuiltInName(name.c_str());
+}
+
 // Strips only the last array index from a resource name.
 std::string StripLastArrayIndex(const std::string &name);
 
@@ -238,6 +244,9 @@ enum class SrgbOverride
     SRGB,
     Linear
 };
+
+ShaderType GetShaderTypeFromBitfield(size_t singleShaderType);
+bool ShaderTypeSupportsTransformFeedback(ShaderType shaderType);
 
 }  // namespace gl
 

@@ -26,7 +26,7 @@
 
 // Version number for shader translation API.
 // It is incremented every time the API changes.
-#define ANGLE_SH_VERSION 245
+#define ANGLE_SH_VERSION 246
 
 enum ShShaderSpec
 {
@@ -400,6 +400,8 @@ struct ShBuiltInResources
     int EXT_multisampled_render_to_texture2;
     int EXT_YUV_target;
     int EXT_geometry_shader;
+    int OES_shader_io_blocks;
+    int EXT_shader_io_blocks;
     int EXT_gpu_shader5;
     int EXT_shader_non_constant_global_initializers;
     int OES_texture_storage_multisample_2d_array;
@@ -757,6 +759,7 @@ bool GetUniformBlockRegister(const ShHandle handle,
 
 bool ShouldUniformBlockUseStructuredBuffer(const ShHandle handle,
                                            const std::string &uniformBlockName);
+const std::set<std::string> *GetSlowCompilingUniformBlockSet(const ShHandle handle);
 
 // Gives a map from uniform names to compiler-assigned registers in the default uniform block.
 // Note that the map contains also registers of samplers that have been extracted from structs.
@@ -813,8 +816,10 @@ enum class SpecializationConstantId : uint32_t
 {
     LineRasterEmulation = 0,
     SurfaceRotation     = 1,
+    DrawableWidth       = 2,
+    DrawableHeight      = 3,
 
-    InvalidEnum = 2,
+    InvalidEnum = 4,
     EnumCount   = InvalidEnum,
 };
 
@@ -838,8 +843,9 @@ enum class SpecConstUsage : uint32_t
     LineRasterEmulation = 0,
     YFlip               = 1,
     Rotation            = 2,
+    DrawableSize        = 3,
 
-    InvalidEnum = 3,
+    InvalidEnum = 4,
     EnumCount   = InvalidEnum,
 };
 

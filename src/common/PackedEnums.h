@@ -187,15 +187,8 @@ struct AllCubeFaceTextureTargets
     angle::EnumIterator<TextureTarget> end() const { return kAfterCubeMapTextureTargetMax; }
 };
 
-constexpr ShaderType kGLES2ShaderTypeMin = ShaderType::Vertex;
-constexpr ShaderType kGLES2ShaderTypeMax = ShaderType::Fragment;
-constexpr ShaderType kAfterGLES2ShaderTypeMax =
-    static_cast<ShaderType>(static_cast<uint8_t>(kGLES2ShaderTypeMax) + 1);
-struct AllGLES2ShaderTypes
-{
-    angle::EnumIterator<ShaderType> begin() const { return kGLES2ShaderTypeMin; }
-    angle::EnumIterator<ShaderType> end() const { return kAfterGLES2ShaderTypeMax; }
-};
+constexpr std::array<ShaderType, 2> kAllGLES2ShaderTypes = {ShaderType::Vertex,
+                                                            ShaderType::Fragment};
 
 constexpr ShaderType kShaderTypeMin = ShaderType::Vertex;
 constexpr ShaderType kShaderTypeMax = ShaderType::Compute;
@@ -243,9 +236,10 @@ enum class PrimitiveMode : uint8_t
     LineStripAdjacency     = 0xB,
     TrianglesAdjacency     = 0xC,
     TriangleStripAdjacency = 0xD,
+    Patches                = 0xE,
 
-    InvalidEnum = 0xE,
-    EnumCount   = 0xE,
+    InvalidEnum = 0xF,
+    EnumCount   = 0xF,
 };
 
 template <>
@@ -737,7 +731,7 @@ inline GLuint GetIDValue(ResourceIDType id)
 
 // First case: handling packed enums.
 template <typename EnumT, typename FromT>
-typename std::enable_if<std::is_enum<EnumT>::value, EnumT>::type FromGL(FromT from)
+typename std::enable_if<std::is_enum<EnumT>::value, EnumT>::type PackParam(FromT from)
 {
     return FromGLenum<EnumT>(from);
 }
@@ -745,7 +739,7 @@ typename std::enable_if<std::is_enum<EnumT>::value, EnumT>::type FromGL(FromT fr
 // Second case: handling non-pointer resource ids.
 template <typename EnumT, typename FromT>
 typename std::enable_if<!std::is_pointer<FromT>::value && !std::is_enum<EnumT>::value, EnumT>::type
-FromGL(FromT from)
+PackParam(FromT from)
 {
     return {from};
 }
@@ -753,7 +747,7 @@ FromGL(FromT from)
 // Third case: handling pointer resource ids.
 template <typename EnumT, typename FromT>
 typename std::enable_if<std::is_pointer<FromT>::value && !std::is_enum<EnumT>::value, EnumT>::type
-FromGL(FromT from)
+PackParam(FromT from)
 {
     return reinterpret_cast<EnumT>(from);
 }

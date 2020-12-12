@@ -12,8 +12,8 @@
 
 #include "libGLESv2/proc_table_egl.h"
 
-#include "libGLESv2/entry_points_egl.h"
-#include "libGLESv2/entry_points_egl_ext.h"
+#include "libGLESv2/entry_points_egl_autogen.h"
+#include "libGLESv2/entry_points_egl_ext_autogen.h"
 #include "libGLESv2/entry_points_gles_1_0_autogen.h"
 #include "libGLESv2/entry_points_gles_2_0_autogen.h"
 #include "libGLESv2/entry_points_gles_3_0_autogen.h"
@@ -742,6 +742,8 @@ const ProcEntry g_procTable[] = {
     {"glGetMultisamplefvRobustANGLEContextANGLE", P(gl::GetMultisamplefvRobustANGLEContextANGLE)},
     {"glGetObjectLabel", P(gl::GetObjectLabel)},
     {"glGetObjectLabelContextANGLE", P(gl::GetObjectLabelContextANGLE)},
+    {"glGetObjectLabelEXT", P(gl::GetObjectLabelEXT)},
+    {"glGetObjectLabelEXTContextANGLE", P(gl::GetObjectLabelEXTContextANGLE)},
     {"glGetObjectLabelKHR", P(gl::GetObjectLabelKHR)},
     {"glGetObjectLabelKHRContextANGLE", P(gl::GetObjectLabelKHRContextANGLE)},
     {"glGetObjectPtrLabel", P(gl::GetObjectPtrLabel)},
@@ -1054,6 +1056,8 @@ const ProcEntry g_procTable[] = {
     {"glIsVertexArrayContextANGLE", P(gl::IsVertexArrayContextANGLE)},
     {"glIsVertexArrayOES", P(gl::IsVertexArrayOES)},
     {"glIsVertexArrayOESContextANGLE", P(gl::IsVertexArrayOESContextANGLE)},
+    {"glLabelObjectEXT", P(gl::LabelObjectEXT)},
+    {"glLabelObjectEXTContextANGLE", P(gl::LabelObjectEXTContextANGLE)},
     {"glLightModelf", P(gl::LightModelf)},
     {"glLightModelfContextANGLE", P(gl::LightModelfContextANGLE)},
     {"glLightModelfv", P(gl::LightModelfv)},
@@ -1731,5 +1735,5 @@ const ProcEntry g_procTable[] = {
     {"glWeightPointerOES", P(gl::WeightPointerOES)},
     {"glWeightPointerOESContextANGLE", P(gl::WeightPointerOESContextANGLE)}};
 
-const size_t g_numProcs = 1633;
+const size_t g_numProcs = 1637;
 }  // namespace egl

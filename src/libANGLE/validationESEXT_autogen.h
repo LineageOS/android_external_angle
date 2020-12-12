@@ -796,6 +796,19 @@ bool ValidateCopyImageSubDataEXT(const Context *context,
                                  GLsizei srcHeight,
                                  GLsizei srcDepth);
 
+// GL_EXT_debug_label
+bool ValidateGetObjectLabelEXT(const Context *context,
+                               GLenum type,
+                               GLuint object,
+                               GLsizei bufSize,
+                               const GLsizei *length,
+                               const GLchar *label);
+bool ValidateLabelObjectEXT(const Context *context,
+                            GLenum type,
+                            GLuint object,
+                            GLsizei length,
+                            const GLchar *label);
+
 // GL_EXT_debug_marker
 bool ValidateInsertEventMarkerEXT(const Context *context, GLsizei length, const GLchar *marker);
 bool ValidatePopGroupMarkerEXT(const Context *context);
@@ -1303,6 +1316,8 @@ bool ValidateUseProgramStagesEXT(const Context *context,
                                  ShaderProgramID programPacked);
 bool ValidateValidateProgramPipelineEXT(const Context *context, ProgramPipelineID pipelinePacked);
 
+// GL_EXT_shader_io_blocks
+
 // GL_EXT_tessellation_shader
 bool ValidatePatchParameteriEXT(const Context *context, GLenum pname, GLint value);
 
@@ -1629,6 +1644,8 @@ bool ValidateQueryMatrixxOES(const Context *context,
 
 // GL_OES_sample_shading
 bool ValidateMinSampleShadingOES(const Context *context, GLfloat value);
+
+// GL_OES_shader_io_blocks
 
 // GL_OES_texture_3D
 bool ValidateCompressedTexImage3DOES(const Context *context,

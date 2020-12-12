@@ -9,6 +9,7 @@
 #include "util/EGLWindow.h"
 #include "util/gles_loader_autogen.h"
 #include "util/random_utils.h"
+#include "util/test_utils.h"
 
 using namespace angle;
 
@@ -81,6 +82,8 @@ class TransformFeedbackTest : public TransformFeedbackTestBase
     }
 
     void setupOverrunTest(const std::vector<GLfloat> &vertices);
+
+    void midRecordOpDoesNotContributeTest(std::function<void()> op);
 };
 
 TEST_P(TransformFeedbackTest, ZeroSizedViewport)
@@ -100,8 +103,7 @@ TEST_P(TransformFeedbackTest, ZeroSizedViewport)
     glBeginTransformFeedback(GL_TRIANGLES);
 
     // Create a query to check how many primitives were written
-    GLuint primitivesWrittenQuery = 0;
-    glGenQueries(1, &primitivesWrittenQuery);
+    GLQuery primitivesWrittenQuery;
     glBeginQuery(GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN, primitivesWrittenQuery);
 
     // Set a viewport that would result in no pixels being written to the framebuffer and draw
@@ -148,8 +150,7 @@ TEST_P(TransformFeedbackTest, BufferRebinding)
                  GL_STATIC_DRAW);
 
     // Create a query to check how many primitives were written
-    GLuint primitivesWrittenQuery = 0;
-    glGenQueries(1, &primitivesWrittenQuery);
+    GLQuery primitivesWrittenQuery;
     glBeginQuery(GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN, primitivesWrittenQuery);
 
     const float finalZ = 0.95f;
@@ -241,8 +242,7 @@ TEST_P(TransformFeedbackTest, RecordAndDraw)
     glBeginTransformFeedback(GL_POINTS);
 
     // Create a query to check how many primitives were written
-    GLuint primitivesWrittenQuery = 0;
-    glGenQueries(1, &primitivesWrittenQuery);
+    GLQuery primitivesWrittenQuery;
     glBeginQuery(GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN, primitivesWrittenQuery);
 
     glDrawArrays(GL_POINTS, 0, 6);
@@ -277,6 +277,289 @@ TEST_P(TransformFeedbackTest, RecordAndDraw)
     glDrawArrays(GL_TRIANGLES, 0, 6);
 
     EXPECT_PIXEL_EQ(getWindowWidth() / 2, getWindowHeight() / 2, 255, 0, 0, 255);
+    EXPECT_GL_NO_ERROR();
+}
+
+// Test that transform feedback can cover multiple render passes.
+TEST_P(TransformFeedbackTest, SpanMultipleRenderPasses)
+{
+    // TODO(anglebug.com/4533) This fails after the upgrade to the 26.20.100.7870 driver.
+    ANGLE_SKIP_TEST_IF(IsWindows() && IsIntel() && IsVulkan());
+
+    // Fails on Mac GL drivers. http://anglebug.com/4992
+    ANGLE_SKIP_TEST_IF(IsOpenGL() && IsOSX());
+
+    // anglebug.com/5428
+    ANGLE_SKIP_TEST_IF(IsLinux() && IsIntel() && IsVulkan());
+
+    // anglebug.com/5429
+    ANGLE_SKIP_TEST_IF(IsAndroid() && IsOpenGLES());
+
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    // Set the program's transform feedback varyings (just gl_Position)
+    std::vector<std::string> tfVaryings;
+    tfVaryings.push_back("gl_Position");
+    compileDefaultProgram(tfVaryings, GL_INTERLEAVED_ATTRIBS);
+
+    glUseProgram(mProgram);
+
+    GLint positionLocation = glGetAttribLocation(mProgram, essl1_shaders::PositionAttrib());
+
+    const GLfloat vertices[] = {
+        -0.5f, 0.5f, 0.5f, -0.5f, -0.5f, 0.5f, 0.5f, -0.5f, 0.5f,
+        -0.5f, 0.5f, 0.5f, 0.5f,  -0.5f, 0.5f, 0.5f, 0.5f,  0.5f,
+    };
+
+    glVertexAttribPointer(positionLocation, 3, GL_FLOAT, GL_FALSE, 0, vertices);
+    glEnableVertexAttribArray(positionLocation);
+
+    // Bind the buffer for transform feedback output and start transform feedback
+    glBindBufferBase(GL_TRANSFORM_FEEDBACK_BUFFER, 0, mTransformFeedbackBuffer);
+    glBeginTransformFeedback(GL_POINTS);
+
+    // Create a query to check how many primitives were written
+    GLQuery primitivesWrittenQuery;
+    glBeginQuery(GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN, primitivesWrittenQuery);
+
+    // Draw the first set of three points
+    glDrawArrays(GL_POINTS, 0, 3);
+
+    // Break the render pass
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::black);
+
+    // Draw the second set of three points
+    glVertexAttribPointer(positionLocation, 3, GL_FLOAT, GL_FALSE, 0, vertices + 9);
+    glDrawArrays(GL_POINTS, 0, 3);
+
+    glDisableVertexAttribArray(positionLocation);
+    glVertexAttribPointer(positionLocation, 4, GL_FLOAT, GL_FALSE, 0, nullptr);
+    // End the query and transform feedback
+    glEndQuery(GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN);
+    glEndTransformFeedback();
+
+    glBindBufferBase(GL_TRANSFORM_FEEDBACK_BUFFER, 0, 0);
+
+    // Verify the number of primitives written
+    GLuint primitivesWritten = 0;
+    glGetQueryObjectuiv(primitivesWrittenQuery, GL_QUERY_RESULT_EXT, &primitivesWritten);
+    EXPECT_GL_NO_ERROR();
+
+    EXPECT_EQ(6u, primitivesWritten);
+
+    // Verify the captured buffer.
+
+    glBindBuffer(GL_ARRAY_BUFFER, mTransformFeedbackBuffer);
+    glVertexAttribPointer(positionLocation, 4, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(positionLocation);
+
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+
+    const int w = getWindowWidth();
+    const int h = getWindowHeight();
+
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::black);
+    EXPECT_PIXEL_COLOR_EQ(w - 1, 0, GLColor::black);
+    EXPECT_PIXEL_COLOR_EQ(0, h - 1, GLColor::black);
+    EXPECT_PIXEL_COLOR_EQ(w - 1, h - 1, GLColor::black);
+
+    EXPECT_PIXEL_COLOR_EQ(w / 4 + 1, h / 4 + 1, GLColor::red);
+    EXPECT_PIXEL_COLOR_EQ(3 * w / 4 - 1, h / 4 + 1, GLColor::red);
+    EXPECT_PIXEL_COLOR_EQ(w / 4 + 1, 3 * h / 4 - 1, GLColor::red);
+    EXPECT_PIXEL_COLOR_EQ(3 * w / 4 - 1, 3 * h / 4 - 1, GLColor::red);
+
+    EXPECT_PIXEL_COLOR_EQ(w / 2, h / 2, GLColor::red);
+
+    EXPECT_GL_NO_ERROR();
+}
+
+void TransformFeedbackTest::midRecordOpDoesNotContributeTest(std::function<void()> op)
+{
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    // Set the program's transform feedback varyings (just gl_Position)
+    std::vector<std::string> tfVaryings;
+    tfVaryings.push_back("gl_Position");
+    compileDefaultProgram(tfVaryings, GL_INTERLEAVED_ATTRIBS);
+
+    glUseProgram(mProgram);
+
+    GLint positionLocation = glGetAttribLocation(mProgram, essl1_shaders::PositionAttrib());
+
+    const GLfloat vertices[] = {
+        -0.5f, 0.5f, 0.5f, -0.5f, -0.5f, 0.5f, 0.5f, -0.5f, 0.5f,
+        -0.5f, 0.5f, 0.5f, 0.5f,  -0.5f, 0.5f, 0.5f, 0.5f,  0.5f,
+    };
+
+    glVertexAttribPointer(positionLocation, 3, GL_FLOAT, GL_FALSE, 0, vertices);
+    glEnableVertexAttribArray(positionLocation);
+
+    // Bind the buffer for transform feedback output and start transform feedback
+    glBindBufferBase(GL_TRANSFORM_FEEDBACK_BUFFER, 0, mTransformFeedbackBuffer);
+    glBeginTransformFeedback(GL_POINTS);
+
+    // Create a query to check how many primitives were written
+    GLQuery primitivesWrittenQuery;
+    glBeginQuery(GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN, primitivesWrittenQuery);
+
+    // Draw the first set of three points
+    glDrawArrays(GL_POINTS, 0, 3);
+
+    // Perform the operation in the middle of recording
+    op();
+
+    // Draw the second set of three points
+    glVertexAttribPointer(positionLocation, 3, GL_FLOAT, GL_FALSE, 0, vertices + 9);
+    glDrawArrays(GL_POINTS, 0, 3);
+
+    glDisableVertexAttribArray(positionLocation);
+    glVertexAttribPointer(positionLocation, 4, GL_FLOAT, GL_FALSE, 0, nullptr);
+    // End the query and transform feedback
+    glEndQuery(GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN);
+    glEndTransformFeedback();
+
+    glBindBufferBase(GL_TRANSFORM_FEEDBACK_BUFFER, 0, 0);
+
+    // Verify the number of primitives written
+    GLuint primitivesWritten = 0;
+    glGetQueryObjectuiv(primitivesWrittenQuery, GL_QUERY_RESULT_EXT, &primitivesWritten);
+    EXPECT_GL_NO_ERROR();
+
+    EXPECT_EQ(6u, primitivesWritten);
+
+    // Verify the captured buffer.
+    glBindBuffer(GL_ARRAY_BUFFER, mTransformFeedbackBuffer);
+    glVertexAttribPointer(positionLocation, 4, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(positionLocation);
+
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+}
+
+// Test that draw-based clear between draws does not contribute to transform feedback.
+TEST_P(TransformFeedbackTest, ClearWhileRecordingDoesNotContribute)
+{
+    // TODO(anglebug.com/4533) This fails after the upgrade to the 26.20.100.7870 driver.
+    ANGLE_SKIP_TEST_IF(IsWindows() && IsIntel() && IsVulkan());
+
+    // Fails on Mac GL drivers. http://anglebug.com/4992
+    ANGLE_SKIP_TEST_IF(IsOpenGL() && IsOSX());
+
+    // anglebug.com/5434
+    ANGLE_SKIP_TEST_IF(IsAndroid() && IsOpenGLES());
+
+    auto clear = []() {
+        glColorMask(GL_FALSE, GL_FALSE, GL_TRUE, GL_FALSE);
+        glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        glColorMask(GL_TRUE, GL_TRUE, GL_FALSE, GL_TRUE);
+    };
+
+    midRecordOpDoesNotContributeTest(clear);
+
+    const int w = getWindowWidth();
+    const int h = getWindowHeight();
+
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::blue);
+    EXPECT_PIXEL_COLOR_EQ(w - 1, 0, GLColor::blue);
+    EXPECT_PIXEL_COLOR_EQ(0, h - 1, GLColor::blue);
+    EXPECT_PIXEL_COLOR_EQ(w - 1, h - 1, GLColor::blue);
+
+    EXPECT_PIXEL_COLOR_EQ(w / 4 + 1, h / 4 + 1, GLColor::magenta);
+    EXPECT_PIXEL_COLOR_EQ(3 * w / 4 - 1, h / 4 + 1, GLColor::magenta);
+    EXPECT_PIXEL_COLOR_EQ(w / 4 + 1, 3 * h / 4 - 1, GLColor::magenta);
+    EXPECT_PIXEL_COLOR_EQ(3 * w / 4 - 1, 3 * h / 4 - 1, GLColor::magenta);
+
+    EXPECT_PIXEL_COLOR_EQ(w / 2, h / 2, GLColor::magenta);
+
+    EXPECT_GL_NO_ERROR();
+}
+
+// Test that copy in the middle of rendering doesn't contribute to transform feedback.
+TEST_P(TransformFeedbackTest, CopyWhileRecordingDoesNotContribute)
+{
+    // TODO(anglebug.com/4533) This fails after the upgrade to the 26.20.100.7870 driver.
+    ANGLE_SKIP_TEST_IF(IsWindows() && IsIntel() && IsVulkan());
+
+    // Fails on Mac GL drivers. http://anglebug.com/4992
+    ANGLE_SKIP_TEST_IF(IsOpenGL() && IsOSX());
+
+    // anglebug.com/5434
+    ANGLE_SKIP_TEST_IF(IsAndroid() && IsOpenGLES());
+
+    auto copy = []() {
+        GLTexture texture;
+        glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 0, 0, 1, 1, 0);
+    };
+
+    midRecordOpDoesNotContributeTest(copy);
+
+    const int w = getWindowWidth();
+    const int h = getWindowHeight();
+
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::black);
+    EXPECT_PIXEL_COLOR_EQ(w - 1, 0, GLColor::black);
+    EXPECT_PIXEL_COLOR_EQ(0, h - 1, GLColor::black);
+    EXPECT_PIXEL_COLOR_EQ(w - 1, h - 1, GLColor::black);
+
+    EXPECT_PIXEL_COLOR_EQ(w / 4 + 1, h / 4 + 1, GLColor::red);
+    EXPECT_PIXEL_COLOR_EQ(3 * w / 4 - 1, h / 4 + 1, GLColor::red);
+    EXPECT_PIXEL_COLOR_EQ(w / 4 + 1, 3 * h / 4 - 1, GLColor::red);
+    EXPECT_PIXEL_COLOR_EQ(3 * w / 4 - 1, 3 * h / 4 - 1, GLColor::red);
+
+    EXPECT_PIXEL_COLOR_EQ(w / 2, h / 2, GLColor::red);
+
+    EXPECT_GL_NO_ERROR();
+}
+
+// Test that blit in the middle of rendering doesn't contribute to transform feedback.
+TEST_P(TransformFeedbackTest, BlitWhileRecordingDoesNotContribute)
+{
+    // TODO(anglebug.com/4533) This fails after the upgrade to the 26.20.100.7870 driver.
+    ANGLE_SKIP_TEST_IF(IsWindows() && IsIntel() && IsVulkan());
+
+    // Fails on Mac GL drivers. http://anglebug.com/4992
+    ANGLE_SKIP_TEST_IF(IsOpenGL() && IsOSX());
+
+    // anglebug.com/5434
+    ANGLE_SKIP_TEST_IF(IsAndroid() && IsOpenGLES());
+
+    auto blit = []() {
+        GLFramebuffer dstFbo;
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, dstFbo);
+
+        GLTexture dstTex;
+        glBindTexture(GL_TEXTURE_2D, dstTex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+        glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, dstTex, 0);
+
+        glBlitFramebuffer(0, 0, 1, 1, 1, 1, 0, 0, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+    };
+
+    midRecordOpDoesNotContributeTest(blit);
+
+    const int w = getWindowWidth();
+    const int h = getWindowHeight();
+
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::black);
+    EXPECT_PIXEL_COLOR_EQ(w - 1, 0, GLColor::black);
+    EXPECT_PIXEL_COLOR_EQ(0, h - 1, GLColor::black);
+    EXPECT_PIXEL_COLOR_EQ(w - 1, h - 1, GLColor::black);
+
+    EXPECT_PIXEL_COLOR_EQ(w / 4 + 1, h / 4 + 1, GLColor::red);
+    EXPECT_PIXEL_COLOR_EQ(3 * w / 4 - 1, h / 4 + 1, GLColor::red);
+    EXPECT_PIXEL_COLOR_EQ(w / 4 + 1, 3 * h / 4 - 1, GLColor::red);
+    EXPECT_PIXEL_COLOR_EQ(3 * w / 4 - 1, 3 * h / 4 - 1, GLColor::red);
+
+    EXPECT_PIXEL_COLOR_EQ(w / 2, h / 2, GLColor::red);
+
     EXPECT_GL_NO_ERROR();
 }
 
@@ -2246,8 +2529,7 @@ TEST_P(TransformFeedbackTest, RecordAndDrawWithScissorTest)
     glBeginTransformFeedback(GL_POINTS);
 
     // Create a query to check how many primitives were written
-    GLuint primitivesWrittenQuery = 0;
-    glGenQueries(1, &primitivesWrittenQuery);
+    GLQuery primitivesWrittenQuery;
     glBeginQuery(GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN, primitivesWrittenQuery);
 
     glDrawArrays(GL_POINTS, 0, 3);
@@ -2324,8 +2606,7 @@ TEST_P(TransformFeedbackWithDepthBufferTest, RecordAndDrawWithDepthWriteEnabled)
     glBeginTransformFeedback(GL_POINTS);
 
     // Create a query to check how many primitives were written
-    GLuint primitivesWrittenQuery = 0;
-    glGenQueries(1, &primitivesWrittenQuery);
+    GLQuery primitivesWrittenQuery;
     glBeginQuery(GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN, primitivesWrittenQuery);
 
     glDrawArrays(GL_POINTS, 0, 3);
@@ -2361,11 +2642,170 @@ TEST_P(TransformFeedbackWithDepthBufferTest, RecordAndDrawWithDepthWriteEnabled)
     EXPECT_GL_NO_ERROR();
 }
 
+class TransformFeedbackTestES32 : public TransformFeedbackTest
+{};
+
+// Test that simultaneous use of transform feedback primitives written and primitives generated
+// queries works.
+TEST_P(TransformFeedbackTestES32, PrimitivesWrittenAndGenerated)
+{
+    // TODO(anglebug.com/4533) This fails after the upgrade to the 26.20.100.7870 driver.
+    ANGLE_SKIP_TEST_IF(IsWindows() && IsIntel() && IsVulkan());
+
+    // No ES3.2 support on out bots.  http://anglebug.com/5435
+    ANGLE_SKIP_TEST_IF(IsPixel2() && IsVulkan());
+
+    // No VK_EXT_transform_feedback support on the following configurations.
+    // http://anglebug.com/5435
+    ANGLE_SKIP_TEST_IF(IsVulkan() && IsAMD() && IsWindows());
+    ANGLE_SKIP_TEST_IF(IsVulkan() && IsNVIDIA() && IsWindows7());
+
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    // Set the program's transform feedback varyings (just gl_Position)
+    std::vector<std::string> tfVaryings;
+    tfVaryings.push_back("gl_Position");
+    compileDefaultProgram(tfVaryings, GL_INTERLEAVED_ATTRIBS);
+
+    glUseProgram(mProgram);
+
+    GLint positionLocation = glGetAttribLocation(mProgram, essl1_shaders::PositionAttrib());
+
+    glEnable(GL_RASTERIZER_DISCARD);
+
+    const GLfloat vertices[] = {
+        -1.0f, 1.0f,  0.5f, -1.0f, -1.0f, 0.5f, 1.0f,  -1.0f, 0.5f, -1.0f, 1.0f,  0.5f,
+        1.0f,  -1.0f, 0.5f, 1.0f,  1.0f,  0.5f, -1.0f, 1.0f,  0.5f, -1.0f, -1.0f, 0.5f,
+        1.0f,  -1.0f, 0.5f, -1.0f, 1.0f,  0.5f, 1.0f,  -1.0f, 0.5f, 1.0f,  1.0f,  0.5f,
+    };
+
+    glVertexAttribPointer(positionLocation, 3, GL_FLOAT, GL_FALSE, 0, vertices);
+    glEnableVertexAttribArray(positionLocation);
+
+    // Bind the buffer for transform feedback output and start transform feedback
+    glBindBufferBase(GL_TRANSFORM_FEEDBACK_BUFFER, 0, mTransformFeedbackBuffer);
+    glBeginTransformFeedback(GL_POINTS);
+    EXPECT_GL_NO_ERROR();
+
+    // Create a number of queries.  The test overview is as follows (PW = PrimitivesWritten, PG =
+    // Primitives Generated):
+    //
+    //           PW0 begin
+    // - Draw 3
+    //                      PG0 begin
+    // - Draw 4
+    //           PW0 end
+    // - Draw 5
+    // - Copy
+    // - Draw 6
+    //                                 PW1 begin
+    // - Draw 7
+    // - Copy
+    // - Draw 8
+    //                      PG0 end
+    //                                            PG1 begin
+    // - Draw 9
+    // - Copy
+    //                                 PW1 end
+    // - Draw 10
+    // - Copy
+    //                                            PG1 end
+    //                                                        PW2 begin
+    //                                                                   PG2 begin
+    // - Draw 11
+    // - Copy
+    // - Draw 12
+    //                                                                   PG2 end
+    //                                                        PW2 end
+    //
+    // This tests a variety of scenarios where either of PW or PG is active or not when the other
+    // begins or ends, as well as testing render pass restarts with the queries active and begin and
+    // end of queries outside or mid render pass.
+    constexpr size_t kQueryCount = 3;
+    GLQuery primitivesWrittenQueries[kQueryCount];
+    GLQuery primitivesGeneratedQueries[kQueryCount];
+
+    GLTexture texture;
+    glBindTexture(GL_TEXTURE_2D, texture);
+
+    /* PG PW */
+    /*     / */ glBeginQuery(GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN, primitivesWrittenQueries[0]);
+    /*    |  */ glDrawArrays(GL_POINTS, 0, 3);
+    /*  / 0  */ glBeginQuery(GL_PRIMITIVES_GENERATED, primitivesGeneratedQueries[0]);
+    /* |  |  */ glDrawArrays(GL_POINTS, 0, 4);
+    /* |   \ */ glEndQuery(GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN);
+    /* |     */ glDrawArrays(GL_POINTS, 0, 5);
+    /* |     */ glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 0, 0, 1, 1, 0);
+    /* 0     */ glDrawArrays(GL_POINTS, 0, 6);
+    /* |   / */ glBeginQuery(GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN, primitivesWrittenQueries[1]);
+    /* |  |  */ glDrawArrays(GL_POINTS, 0, 7);
+    /* |  |  */ glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 0, 0, 1, 1, 0);
+    /* |  |  */ glDrawArrays(GL_POINTS, 0, 8);
+    /*  \ 1  */ glEndQuery(GL_PRIMITIVES_GENERATED);
+    /*  / |  */ glBeginQuery(GL_PRIMITIVES_GENERATED, primitivesGeneratedQueries[1]);
+    /* |  |  */ glDrawArrays(GL_POINTS, 0, 9);
+    /* |  |  */ glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 0, 0, 1, 1, 0);
+    /* 1   \ */ glEndQuery(GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN);
+    /* |     */ glDrawArrays(GL_POINTS, 0, 10);
+    /* |     */ glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 0, 0, 1, 1, 0);
+    /*  \    */ glEndQuery(GL_PRIMITIVES_GENERATED);
+    /*     / */ glBeginQuery(GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN, primitivesWrittenQueries[2]);
+    /*  / |  */ glBeginQuery(GL_PRIMITIVES_GENERATED, primitivesGeneratedQueries[2]);
+    /* |  |  */ glDrawArrays(GL_POINTS, 0, 11);
+    /* 2  2  */ glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 0, 0, 1, 1, 0);
+    /* |  |  */ glDrawArrays(GL_POINTS, 0, 12);
+    /*  \ |  */ glEndQuery(GL_PRIMITIVES_GENERATED);
+    /*     \ */ glEndQuery(GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN);
+
+    glEndTransformFeedback();
+    EXPECT_GL_NO_ERROR();
+
+    // Check that the queries have correct results.  Verify the first of each query with
+    // GL_QUERY_RESULT_AVAILABLE for no particular reason other than testing different paths.
+    GLuint readyPW = GL_FALSE;
+    GLuint readyPG = GL_FALSE;
+    while (readyPW == GL_FALSE || readyPG == GL_FALSE)
+    {
+        angle::Sleep(0);
+        glGetQueryObjectuiv(primitivesWrittenQueries[0], GL_QUERY_RESULT_AVAILABLE, &readyPW);
+        glGetQueryObjectuiv(primitivesGeneratedQueries[0], GL_QUERY_RESULT_AVAILABLE, &readyPG);
+    }
+    EXPECT_GL_NO_ERROR();
+
+    constexpr GLuint kPrimitivesWrittenExpected[kQueryCount] = {
+        3 + 4,
+        7 + 8 + 9,
+        11 + 12,
+    };
+    constexpr GLuint kPrimitivesGeneratedExpected[kQueryCount] = {
+        4 + 5 + 6 + 7 + 8,
+        9 + 10,
+        11 + 12,
+    };
+
+    for (size_t queryIndex = 0; queryIndex < kQueryCount; ++queryIndex)
+    {
+        GLuint primitivesWritten = 0;
+        glGetQueryObjectuiv(primitivesWrittenQueries[queryIndex], GL_QUERY_RESULT,
+                            &primitivesWritten);
+
+        GLuint primitivesGenerated = 0;
+        glGetQueryObjectuiv(primitivesGeneratedQueries[queryIndex], GL_QUERY_RESULT,
+                            &primitivesGenerated);
+        EXPECT_GL_NO_ERROR();
+
+        EXPECT_EQ(primitivesWritten, kPrimitivesWrittenExpected[queryIndex]) << queryIndex;
+        EXPECT_EQ(primitivesGenerated, kPrimitivesGeneratedExpected[queryIndex]) << queryIndex;
+    }
+}
+
 // Use this to select which configurations (e.g. which renderer, which GLES major version) these
 // tests should be run against.
 ANGLE_INSTANTIATE_TEST_ES3(TransformFeedbackTest);
 ANGLE_INSTANTIATE_TEST_ES3(TransformFeedbackLifetimeTest);
 ANGLE_INSTANTIATE_TEST_ES31(TransformFeedbackTestES31);
+ANGLE_INSTANTIATE_TEST_ES32(TransformFeedbackTestES32);
 
 ANGLE_INSTANTIATE_TEST(TransformFeedbackWithDepthBufferTest, ES3_METAL());
 
