@@ -31,12 +31,9 @@ namespace vk
 
 namespace
 {
-
-constexpr int32_t kDynamicScissorSentinel = std::numeric_limits<int32_t>::min();
-
-bool IsScissorStateDynamic(const VkRect2D &scissor)
+bool IsScissorStateDynamic(const PackedScissor &scissor)
 {
-    return scissor.offset.x == kDynamicScissorSentinel;
+    return scissor.x == kDynamicScissorSentinel;
 }
 
 uint8_t PackGLBlendOp(GLenum blendOp)
@@ -152,9 +149,9 @@ VkCompareOp PackGLCompareFunc(GLenum compareFunc)
 }
 
 void UnpackAttachmentDesc(VkAttachmentDescription *desc,
-                          const vk::Format &format,
+                          const Format &format,
                           uint8_t samples,
-                          const vk::PackedAttachmentOpsDesc &ops)
+                          const PackedAttachmentOpsDesc &ops)
 {
     // We would only need this flag for duplicated attachments. Apply it conservatively.
     desc->flags   = VK_ATTACHMENT_DESCRIPTION_MAY_ALIAS_BIT;
@@ -173,7 +170,7 @@ void UnpackAttachmentDesc(VkAttachmentDescription *desc,
 }
 
 void UnpackColorResolveAttachmentDesc(VkAttachmentDescription *desc,
-                                      const vk::Format &format,
+                                      const Format &format,
                                       bool usedAsInputAttachment,
                                       bool isInvalidated)
 {
@@ -206,7 +203,7 @@ void UnpackColorResolveAttachmentDesc(VkAttachmentDescription *desc,
 }
 
 void UnpackDepthStencilResolveAttachmentDesc(VkAttachmentDescription *desc,
-                                             const vk::Format &format,
+                                             const Format &format,
                                              bool usedAsDepthInputAttachment,
                                              bool usedAsStencilInputAttachment,
                                              bool isDepthInvalidated,
@@ -241,7 +238,7 @@ void UnpackDepthStencilResolveAttachmentDesc(VkAttachmentDescription *desc,
     desc->finalLayout   = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 }
 
-void UnpackStencilState(const vk::PackedStencilOpState &packedState,
+void UnpackStencilState(const PackedStencilOpState &packedState,
                         uint8_t stencilReference,
                         VkStencilOpState *stateOut)
 {
@@ -254,7 +251,7 @@ void UnpackStencilState(const vk::PackedStencilOpState &packedState,
     stateOut->reference   = stencilReference;
 }
 
-void UnpackBlendAttachmentState(const vk::PackedColorBlendAttachmentState &packedState,
+void UnpackBlendAttachmentState(const PackedColorBlendAttachmentState &packedState,
                                 VkPipelineColorBlendAttachmentState *stateOut)
 {
     stateOut->srcColorBlendFactor = static_cast<VkBlendFactor>(packedState.srcColorBlendFactor);
@@ -749,7 +746,7 @@ angle::Result CreateRenderPass2(Context *context,
 
 void UpdateRenderPassColorPerfCounters(const VkRenderPassCreateInfo &createInfo,
                                        const VkSubpassDescription &subpass,
-                                       vk::RenderPassPerfCounters *countersOut)
+                                       RenderPassPerfCounters *countersOut)
 {
     // Color resolve counters.
     if (subpass.pResolveAttachments == nullptr)
@@ -773,7 +770,7 @@ void UpdateRenderPassColorPerfCounters(const VkRenderPassCreateInfo &createInfo,
 
 void UpdateRenderPassDepthStencilPerfCounters(const VkRenderPassCreateInfo &createInfo,
                                               size_t renderPassIndex,
-                                              vk::RenderPassPerfCounters *countersOut)
+                                              RenderPassPerfCounters *countersOut)
 {
     ASSERT(renderPassIndex != VK_ATTACHMENT_UNUSED);
 
@@ -798,7 +795,7 @@ void UpdateRenderPassDepthStencilPerfCounters(const VkRenderPassCreateInfo &crea
 void UpdateRenderPassDepthStencilResolvePerfCounters(
     const VkRenderPassCreateInfo &createInfo,
     const VkSubpassDescriptionDepthStencilResolve &depthStencilResolve,
-    vk::RenderPassPerfCounters *countersOut)
+    RenderPassPerfCounters *countersOut)
 {
     if (depthStencilResolve.pDepthStencilResolveAttachment == nullptr)
     {
@@ -837,11 +834,11 @@ void UpdateRenderPassPerfCounters(
     const RenderPassDesc &desc,
     const VkRenderPassCreateInfo &createInfo,
     const VkSubpassDescriptionDepthStencilResolve &depthStencilResolve,
-    vk::RenderPassPerfCounters *countersOut)
+    RenderPassPerfCounters *countersOut)
 {
     // Accumulate depth/stencil attachment indices in all subpasses to avoid double-counting
     // counters.
-    vk::FramebufferAttachmentMask depthStencilAttachmentIndices;
+    FramebufferAttachmentMask depthStencilAttachmentIndices;
 
     for (uint32_t subpassIndex = 0; subpassIndex < createInfo.subpassCount; ++subpassIndex)
     {
@@ -883,7 +880,7 @@ void UpdateRenderPassPerfCounters(
 angle::Result InitializeRenderPassFromDesc(ContextVk *contextVk,
                                            const RenderPassDesc &desc,
                                            const AttachmentOpsArray &ops,
-                                           vk::RenderPassHelper *renderPassHelper)
+                                           RenderPassHelper *renderPassHelper)
 {
     RendererVk *renderer = contextVk->getRenderer();
 
@@ -933,7 +930,7 @@ angle::Result InitializeRenderPassFromDesc(ContextVk *contextVk,
 
         angle::FormatID formatID = desc[colorIndexGL];
         ASSERT(formatID != angle::FormatID::NONE);
-        const vk::Format &format = renderer->getFormat(formatID);
+        const Format &format = renderer->getFormat(formatID);
 
         VkAttachmentReference colorRef;
         colorRef.attachment = attachmentCount.get();
@@ -956,7 +953,7 @@ angle::Result InitializeRenderPassFromDesc(ContextVk *contextVk,
 
         angle::FormatID formatID = desc[depthStencilIndexGL];
         ASSERT(formatID != angle::FormatID::NONE);
-        const vk::Format &format = renderer->getFormat(formatID);
+        const Format &format = renderer->getFormat(formatID);
 
         depthStencilAttachmentRef.attachment = attachmentCount.get();
         depthStencilAttachmentRef.layout     = ConvertImageLayoutToVkImageLayout(
@@ -983,7 +980,7 @@ angle::Result InitializeRenderPassFromDesc(ContextVk *contextVk,
 
         ASSERT(desc.isColorAttachmentEnabled(colorIndexGL));
 
-        const vk::Format &format = renderer->getFormat(desc[colorIndexGL]);
+        const Format &format = renderer->getFormat(desc[colorIndexGL]);
 
         VkAttachmentReference colorRef;
         colorRef.attachment = attachmentCount.get();
@@ -1013,7 +1010,7 @@ angle::Result InitializeRenderPassFromDesc(ContextVk *contextVk,
 
         uint32_t depthStencilIndexGL = static_cast<uint32_t>(desc.depthStencilAttachmentIndex());
 
-        const vk::Format &format         = renderer->getFormat(desc[depthStencilIndexGL]);
+        const Format &format             = renderer->getFormat(desc[depthStencilIndexGL]);
         const angle::Format &angleFormat = format.intendedFormat();
 
         // Treat missing aspect as invalidated for the purpose of the resolve attachment.
@@ -1158,8 +1155,8 @@ angle::Result InitializeRenderPassFromDesc(ContextVk *contextVk,
 
 void GetRenderPassAndUpdateCounters(ContextVk *contextVk,
                                     bool updatePerfCounters,
-                                    vk::RenderPassHelper *renderPassHelper,
-                                    vk::RenderPass **renderPassOut)
+                                    RenderPassHelper *renderPassHelper,
+                                    RenderPass **renderPassOut)
 {
     *renderPassOut = &renderPassHelper->getRenderPass();
     if (updatePerfCounters)
@@ -1184,8 +1181,8 @@ void GetRenderPassAndUpdateCounters(ContextVk *contextVk,
 }
 
 void InitializeSpecializationInfo(
-    const vk::SpecializationConstants &specConsts,
-    vk::SpecializationConstantMap<VkSpecializationMapEntry> *specializationEntriesOut,
+    const SpecializationConstants &specConsts,
+    SpecializationConstantMap<VkSpecializationMapEntry> *specializationEntriesOut,
     VkSpecializationInfo *specializationInfoOut)
 {
     // Collect specialization constants.
@@ -1197,13 +1194,23 @@ void InitializeSpecializationInfo(
         {
             case sh::vk::SpecializationConstantId::LineRasterEmulation:
                 (*specializationEntriesOut)[id].offset =
-                    offsetof(vk::SpecializationConstants, lineRasterEmulation);
+                    offsetof(SpecializationConstants, lineRasterEmulation);
                 (*specializationEntriesOut)[id].size = sizeof(specConsts.lineRasterEmulation);
                 break;
             case sh::vk::SpecializationConstantId::SurfaceRotation:
                 (*specializationEntriesOut)[id].offset =
-                    offsetof(vk::SpecializationConstants, surfaceRotation);
+                    offsetof(SpecializationConstants, surfaceRotation);
                 (*specializationEntriesOut)[id].size = sizeof(specConsts.surfaceRotation);
+                break;
+            case sh::vk::SpecializationConstantId::DrawableWidth:
+                (*specializationEntriesOut)[id].offset =
+                    offsetof(vk::SpecializationConstants, drawableWidth);
+                (*specializationEntriesOut)[id].size = sizeof(specConsts.drawableWidth);
+                break;
+            case sh::vk::SpecializationConstantId::DrawableHeight:
+                (*specializationEntriesOut)[id].offset =
+                    offsetof(vk::SpecializationConstants, drawableHeight);
+                (*specializationEntriesOut)[id].size = sizeof(specConsts.drawableHeight);
                 break;
             default:
                 UNREACHABLE();
@@ -1493,7 +1500,7 @@ bool GraphicsPipelineDesc::operator==(const GraphicsPipelineDesc &other) const
 // TODO(jmadill): We should prefer using Packed GLenums. http://anglebug.com/2169
 
 // Initialize PSO states, it is consistent with initial value of gl::State
-void GraphicsPipelineDesc::initDefaults()
+void GraphicsPipelineDesc::initDefaults(const ContextVk *contextVk)
 {
     // Set all vertex input attributes to default, the default format is Float
     angle::FormatID defaultFormat = GetCurrentValueFormatID(gl::VertexAttribType::Float);
@@ -1506,8 +1513,9 @@ void GraphicsPipelineDesc::initDefaults()
         SetBitField(packedAttrib.offset, 0);
     }
 
-    mRasterizationAndMultisampleStateInfo.bits.subpass                    = 0;
-    mRasterizationAndMultisampleStateInfo.bits.depthClampEnable           = 0;
+    mRasterizationAndMultisampleStateInfo.bits.subpass = 0;
+    mRasterizationAndMultisampleStateInfo.bits.depthClampEnable =
+        contextVk->getFeatures().depthClamping.enabled ? VK_TRUE : VK_FALSE;
     mRasterizationAndMultisampleStateInfo.bits.rasterizationDiscardEnable = 0;
     SetBitField(mRasterizationAndMultisampleStateInfo.bits.polygonMode, VK_POLYGON_MODE_FILL);
     SetBitField(mRasterizationAndMultisampleStateInfo.bits.cullMode, VK_CULL_MODE_BACK_BIT);
@@ -1596,15 +1604,18 @@ void GraphicsPipelineDesc::initDefaults()
     mViewport.minDepth = 0.0f;
     mViewport.maxDepth = 1.0f;
 
-    mScissor.offset.x      = 0;
-    mScissor.offset.y      = 0;
-    mScissor.extent.width  = 0;
-    mScissor.extent.height = 0;
+    mScissor.x      = 0;
+    mScissor.y      = 0;
+    mScissor.width  = 0;
+    mScissor.height = 0;
+
+    mDrawableSize.width  = 1;
+    mDrawableSize.height = 1;
 }
 
 angle::Result GraphicsPipelineDesc::initializePipeline(
     ContextVk *contextVk,
-    const vk::PipelineCache &pipelineCacheVk,
+    const PipelineCache &pipelineCacheVk,
     const RenderPass &compatibleRenderPass,
     const PipelineLayout &pipelineLayout,
     const gl::AttributesMask &activeAttribLocationsMask,
@@ -1612,7 +1623,7 @@ angle::Result GraphicsPipelineDesc::initializePipeline(
     const ShaderModule *vertexModule,
     const ShaderModule *fragmentModule,
     const ShaderModule *geometryModule,
-    const vk::SpecializationConstants specConsts,
+    const SpecializationConstants &specConsts,
     Pipeline *pipelineOut) const
 {
     angle::FixedVector<VkPipelineShaderStageCreateInfo, 3> shaderStages;
@@ -1627,7 +1638,7 @@ angle::Result GraphicsPipelineDesc::initializePipeline(
     VkSpecializationInfo specializationInfo        = {};
     VkGraphicsPipelineCreateInfo createInfo        = {};
 
-    vk::SpecializationConstantMap<VkSpecializationMapEntry> specializationEntries;
+    SpecializationConstantMap<VkSpecializationMapEntry> specializationEntries;
     InitializeSpecializationInfo(specConsts, &specializationEntries, &specializationInfo);
 
     // Vertex shader is always expected to be present.
@@ -1699,7 +1710,7 @@ angle::Result GraphicsPipelineDesc::initializePipeline(
 
         // Get the corresponding VkFormat for the attrib's format.
         angle::FormatID formatID         = static_cast<angle::FormatID>(packedAttrib.format);
-        const vk::Format &format         = contextVk->getRenderer()->getFormat(formatID);
+        const Format &format             = contextVk->getRenderer()->getFormat(formatID);
         const angle::Format &angleFormat = format.intendedFormat();
         VkFormat vkFormat =
             packedAttrib.compressed ? format.vkCompressedBufferFormat : format.vkBufferFormat;
@@ -1771,8 +1782,21 @@ angle::Result GraphicsPipelineDesc::initializePipeline(
     viewportState.flags         = 0;
     viewportState.viewportCount = 1;
     viewportState.pViewports    = &viewport;
-    viewportState.scissorCount  = 1;
-    viewportState.pScissors     = IsScissorStateDynamic(mScissor) ? nullptr : &mScissor;
+
+    viewportState.scissorCount = 1;
+    VkRect2D scissor;
+    if (IsScissorStateDynamic(mScissor))
+    {
+        viewportState.pScissors = nullptr;
+    }
+    else
+    {
+        viewportState.pScissors = &scissor;
+        scissor.offset.x        = mScissor.x;
+        scissor.offset.y        = mScissor.y;
+        scissor.extent.width    = mScissor.width;
+        scissor.extent.height   = mScissor.height;
+    }
 
     const PackedRasterizationAndMultisampleStateInfo &rasterAndMS =
         mRasterizationAndMultisampleStateInfo;
@@ -1814,6 +1838,21 @@ angle::Result GraphicsPipelineDesc::initializePipeline(
         *pNextPtr                                = &provokingVertexState;
         pNextPtr                                 = &provokingVertexState.pNext;
     }
+
+    // When depth clamping is used, depth clipping is automatically disabled.
+    // When the 'depthClamping' feature is enabled, we'll be using depth clamping
+    // to work around a driver issue, not as an alternative to depth clipping. Therefore we need to
+    // explicitly re-enable depth clipping.
+    VkPipelineRasterizationDepthClipStateCreateInfoEXT depthClipState = {};
+    depthClipState.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_DEPTH_CLIP_STATE_CREATE_INFO_EXT;
+    if (contextVk->getFeatures().depthClamping.enabled)
+    {
+        depthClipState.depthClipEnable = VK_TRUE;
+        *pNextPtr                      = &depthClipState;
+        pNextPtr                       = &depthClipState.pNext;
+    }
+
     VkPipelineRasterizationStateStreamCreateInfoEXT rasterStreamState = {};
     rasterStreamState.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_STREAM_CREATE_INFO_EXT;
     if (contextVk->getFeatures().supportsTransformFeedbackExtension.enabled)
@@ -1952,7 +1991,7 @@ void GraphicsPipelineDesc::updateVertexInput(GraphicsPipelineTransitionBits *tra
                                              bool compressed,
                                              GLuint relativeOffset)
 {
-    vk::PackedAttribDesc &packedAttrib = mVertexInputAttribs.attribs[attribIndex];
+    PackedAttribDesc &packedAttrib = mVertexInputAttribs.attribs[attribIndex];
 
     SetBitField(packedAttrib.stride, stride);
     SetBitField(packedAttrib.divisor, divisor);
@@ -2433,25 +2472,42 @@ void GraphicsPipelineDesc::updateDepthRange(GraphicsPipelineTransitionBits *tran
 
 void GraphicsPipelineDesc::setDynamicScissor()
 {
-    mScissor.offset.x      = kDynamicScissorSentinel;
-    mScissor.offset.y      = 0;
-    mScissor.extent.width  = 0;
-    mScissor.extent.height = 0;
+    mScissor.x      = kDynamicScissorSentinel;
+    mScissor.y      = 0;
+    mScissor.width  = 0;
+    mScissor.height = 0;
 }
 
 void GraphicsPipelineDesc::setScissor(const VkRect2D &scissor)
 {
-    mScissor = scissor;
+    ASSERT(scissor.offset.x < kDynamicScissorSentinel &&
+           scissor.offset.y < kDynamicScissorSentinel &&
+           scissor.extent.width < kDynamicScissorSentinel &&
+           scissor.extent.height < kDynamicScissorSentinel);
+    SetBitField(mScissor.x, scissor.offset.x);
+    SetBitField(mScissor.y, scissor.offset.y);
+    SetBitField(mScissor.width, scissor.extent.width);
+    SetBitField(mScissor.height, scissor.extent.height);
 }
 
 void GraphicsPipelineDesc::updateScissor(GraphicsPipelineTransitionBits *transition,
                                          const VkRect2D &scissor)
 {
-    mScissor = scissor;
-    transition->set(ANGLE_GET_TRANSITION_BIT(mScissor, offset.x));
-    transition->set(ANGLE_GET_TRANSITION_BIT(mScissor, offset.y));
-    transition->set(ANGLE_GET_TRANSITION_BIT(mScissor, extent.width));
-    transition->set(ANGLE_GET_TRANSITION_BIT(mScissor, extent.height));
+    setScissor(scissor);
+    transition->set(ANGLE_GET_TRANSITION_BIT(mScissor, x));
+    transition->set(ANGLE_GET_TRANSITION_BIT(mScissor, y));
+    transition->set(ANGLE_GET_TRANSITION_BIT(mScissor, width));
+    transition->set(ANGLE_GET_TRANSITION_BIT(mScissor, height));
+}
+
+void GraphicsPipelineDesc::updateDrawableSize(GraphicsPipelineTransitionBits *transition,
+                                              uint32_t width,
+                                              uint32_t height)
+{
+    SetBitField(mDrawableSize.width, width);
+    SetBitField(mDrawableSize.height, height);
+    transition->set(ANGLE_GET_TRANSITION_BIT(mDrawableSize, width));
+    transition->set(ANGLE_GET_TRANSITION_BIT(mDrawableSize, height));
 }
 
 void GraphicsPipelineDesc::updateSubpass(GraphicsPipelineTransitionBits *transition,
@@ -2533,7 +2589,7 @@ void AttachmentOpsArray::initWithLoadStore(PackedAttachmentIndex index,
                                            ImageLayout finalLayout)
 {
     setLayouts(index, initialLayout, finalLayout);
-    setOps(index, VK_ATTACHMENT_LOAD_OP_LOAD, vk::RenderPassStoreOp::Store);
+    setOps(index, VK_ATTACHMENT_LOAD_OP_LOAD, RenderPassStoreOp::Store);
     setStencilOps(index, VK_ATTACHMENT_LOAD_OP_LOAD, RenderPassStoreOp::Store);
 }
 
@@ -2613,7 +2669,7 @@ void DescriptorSetLayoutDesc::update(uint32_t bindingIndex,
                                      VkDescriptorType type,
                                      uint32_t count,
                                      VkShaderStageFlags stages,
-                                     const vk::Sampler *immutableSampler)
+                                     const Sampler *immutableSampler)
 {
     ASSERT(static_cast<size_t>(type) < std::numeric_limits<uint16_t>::max());
     ASSERT(count < std::numeric_limits<uint16_t>::max());
@@ -2993,7 +3049,7 @@ void SamplerDesc::update(const angle::FeaturesVk &featuresVk,
     mReserved[2] = 0;
 }
 
-angle::Result SamplerDesc::init(ContextVk *contextVk, vk::Sampler *sampler) const
+angle::Result SamplerDesc::init(ContextVk *contextVk, Sampler *sampler) const
 {
     const gl::Extensions &extensions = contextVk->getExtensions();
 
@@ -3029,7 +3085,7 @@ angle::Result SamplerDesc::init(ContextVk *contextVk, vk::Sampler *sampler) cons
         filteringInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_FILTERING_PRECISION_GOOGLE;
         filteringInfo.samplerFilteringPrecisionMode =
             VK_SAMPLER_FILTERING_PRECISION_MODE_HIGH_GOOGLE;
-        vk::AddToPNextChain(&createInfo, &filteringInfo);
+        AddToPNextChain(&createInfo, &filteringInfo);
     }
 
     VkSamplerYcbcrConversionInfo yuvConversionInfo = {};
@@ -3041,7 +3097,7 @@ angle::Result SamplerDesc::init(ContextVk *contextVk, vk::Sampler *sampler) cons
         yuvConversionInfo.conversion =
             contextVk->getRenderer()->getYuvConversionCache().getYuvConversionFromExternalFormat(
                 mExternalFormat);
-        vk::AddToPNextChain(&createInfo, &yuvConversionInfo);
+        AddToPNextChain(&createInfo, &yuvConversionInfo);
 
         // Vulkan spec requires these settings:
         createInfo.addressModeU            = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
@@ -3273,7 +3329,7 @@ angle::Result GraphicsPipelineCache::insertPipeline(
     const vk::ShaderModule *vertexModule,
     const vk::ShaderModule *fragmentModule,
     const vk::ShaderModule *geometryModule,
-    const vk::SpecializationConstants specConsts,
+    const vk::SpecializationConstants &specConsts,
     const vk::GraphicsPipelineDesc &desc,
     const vk::GraphicsPipelineDesc **descPtrOut,
     vk::PipelineHelper **pipelineOut)

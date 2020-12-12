@@ -53,7 +53,7 @@ class DisplayGLX : public DisplayGL
                                      NativePixmapType nativePixmap,
                                      const egl::AttributeMap &attribs) override;
 
-    egl::Error validatePixmap(egl::Config *config,
+    egl::Error validatePixmap(const egl::Config *config,
                               EGLNativePixmapType pixmap,
                               const egl::AttributeMap &attributes) const override;
 
@@ -69,8 +69,6 @@ class DisplayGLX : public DisplayGL
     egl::Error restoreLostDevice(const egl::Display *display) override;
 
     bool isValidNativeWindow(EGLNativeWindowType window) const override;
-
-    DeviceImpl *createDevice() override;
 
     std::string getVendorString() const override;
 
@@ -127,7 +125,7 @@ class DisplayGLX : public DisplayGL
     XVisualInfo *mVisuals;
     glx::Context mContext;
     glx::Context mSharedContext;
-    std::unordered_map<std::thread::id, glx::Context> mCurrentContexts;
+    angle::HashMap<std::thread::id, glx::Context> mCurrentContexts;
     // A pbuffer the context is current on during ANGLE initialization
     glx::Pbuffer mInitPbuffer;
 

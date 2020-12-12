@@ -782,14 +782,14 @@ ProgramPipelineID Context::createProgramPipeline()
 
 GLuint Context::createShaderProgramv(ShaderType type, GLsizei count, const GLchar *const *strings)
 {
-    const ShaderProgramID shaderID = FromGL<ShaderProgramID>(createShader(type));
+    const ShaderProgramID shaderID = PackParam<ShaderProgramID>(createShader(type));
     if (shaderID.value)
     {
         Shader *shaderObject = getShader(shaderID);
         ASSERT(shaderObject);
         shaderObject->setSource(count, strings, nullptr);
         shaderObject->compile(this);
-        const ShaderProgramID programID = FromGL<ShaderProgramID>(createProgram());
+        const ShaderProgramID programID = PackParam<ShaderProgramID>(createProgram());
         if (programID.value)
         {
             gl::Program *programObject = getProgramNoResolveLink(programID);
@@ -999,14 +999,19 @@ gl::LabeledObject *Context::getLabeledObject(GLenum identifier, GLuint name) con
     switch (identifier)
     {
         case GL_BUFFER:
+        case GL_BUFFER_OBJECT_EXT:
             return getBuffer({name});
         case GL_SHADER:
+        case GL_SHADER_OBJECT_EXT:
             return getShader({name});
         case GL_PROGRAM:
+        case GL_PROGRAM_OBJECT_EXT:
             return getProgramNoResolveLink({name});
         case GL_VERTEX_ARRAY:
+        case GL_VERTEX_ARRAY_OBJECT_EXT:
             return getVertexArray({name});
         case GL_QUERY:
+        case GL_QUERY_OBJECT_EXT:
             return getQuery({name});
         case GL_TRANSFORM_FEEDBACK:
             return getTransformFeedback({name});
@@ -1019,6 +1024,7 @@ gl::LabeledObject *Context::getLabeledObject(GLenum identifier, GLuint name) con
         case GL_FRAMEBUFFER:
             return getFramebuffer({name});
         case GL_PROGRAM_PIPELINE:
+        case GL_PROGRAM_PIPELINE_OBJECT_EXT:
             return getProgramPipeline({name});
         default:
             UNREACHABLE();
@@ -1042,6 +1048,21 @@ void Context::objectLabel(GLenum identifier, GLuint name, GLsizei length, const 
     // TODO(jmadill): Determine if the object is dirty based on 'name'. Conservatively assume the
     // specified object is active until we do this.
     mState.setObjectDirty(identifier);
+}
+
+void Context::labelObject(GLenum type, GLuint object, GLsizei length, const GLchar *label)
+{
+    gl::LabeledObject *obj = getLabeledObject(type, object);
+    ASSERT(obj != nullptr);
+
+    std::string labelName = "";
+    if (label != nullptr)
+    {
+        size_t labelLength = length == 0 ? strlen(label) : length;
+        labelName          = std::string(label, labelLength);
+    }
+    obj->setLabel(this, labelName);
+    mState.setObjectDirty(type);
 }
 
 void Context::objectPtrLabel(const void *ptr, GLsizei length, const GLchar *label)
@@ -2614,7 +2635,7 @@ GLenum Context::getGraphicsResetStatus()
     return ToGLenum(mResetStatus);
 }
 
-bool Context::isResetNotificationEnabled()
+bool Context::isResetNotificationEnabled() const
 {
     return (mResetStrategy == GL_LOSE_CONTEXT_ON_RESET_EXT);
 }
@@ -3179,6 +3200,7 @@ Extensions Context::generateSupportedExtensions() const
         supportedExtensions.textureCubeMapOES     = true;
         supportedExtensions.pointSpriteOES        = true;
         supportedExtensions.drawTextureOES        = true;
+        supportedExtensions.framebufferObjectOES  = true;
         supportedExtensions.parallelShaderCompile = false;
         supportedExtensions.texture3DOES          = false;
     }
@@ -3287,6 +3309,9 @@ Extensions Context::generateSupportedExtensions() const
     supportedExtensions.maxDebugLoggedMessages  = 1024;
     supportedExtensions.maxDebugGroupStackDepth = 1024;
     supportedExtensions.maxLabelLength          = 1024;
+
+    // Explicitly enable GL_EXT_debug_label
+    supportedExtensions.debugLabel = true;
 
     // Explicitly enable GL_ANGLE_robust_client_memory if the context supports validation.
     supportedExtensions.robustClientMemory = !mSkipValidation;
@@ -3543,6 +3568,11 @@ void Context::initCaps()
                << std::endl;
         mState.mExtensions.mapBufferRange = false;
         mState.mExtensions.mapBufferOES   = false;
+
+        INFO() << "Disabling GL_CHROMIUM_bind_uniform_location during capture, which is not "
+                  "supported on native drivers"
+               << std::endl;
+        mState.mExtensions.bindUniformLocation = false;
     }
 
     // Disable support for OES_get_program_binary
@@ -4169,11 +4199,11 @@ void Context::copyImageSubData(GLuint srcName,
     if (srcTarget == GL_RENDERBUFFER)
     {
         // Source target is a Renderbuffer
-        Renderbuffer *readBuffer = getRenderbuffer(FromGL<RenderbufferID>(srcName));
+        Renderbuffer *readBuffer = getRenderbuffer(PackParam<RenderbufferID>(srcName));
         if (dstTarget == GL_RENDERBUFFER)
         {
             // Destination target is a Renderbuffer
-            Renderbuffer *writeBuffer = getRenderbuffer(FromGL<RenderbufferID>(dstName));
+            Renderbuffer *writeBuffer = getRenderbuffer(PackParam<RenderbufferID>(dstName));
 
             // Copy Renderbuffer to Renderbuffer
             ANGLE_CONTEXT_TRY(writeBuffer->copyRenderbufferSubData(
@@ -4186,7 +4216,7 @@ void Context::copyImageSubData(GLuint srcName,
             ASSERT(dstTarget == GL_TEXTURE_2D || dstTarget == GL_TEXTURE_2D_ARRAY ||
                    dstTarget == GL_TEXTURE_3D || dstTarget == GL_TEXTURE_CUBE_MAP);
 
-            Texture *writeTexture = getTexture(FromGL<TextureID>(dstName));
+            Texture *writeTexture = getTexture(PackParam<TextureID>(dstName));
             ANGLE_CONTEXT_TRY(syncTextureForCopy(writeTexture));
 
             // Copy Renderbuffer to Texture
@@ -4201,13 +4231,13 @@ void Context::copyImageSubData(GLuint srcName,
         ASSERT(srcTarget == GL_TEXTURE_2D || srcTarget == GL_TEXTURE_2D_ARRAY ||
                srcTarget == GL_TEXTURE_3D || srcTarget == GL_TEXTURE_CUBE_MAP);
 
-        Texture *readTexture = getTexture(FromGL<TextureID>(srcName));
+        Texture *readTexture = getTexture(PackParam<TextureID>(srcName));
         ANGLE_CONTEXT_TRY(syncTextureForCopy(readTexture));
 
         if (dstTarget == GL_RENDERBUFFER)
         {
             // Destination target is a Renderbuffer
-            Renderbuffer *writeBuffer = getRenderbuffer(FromGL<RenderbufferID>(dstName));
+            Renderbuffer *writeBuffer = getRenderbuffer(PackParam<RenderbufferID>(dstName));
 
             // Copy Texture to Renderbuffer
             ANGLE_CONTEXT_TRY(writeBuffer->copyTextureSubData(this, readTexture, srcLevel, srcX,
@@ -4220,7 +4250,7 @@ void Context::copyImageSubData(GLuint srcName,
             ASSERT(dstTarget == GL_TEXTURE_2D || dstTarget == GL_TEXTURE_2D_ARRAY ||
                    dstTarget == GL_TEXTURE_3D || dstTarget == GL_TEXTURE_CUBE_MAP);
 
-            Texture *writeTexture = getTexture(FromGL<TextureID>(dstName));
+            Texture *writeTexture = getTexture(PackParam<TextureID>(dstName));
             ANGLE_CONTEXT_TRY(syncTextureForCopy(writeTexture));
 
             // Copy Texture to Texture

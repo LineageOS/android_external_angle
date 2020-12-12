@@ -444,10 +444,12 @@ TEST_P(VulkanPerformanceCounterTest_ES31, MultisampleResolveWithBlit)
     EXPECT_EQ(counters.resolveImageCommands, 0u);
 
     glBindFramebuffer(GL_READ_FRAMEBUFFER, resolveFBO);
-    EXPECT_PIXEL_NEAR(0, 0, 0, 0, 0, 255, 1.0);                      // Black
-    EXPECT_PIXEL_NEAR(kSize - 1, 1, 239, 0, 0, 255, 1.0);            // Red
-    EXPECT_PIXEL_NEAR(0, kSize - 1, 0, 239, 0, 255, 1.0);            // Green
-    EXPECT_PIXEL_NEAR(kSize - 1, kSize - 1, 239, 239, 0, 255, 1.0);  // Yellow
+    constexpr uint8_t kHalfPixelGradient = 256 / kSize / 2;
+    EXPECT_PIXEL_NEAR(0, 0, kHalfPixelGradient, kHalfPixelGradient, 0, 255, 1.0);
+    EXPECT_PIXEL_NEAR(kSize - 1, 0, 255 - kHalfPixelGradient, kHalfPixelGradient, 0, 255, 1.0);
+    EXPECT_PIXEL_NEAR(0, kSize - 1, kHalfPixelGradient, 255 - kHalfPixelGradient, 0, 255, 1.0);
+    EXPECT_PIXEL_NEAR(kSize - 1, kSize - 1, 255 - kHalfPixelGradient, 255 - kHalfPixelGradient, 0,
+                      255, 1.0);
 }
 
 // Ensures a read-only depth-stencil feedback loop works in a single RenderPass.
@@ -2083,6 +2085,8 @@ TEST_P(VulkanPerformanceCounterTest, RenderToTextureDepthStencilRenderbufferShou
 {
     // http://anglebug.com/5083
     ANGLE_SKIP_TEST_IF(IsWindows() && IsAMD() && IsVulkan());
+    // http://anglebug.com/5380
+    ANGLE_SKIP_TEST_IF(IsLinux() && IsAMD() && IsVulkan());
 
     // http://crbug.com/1134286
     ANGLE_SKIP_TEST_IF(IsWindows7() && IsNVIDIA() && IsVulkan());

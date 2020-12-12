@@ -34,9 +34,11 @@ SurfaceState::SurfaceState(const egl::Config *configIn, const AttributeMap &attr
       config((configIn != nullptr) ? new egl::Config(*configIn) : nullptr),
       attributes(attributesIn),
       timestampsEnabled(false),
-      directComposition(false)
+      directComposition(false),
+      isFixedSize(false)
 {
     directComposition = attributes.get(EGL_DIRECT_COMPOSITION_ANGLE, EGL_FALSE) == EGL_TRUE;
+    isFixedSize       = attributes.get(EGL_FIXED_SIZE_ANGLE, EGL_FALSE) == EGL_TRUE;
 }
 
 SurfaceState::~SurfaceState()
@@ -70,7 +72,6 @@ Surface::Surface(EGLint surfaceType,
       mHorizontalResolution(EGL_UNKNOWN),
       mVerticalResolution(EGL_UNKNOWN),
       mMultisampleResolve(EGL_MULTISAMPLE_RESOLVE_DEFAULT),
-      mFixedSize(false),
       mFixedWidth(0),
       mFixedHeight(0),
       mTextureFormat(TextureFormat::NoTexture),
@@ -115,8 +116,7 @@ Surface::Surface(EGLint surfaceType,
         mInitState = gl::InitState::MayNeedInit;
     }
 
-    mFixedSize = (attributes.get(EGL_FIXED_SIZE_ANGLE, EGL_FALSE) == EGL_TRUE);
-    if (mFixedSize)
+    if (mState.isFixedSize)
     {
         mFixedWidth  = static_cast<size_t>(attributes.get(EGL_WIDTH, 0));
         mFixedHeight = static_cast<size_t>(attributes.get(EGL_HEIGHT, 0));
@@ -199,7 +199,14 @@ Error Surface::initialize(const Display *display)
     {
         GLenum internalFormat =
             static_cast<GLenum>(mState.attributes.get(EGL_TEXTURE_INTERNAL_FORMAT_ANGLE));
-        GLenum type  = static_cast<GLenum>(mState.attributes.get(EGL_TEXTURE_TYPE_ANGLE));
+        GLenum type = static_cast<GLenum>(mState.attributes.get(EGL_TEXTURE_TYPE_ANGLE));
+
+        // GL_RGBA + GL_HALF_FLOAT is not a valid format/type combination in GLES like it is in
+        // desktop GL. Adjust the frontend format to be sized RGBA16F.
+        if (internalFormat == GL_RGBA && type == GL_HALF_FLOAT)
+        {
+            internalFormat = GL_RGBA16F;
+        }
         mColorFormat = gl::Format(internalFormat, type);
     }
     if (mBuftype == EGL_D3D_TEXTURE_ANGLE)
@@ -290,8 +297,11 @@ Error Surface::swap(const gl::Context *context)
     return NoError();
 }
 
-Error Surface::swapWithDamage(const gl::Context *context, EGLint *rects, EGLint n_rects)
+Error Surface::swapWithDamage(const gl::Context *context, const EGLint *rects, EGLint n_rects)
 {
+    ANGLE_TRACE_EVENT0("gpu.angle", "egl::Surface::swapWithDamage");
+    context->onPreSwap();
+
     context->getState().getOverlay()->onSwap();
 
     ANGLE_TRY(mImplementation->swapWithDamage(context, rects, n_rects));
@@ -301,6 +311,9 @@ Error Surface::swapWithDamage(const gl::Context *context, EGLint *rects, EGLint 
 
 Error Surface::swapWithFrameToken(const gl::Context *context, EGLFrameTokenANGLE frameToken)
 {
+    ANGLE_TRACE_EVENT0("gpu.angle", "egl::Surface::swapWithFrameToken");
+    context->onPreSwap();
+
     context->getState().getOverlay()->onSwap();
 
     ANGLE_TRY(mImplementation->swapWithFrameToken(context, frameToken));
@@ -456,22 +469,22 @@ EGLenum Surface::getMultisampleResolve() const
 
 EGLint Surface::isFixedSize() const
 {
-    return mFixedSize;
+    return mState.isFixedSize;
 }
 
 EGLint Surface::getWidth() const
 {
-    return mFixedSize ? static_cast<EGLint>(mFixedWidth) : mImplementation->getWidth();
+    return mState.isFixedSize ? static_cast<EGLint>(mFixedWidth) : mImplementation->getWidth();
 }
 
 EGLint Surface::getHeight() const
 {
-    return mFixedSize ? static_cast<EGLint>(mFixedHeight) : mImplementation->getHeight();
+    return mState.isFixedSize ? static_cast<EGLint>(mFixedHeight) : mImplementation->getHeight();
 }
 
 egl::Error Surface::getUserWidth(const egl::Display *display, EGLint *value) const
 {
-    if (mFixedSize)
+    if (mState.isFixedSize)
     {
         *value = static_cast<EGLint>(mFixedWidth);
         return NoError();
@@ -484,7 +497,7 @@ egl::Error Surface::getUserWidth(const egl::Display *display, EGLint *value) con
 
 egl::Error Surface::getUserHeight(const egl::Display *display, EGLint *value) const
 {
-    if (mFixedSize)
+    if (mState.isFixedSize)
     {
         *value = static_cast<EGLint>(mFixedHeight);
         return NoError();
