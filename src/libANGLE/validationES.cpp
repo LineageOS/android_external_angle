@@ -1365,48 +1365,6 @@ bool ValidateRenderbufferStorageParametersBase(const Context *context,
     return true;
 }
 
-bool ValidateFramebufferRenderbufferParameters(const Context *context,
-                                               GLenum target,
-                                               GLenum attachment,
-                                               GLenum renderbuffertarget,
-                                               RenderbufferID renderbuffer)
-{
-    if (!ValidFramebufferTarget(context, target))
-    {
-        context->validationError(GL_INVALID_ENUM, kInvalidFramebufferTarget);
-        return false;
-    }
-
-    Framebuffer *framebuffer = context->getState().getTargetFramebuffer(target);
-
-    ASSERT(framebuffer);
-    if (framebuffer->isDefault())
-    {
-        context->validationError(GL_INVALID_OPERATION, kDefaultFramebufferTarget);
-        return false;
-    }
-
-    if (!ValidateAttachmentTarget(context, attachment))
-    {
-        return false;
-    }
-
-    // [OpenGL ES 2.0.25] Section 4.4.3 page 112
-    // [OpenGL ES 3.0.2] Section 4.4.2 page 201
-    // 'renderbuffer' must be either zero or the name of an existing renderbuffer object of
-    // type 'renderbuffertarget', otherwise an INVALID_OPERATION error is generated.
-    if (renderbuffer.value != 0)
-    {
-        if (!context->getRenderbuffer(renderbuffer))
-        {
-            context->validationError(GL_INVALID_OPERATION, kInvalidRenderbufferTarget);
-            return false;
-        }
-    }
-
-    return true;
-}
-
 bool ValidateBlitFramebufferParameters(const Context *context,
                                        GLint srcX0,
                                        GLint srcY0,
@@ -1654,6 +1612,231 @@ bool ValidateBlitFramebufferParameters(const Context *context,
     if (drawFramebuffer->isMultiview())
     {
         context->validationError(GL_INVALID_FRAMEBUFFER_OPERATION, kBlitToMultiview);
+        return false;
+    }
+
+    return true;
+}
+
+bool ValidateBindFramebufferBase(const Context *context, GLenum target, FramebufferID framebuffer)
+{
+    if (!ValidFramebufferTarget(context, target))
+    {
+        context->validationError(GL_INVALID_ENUM, kInvalidFramebufferTarget);
+        return false;
+    }
+
+    if (!context->getState().isBindGeneratesResourceEnabled() &&
+        !context->isFramebufferGenerated(framebuffer))
+    {
+        context->validationError(GL_INVALID_OPERATION, kObjectNotGenerated);
+        return false;
+    }
+
+    return true;
+}
+
+bool ValidateBindRenderbufferBase(const Context *context,
+                                  GLenum target,
+                                  RenderbufferID renderbuffer)
+{
+    if (target != GL_RENDERBUFFER)
+    {
+        context->validationError(GL_INVALID_ENUM, kInvalidRenderbufferTarget);
+        return false;
+    }
+
+    if (!context->getState().isBindGeneratesResourceEnabled() &&
+        !context->isRenderbufferGenerated(renderbuffer))
+    {
+        context->validationError(GL_INVALID_OPERATION, kObjectNotGenerated);
+        return false;
+    }
+
+    return true;
+}
+
+bool ValidateFramebufferRenderbufferBase(const Context *context,
+                                         GLenum target,
+                                         GLenum attachment,
+                                         GLenum renderbuffertarget,
+                                         RenderbufferID renderbuffer)
+{
+    if (!ValidFramebufferTarget(context, target))
+    {
+        context->validationError(GL_INVALID_ENUM, kInvalidFramebufferTarget);
+        return false;
+    }
+
+    if (renderbuffertarget != GL_RENDERBUFFER)
+    {
+        context->validationError(GL_INVALID_ENUM, kInvalidRenderbufferTarget);
+        return false;
+    }
+
+    Framebuffer *framebuffer = context->getState().getTargetFramebuffer(target);
+
+    ASSERT(framebuffer);
+    if (framebuffer->isDefault())
+    {
+        context->validationError(GL_INVALID_OPERATION, kDefaultFramebufferTarget);
+        return false;
+    }
+
+    if (!ValidateAttachmentTarget(context, attachment))
+    {
+        return false;
+    }
+
+    // [OpenGL ES 2.0.25] Section 4.4.3 page 112
+    // [OpenGL ES 3.0.2] Section 4.4.2 page 201
+    // 'renderbuffer' must be either zero or the name of an existing renderbuffer object of
+    // type 'renderbuffertarget', otherwise an INVALID_OPERATION error is generated.
+    if (renderbuffer.value != 0)
+    {
+        if (!context->getRenderbuffer(renderbuffer))
+        {
+            context->validationError(GL_INVALID_OPERATION, kInvalidRenderbufferTarget);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool ValidateFramebufferTextureBase(const Context *context,
+                                    GLenum target,
+                                    GLenum attachment,
+                                    TextureID texture,
+                                    GLint level)
+{
+    if (!ValidFramebufferTarget(context, target))
+    {
+        context->validationError(GL_INVALID_ENUM, kInvalidFramebufferTarget);
+        return false;
+    }
+
+    if (!ValidateAttachmentTarget(context, attachment))
+    {
+        return false;
+    }
+
+    if (texture.value != 0)
+    {
+        Texture *tex = context->getTexture(texture);
+
+        if (tex == nullptr)
+        {
+            context->validationError(GL_INVALID_OPERATION, kMissingTexture);
+            return false;
+        }
+
+        if (level < 0)
+        {
+            context->validationError(GL_INVALID_VALUE, kInvalidMipLevel);
+            return false;
+        }
+    }
+
+    const Framebuffer *framebuffer = context->getState().getTargetFramebuffer(target);
+    ASSERT(framebuffer);
+
+    if (framebuffer->isDefault())
+    {
+        context->validationError(GL_INVALID_OPERATION, kDefaultFramebufferTarget);
+        return false;
+    }
+
+    return true;
+}
+
+bool ValidateGenerateMipmapBase(const Context *context, TextureType target)
+{
+    if (!ValidTextureTarget(context, target))
+    {
+        context->validationError(GL_INVALID_ENUM, kInvalidTextureTarget);
+        return false;
+    }
+
+    Texture *texture = context->getTextureByType(target);
+
+    if (texture == nullptr)
+    {
+        context->validationError(GL_INVALID_OPERATION, kTextureNotBound);
+        return false;
+    }
+
+    const GLuint effectiveBaseLevel = texture->getTextureState().getEffectiveBaseLevel();
+
+    // This error isn't spelled out in the spec in a very explicit way, but we interpret the spec so
+    // that out-of-range base level has a non-color-renderable / non-texture-filterable format.
+    if (effectiveBaseLevel >= IMPLEMENTATION_MAX_TEXTURE_LEVELS)
+    {
+        context->validationError(GL_INVALID_OPERATION, kBaseLevelOutOfRange);
+        return false;
+    }
+
+    TextureTarget baseTarget = (target == TextureType::CubeMap)
+                                   ? TextureTarget::CubeMapPositiveX
+                                   : NonCubeTextureTypeToTarget(target);
+    const auto &format = *(texture->getFormat(baseTarget, effectiveBaseLevel).info);
+    if (format.sizedInternalFormat == GL_NONE || format.compressed || format.depthBits > 0 ||
+        format.stencilBits > 0)
+    {
+        context->validationError(GL_INVALID_OPERATION, kGenerateMipmapNotAllowed);
+        return false;
+    }
+
+    // GenerateMipmap accepts formats that are unsized or both color renderable and filterable.
+    bool formatUnsized = !format.sized;
+    bool formatColorRenderableAndFilterable =
+        format.filterSupport(context->getClientVersion(), context->getExtensions()) &&
+        format.textureAttachmentSupport(context->getClientVersion(), context->getExtensions());
+    if (!formatUnsized && !formatColorRenderableAndFilterable)
+    {
+        context->validationError(GL_INVALID_OPERATION, kGenerateMipmapNotAllowed);
+        return false;
+    }
+
+    // GL_EXT_sRGB adds an unsized SRGB (no alpha) format which has explicitly disabled mipmap
+    // generation
+    if (format.colorEncoding == GL_SRGB && format.format == GL_RGB)
+    {
+        context->validationError(GL_INVALID_OPERATION, kGenerateMipmapNotAllowed);
+        return false;
+    }
+
+    // According to the OpenGL extension spec EXT_sRGB.txt, EXT_SRGB is based on ES 2.0 and
+    // generateMipmap is not allowed if texture format is SRGB_EXT or SRGB_ALPHA_EXT.
+    if (context->getClientVersion() < Version(3, 0) && format.colorEncoding == GL_SRGB)
+    {
+        context->validationError(GL_INVALID_OPERATION, kGenerateMipmapNotAllowed);
+        return false;
+    }
+
+    // Non-power of 2 ES2 check
+    if (context->getClientVersion() < Version(3, 0) && !context->getExtensions().textureNPOTOES &&
+        (!isPow2(static_cast<int>(texture->getWidth(baseTarget, 0))) ||
+         !isPow2(static_cast<int>(texture->getHeight(baseTarget, 0)))))
+    {
+        ASSERT(target == TextureType::_2D || target == TextureType::Rectangle ||
+               target == TextureType::CubeMap);
+        context->validationError(GL_INVALID_OPERATION, kTextureNotPow2);
+        return false;
+    }
+
+    // Cube completeness check
+    if (target == TextureType::CubeMap && !texture->getTextureState().isCubeComplete())
+    {
+        context->validationError(GL_INVALID_OPERATION, kCubemapIncomplete);
+        return false;
+    }
+
+    if (context->getExtensions().webglCompatibility &&
+        (texture->getWidth(baseTarget, effectiveBaseLevel) == 0 ||
+         texture->getHeight(baseTarget, effectiveBaseLevel) == 0))
+    {
+        context->validationError(GL_INVALID_OPERATION, kGenerateMipmapZeroSize);
         return false;
     }
 
@@ -2633,7 +2816,7 @@ bool ValidateCopyImageSubDataTarget(const Context *context, GLuint name, GLenum 
     {
         case GL_RENDERBUFFER:
         {
-            RenderbufferID renderbuffer = FromGL<RenderbufferID>(name);
+            RenderbufferID renderbuffer = PackParam<RenderbufferID>(name);
             if (!context->isRenderbuffer(renderbuffer))
             {
                 context->validationError(GL_INVALID_VALUE, kInvalidRenderbufferName);
@@ -2647,7 +2830,7 @@ bool ValidateCopyImageSubDataTarget(const Context *context, GLuint name, GLenum 
         case GL_TEXTURE_CUBE_MAP:
         case GL_TEXTURE_CUBE_MAP_ARRAY_EXT:
         {
-            TextureID texture = FromGL<TextureID>(name);
+            TextureID texture = PackParam<TextureID>(name);
             if (!context->isTexture(texture))
             {
                 context->validationError(GL_INVALID_VALUE, kInvalidTextureName);
@@ -2655,7 +2838,7 @@ bool ValidateCopyImageSubDataTarget(const Context *context, GLuint name, GLenum 
             }
 
             Texture *textureObject = context->getTexture(texture);
-            if (textureObject && textureObject->getType() != FromGL<TextureType>(target))
+            if (textureObject && textureObject->getType() != PackParam<TextureType>(target))
             {
                 context->validationError(GL_INVALID_VALUE, err::kTextureTypeMismatch);
                 return false;
@@ -2701,7 +2884,7 @@ bool ValidateCopyImageSubDataTargetRegion(const Context *context,
 
         // INVALID_VALUE is generated if the dimensions of the either subregion exceeds the
         // boundaries of the corresponding image object
-        Renderbuffer *buffer = context->getRenderbuffer(FromGL<RenderbufferID>(name));
+        Renderbuffer *buffer = context->getRenderbuffer(PackParam<RenderbufferID>(name));
         if ((buffer->getWidth() - offsetX < width) || (buffer->getHeight() - offsetY < height))
         {
             context->validationError(GL_INVALID_VALUE, kSourceTextureTooSmall);
@@ -2711,13 +2894,13 @@ bool ValidateCopyImageSubDataTargetRegion(const Context *context,
     else
     {
         // INVALID_VALUE is generated if the specified level is not a valid level for the image
-        if (!ValidMipLevel(context, FromGL<TextureType>(target), level))
+        if (!ValidMipLevel(context, PackParam<TextureType>(target), level))
         {
             context->validationError(GL_INVALID_VALUE, kInvalidMipLevel);
             return false;
         }
 
-        Texture *texture = context->getTexture(FromGL<TextureID>(name));
+        Texture *texture = context->getTexture(PackParam<TextureID>(name));
 
         // INVALID_OPERATION is generated if either object is a texture and the texture is not
         // complete
@@ -2737,9 +2920,9 @@ bool ValidateCopyImageSubDataTargetRegion(const Context *context,
         }
 
         const GLsizei textureWidth = static_cast<GLsizei>(
-            texture->getWidth(FromGL<TextureTarget>(textureTargetToUse), level));
+            texture->getWidth(PackParam<TextureTarget>(textureTargetToUse), level));
         const GLsizei textureHeight = static_cast<GLsizei>(
-            texture->getHeight(FromGL<TextureTarget>(textureTargetToUse), level));
+            texture->getHeight(PackParam<TextureTarget>(textureTargetToUse), level));
 
         // INVALID_VALUE is generated if the dimensions of the either subregion exceeds the
         // boundaries of the corresponding image object
@@ -2749,7 +2932,7 @@ bool ValidateCopyImageSubDataTargetRegion(const Context *context,
             return false;
         }
 
-        *samples = texture->getSamples(FromGL<TextureTarget>(textureTargetToUse), level);
+        *samples = texture->getSamples(PackParam<TextureTarget>(textureTargetToUse), level);
         *samples = (*samples == 0) ? 1 : *samples;
     }
 
@@ -2787,7 +2970,7 @@ const InternalFormat &GetTargetFormatInfo(const Context *context,
     {
         case GL_RENDERBUFFER:
         {
-            Renderbuffer *buffer = context->getRenderbuffer(FromGL<RenderbufferID>(name));
+            Renderbuffer *buffer = context->getRenderbuffer(PackParam<RenderbufferID>(name));
             return *buffer->getFormat().info;
             break;
         }
@@ -2797,7 +2980,7 @@ const InternalFormat &GetTargetFormatInfo(const Context *context,
         case GL_TEXTURE_CUBE_MAP:
         case GL_TEXTURE_CUBE_MAP_ARRAY_EXT:
         {
-            Texture *texture          = context->getTexture(FromGL<TextureID>(name));
+            Texture *texture          = context->getTexture(PackParam<TextureID>(name));
             GLenum textureTargetToUse = target;
 
             if (target == GL_TEXTURE_CUBE_MAP)
@@ -2806,7 +2989,7 @@ const InternalFormat &GetTargetFormatInfo(const Context *context,
                 // textureWidth/textureHeight
                 textureTargetToUse = GL_TEXTURE_CUBE_MAP_POSITIVE_X;
             }
-            return *texture->getFormat(FromGL<TextureTarget>(textureTargetToUse), level).info;
+            return *texture->getFormat(PackParam<TextureTarget>(textureTargetToUse), level).info;
         }
         default:
             context->validationError(GL_INVALID_ENUM, kInvalidTarget);
@@ -3872,52 +4055,6 @@ bool ValidateDrawElementsInstancedEXT(const Context *context,
 
     if (!ValidateDrawElementsInstancedBase(context, mode, count, type, indices, primcount))
     {
-        return false;
-    }
-
-    return true;
-}
-
-bool ValidateFramebufferTextureBase(const Context *context,
-                                    GLenum target,
-                                    GLenum attachment,
-                                    TextureID texture,
-                                    GLint level)
-{
-    if (!ValidFramebufferTarget(context, target))
-    {
-        context->validationError(GL_INVALID_ENUM, kInvalidFramebufferTarget);
-        return false;
-    }
-
-    if (!ValidateAttachmentTarget(context, attachment))
-    {
-        return false;
-    }
-
-    if (texture.value != 0)
-    {
-        Texture *tex = context->getTexture(texture);
-
-        if (tex == nullptr)
-        {
-            context->validationError(GL_INVALID_OPERATION, kMissingTexture);
-            return false;
-        }
-
-        if (level < 0)
-        {
-            context->validationError(GL_INVALID_VALUE, kInvalidMipLevel);
-            return false;
-        }
-    }
-
-    const Framebuffer *framebuffer = context->getState().getTargetFramebuffer(target);
-    ASSERT(framebuffer);
-
-    if (framebuffer->isDefault())
-    {
-        context->validationError(GL_INVALID_OPERATION, kDefaultFramebufferTarget);
         return false;
     }
 

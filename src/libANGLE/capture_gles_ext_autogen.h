@@ -8,8 +8,8 @@
 // capture_gles_ext_autogen.h:
 //   Capture functions for the OpenGL ES extension entry points.
 
-#ifndef LIBANGLE_CAPTURE_GLES_ext_AUTOGEN_H_
-#define LIBANGLE_CAPTURE_GLES_ext_AUTOGEN_H_
+#ifndef LIBANGLE_CAPTURE_GLES_EXT_AUTOGEN_H_
+#define LIBANGLE_CAPTURE_GLES_EXT_AUTOGEN_H_
 
 #include "common/PackedEnums.h"
 #include "libANGLE/FrameCapture.h"
@@ -921,6 +921,21 @@ angle::CallCapture CaptureCopyImageSubDataEXT(const State &glState,
                                               GLsizei srcHeight,
                                               GLsizei srcDepth);
 
+// GL_EXT_debug_label
+angle::CallCapture CaptureGetObjectLabelEXT(const State &glState,
+                                            bool isCallValid,
+                                            GLenum type,
+                                            GLuint object,
+                                            GLsizei bufSize,
+                                            GLsizei *length,
+                                            GLchar *label);
+angle::CallCapture CaptureLabelObjectEXT(const State &glState,
+                                         bool isCallValid,
+                                         GLenum type,
+                                         GLuint object,
+                                         GLsizei length,
+                                         const GLchar *label);
+
 // GL_EXT_debug_marker
 angle::CallCapture CaptureInsertEventMarkerEXT(const State &glState,
                                                bool isCallValid,
@@ -1581,6 +1596,8 @@ angle::CallCapture CaptureValidateProgramPipelineEXT(const State &glState,
                                                      bool isCallValid,
                                                      ProgramPipelineID pipelinePacked);
 
+// GL_EXT_shader_io_blocks
+
 // GL_EXT_tessellation_shader
 angle::CallCapture CapturePatchParameteriEXT(const State &glState,
                                              bool isCallValid,
@@ -2025,6 +2042,8 @@ angle::CallCapture CaptureQueryMatrixxOES(const State &glState,
 angle::CallCapture CaptureMinSampleShadingOES(const State &glState,
                                               bool isCallValid,
                                               GLfloat value);
+
+// GL_OES_shader_io_blocks
 
 // GL_OES_texture_3D
 angle::CallCapture CaptureCompressedTexImage3DOES(const State &glState,
@@ -3555,6 +3574,29 @@ void CaptureBufferStorageEXT_data(const State &glState,
                                   const void *data,
                                   GLbitfield flags,
                                   angle::ParamCapture *paramCapture);
+void CaptureGetObjectLabelEXT_length(const State &glState,
+                                     bool isCallValid,
+                                     GLenum type,
+                                     GLuint object,
+                                     GLsizei bufSize,
+                                     GLsizei *length,
+                                     GLchar *label,
+                                     angle::ParamCapture *paramCapture);
+void CaptureGetObjectLabelEXT_label(const State &glState,
+                                    bool isCallValid,
+                                    GLenum type,
+                                    GLuint object,
+                                    GLsizei bufSize,
+                                    GLsizei *length,
+                                    GLchar *label,
+                                    angle::ParamCapture *paramCapture);
+void CaptureLabelObjectEXT_label(const State &glState,
+                                 bool isCallValid,
+                                 GLenum type,
+                                 GLuint object,
+                                 GLsizei length,
+                                 const GLchar *label,
+                                 angle::ParamCapture *paramCapture);
 void CaptureInsertEventMarkerEXT_marker(const State &glState,
                                         bool isCallValid,
                                         GLsizei length,
@@ -4474,4 +4516,4 @@ void CaptureGenVertexArraysOES_arraysPacked(const State &glState,
                                             angle::ParamCapture *paramCapture);
 }  // namespace gl
 
-#endif  // LIBANGLE_CAPTURE_GLES_ext_AUTOGEN_H_
+#endif  // LIBANGLE_CAPTURE_GLES_EXT_AUTOGEN_H_

@@ -689,6 +689,14 @@ ANGLE_EXPORT void GL_APIENTRY CopyImageSubDataEXT(GLuint srcName,
                                                   GLsizei srcHeight,
                                                   GLsizei srcDepth);
 
+// GL_EXT_debug_label
+ANGLE_EXPORT void GL_APIENTRY
+GetObjectLabelEXT(GLenum type, GLuint object, GLsizei bufSize, GLsizei *length, GLchar *label);
+ANGLE_EXPORT void GL_APIENTRY LabelObjectEXT(GLenum type,
+                                             GLuint object,
+                                             GLsizei length,
+                                             const GLchar *label);
+
 // GL_EXT_debug_marker
 ANGLE_EXPORT void GL_APIENTRY InsertEventMarkerEXT(GLsizei length, const GLchar *marker);
 ANGLE_EXPORT void GL_APIENTRY PopGroupMarkerEXT();
@@ -1054,6 +1062,8 @@ ANGLE_EXPORT void GL_APIENTRY UseProgramStagesEXT(GLuint pipeline,
                                                   GLuint program);
 ANGLE_EXPORT void GL_APIENTRY ValidateProgramPipelineEXT(GLuint pipeline);
 
+// GL_EXT_shader_io_blocks
+
 // GL_EXT_tessellation_shader
 ANGLE_EXPORT void GL_APIENTRY PatchParameteriEXT(GLenum pname, GLint value);
 
@@ -1296,6 +1306,8 @@ ANGLE_EXPORT GLbitfield GL_APIENTRY QueryMatrixxOES(GLfixed *mantissa, GLint *ex
 
 // GL_OES_sample_shading
 ANGLE_EXPORT void GL_APIENTRY MinSampleShadingOES(GLfloat value);
+
+// GL_OES_shader_io_blocks
 
 // GL_OES_texture_3D
 ANGLE_EXPORT void GL_APIENTRY CompressedTexImage3DOES(GLenum target,
@@ -2455,6 +2467,12 @@ ANGLE_EXPORT void GL_APIENTRY GetObjectLabelContextANGLE(GLeglContext ctx,
                                                          GLsizei bufSize,
                                                          GLsizei *length,
                                                          GLchar *label);
+ANGLE_EXPORT void GL_APIENTRY GetObjectLabelEXTContextANGLE(GLeglContext ctx,
+                                                            GLenum type,
+                                                            GLuint object,
+                                                            GLsizei bufSize,
+                                                            GLsizei *length,
+                                                            GLchar *label);
 ANGLE_EXPORT void GL_APIENTRY GetObjectLabelKHRContextANGLE(GLeglContext ctx,
                                                             GLenum identifier,
                                                             GLuint name,
@@ -2853,6 +2871,11 @@ ANGLE_EXPORT GLboolean GL_APIENTRY IsTextureContextANGLE(GLeglContext ctx, GLuin
 ANGLE_EXPORT GLboolean GL_APIENTRY IsTransformFeedbackContextANGLE(GLeglContext ctx, GLuint id);
 ANGLE_EXPORT GLboolean GL_APIENTRY IsVertexArrayContextANGLE(GLeglContext ctx, GLuint array);
 ANGLE_EXPORT GLboolean GL_APIENTRY IsVertexArrayOESContextANGLE(GLeglContext ctx, GLuint array);
+ANGLE_EXPORT void GL_APIENTRY LabelObjectEXTContextANGLE(GLeglContext ctx,
+                                                         GLenum type,
+                                                         GLuint object,
+                                                         GLsizei length,
+                                                         const GLchar *label);
 ANGLE_EXPORT void GL_APIENTRY LightModelfContextANGLE(GLeglContext ctx,
                                                       GLenum pname,
                                                       GLfloat param);

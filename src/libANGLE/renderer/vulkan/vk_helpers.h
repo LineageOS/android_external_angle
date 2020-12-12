@@ -59,6 +59,8 @@ struct TextureUnit final
 // currently active VkBuffer we keep it until it is no longer in use. We then mark it available
 // for future allocations in a free list.
 class BufferHelper;
+using BufferHelperPointerVector = std::vector<std::unique_ptr<BufferHelper>>;
+
 class DynamicBuffer : angle::NonCopyable
 {
   public:
@@ -127,7 +129,7 @@ class DynamicBuffer : angle::NonCopyable
     // This frees resources immediately.
     void destroy(RendererVk *renderer);
 
-    BufferHelper *getCurrentBuffer() const { return mBuffer; }
+    BufferHelper *getCurrentBuffer() const { return mBuffer.get(); }
 
     // **Accumulate** an alignment requirement.  A dynamic buffer is used as the staging buffer for
     // image uploads, which can contain updates to unrelated mips, possibly with different formats.
@@ -147,21 +149,19 @@ class DynamicBuffer : angle::NonCopyable
   private:
     void reset();
     angle::Result allocateNewBuffer(ContextVk *contextVk);
-    void releaseBufferListToRenderer(RendererVk *renderer, std::vector<BufferHelper *> *buffers);
-    void destroyBufferList(RendererVk *renderer, std::vector<BufferHelper *> *buffers);
 
     VkBufferUsageFlags mUsage;
     bool mHostVisible;
     size_t mInitialSize;
-    BufferHelper *mBuffer;
+    std::unique_ptr<BufferHelper> mBuffer;
     uint32_t mNextAllocationOffset;
     uint32_t mLastFlushOrInvalidateOffset;
     size_t mSize;
     size_t mAlignment;
     VkMemoryPropertyFlags mMemoryPropertyFlags;
 
-    std::vector<BufferHelper *> mInFlightBuffers;
-    std::vector<BufferHelper *> mBufferFreeList;
+    BufferHelperPointerVector mInFlightBuffers;
+    BufferHelperPointerVector mBufferFreeList;
 };
 
 // Based off of the DynamicBuffer class, DynamicShadowBuffer provides
@@ -380,8 +380,9 @@ class DynamicallyGrowingPool : angle::NonCopyable
 // another is created.  The query pools live permanently, but are recycled as indices get freed.
 
 // These are arbitrary default sizes for query pools.
-constexpr uint32_t kDefaultOcclusionQueryPoolSize = 64;
-constexpr uint32_t kDefaultTimestampQueryPoolSize = 64;
+constexpr uint32_t kDefaultOcclusionQueryPoolSize         = 64;
+constexpr uint32_t kDefaultTimestampQueryPoolSize         = 64;
+constexpr uint32_t kDefaultTransformFeedbackQueryPoolSize = 128;
 
 class QueryHelper;
 
@@ -404,6 +405,35 @@ class DynamicQueryPool final : public DynamicallyGrowingPool<QueryPool>
 
     // Information required to create new query pools
     VkQueryType mQueryType;
+};
+
+// Stores the result of a Vulkan query call. XFB queries in particular store two result values.
+class QueryResult final
+{
+  public:
+    QueryResult(uint32_t intsPerResult) : mIntsPerResult(intsPerResult), mResults{} {}
+
+    void operator+=(const QueryResult &rhs)
+    {
+        mResults[0] += rhs.mResults[0];
+        mResults[1] += rhs.mResults[1];
+    }
+
+    size_t getDataSize() const { return mIntsPerResult * sizeof(uint64_t); }
+    uint64_t getResult(size_t index) const
+    {
+        ASSERT(index < mIntsPerResult);
+        return mResults[index];
+    }
+    uint64_t *getPointerToResults() { return mResults.data(); }
+
+    static constexpr size_t kDefaultResultIndex                      = 0;
+    static constexpr size_t kTransformFeedbackPrimitivesWrittenIndex = 0;
+    static constexpr size_t kPrimitivesGeneratedIndex                = 1;
+
+  private:
+    uint32_t mIntsPerResult;
+    std::array<uint64_t, 2> mResults;
 };
 
 // Queries in vulkan are identified by the query pool and an index for a query within that pool.
@@ -429,14 +459,12 @@ class QueryHelper final : public Resource
 
     bool valid() const { return mDynamicQueryPool != nullptr; }
 
+    // Begin/end queries.  These functions break the render pass.
     angle::Result beginQuery(ContextVk *contextVk);
     angle::Result endQuery(ContextVk *contextVk);
-
-    // for occlusion query
-    // Must resetQueryPool outside of RenderPass before beginning occlusion query.
-    void resetQueryPool(ContextVk *contextVk, CommandBuffer *outsideRenderPassCommandBuffer);
-    void beginOcclusionQuery(ContextVk *contextVk, CommandBuffer *renderPassCommandBuffer);
-    void endOcclusionQuery(ContextVk *contextVk, CommandBuffer *renderPassCommandBuffer);
+    // Begin/end queries within a started render pass.
+    angle::Result beginRenderPassQuery(ContextVk *contextVk);
+    void endRenderPassQuery(ContextVk *contextVk);
 
     angle::Result flushAndWriteTimestamp(ContextVk *contextVk);
     // When syncing gpu/cpu time, main thread accesses primary directly
@@ -444,10 +472,13 @@ class QueryHelper final : public Resource
     // All other timestamp accesses should be made on outsideRenderPassCommandBuffer
     void writeTimestamp(ContextVk *contextVk, CommandBuffer *outsideRenderPassCommandBuffer);
 
+    // Whether this query helper has generated and submitted any commands.
+    bool hasSubmittedCommands() const;
+
     angle::Result getUint64ResultNonBlocking(ContextVk *contextVk,
-                                             uint64_t *resultOut,
+                                             QueryResult *resultOut,
                                              bool *availableOut);
-    angle::Result getUint64Result(ContextVk *contextVk, uint64_t *resultOut);
+    angle::Result getUint64Result(ContextVk *contextVk, QueryResult *resultOut);
 
   private:
     friend class DynamicQueryPool;
@@ -456,6 +487,13 @@ class QueryHelper final : public Resource
         ASSERT(valid());
         return mDynamicQueryPool->getQueryPool(mQueryPoolIndex);
     }
+
+    // Reset needs to always be done outside a render pass, which may be different from the
+    // passed-in command buffer (which could be the render pass').
+    void beginQueryImpl(ContextVk *contextVk,
+                        CommandBuffer *resetCommandBuffer,
+                        CommandBuffer *commandBuffer);
+    void endQueryImpl(ContextVk *contextVk, CommandBuffer *commandBuffer);
 
     const DynamicQueryPool *mDynamicQueryPool;
     size_t mQueryPoolIndex;
@@ -1014,7 +1052,7 @@ class CommandBufferHelper : angle::NonCopyable
         return mRenderPassStarted;
     }
 
-    void onImageHelperRelease(const vk::ImageHelper *image);
+    void onImageHelperRelease(const ImageHelper *image);
 
     void beginRenderPass(const Framebuffer &framebuffer,
                          const gl::Rectangle &renderArea,
@@ -1110,8 +1148,8 @@ class CommandBufferHelper : angle::NonCopyable
     void onDepthAccess(ResourceAccess access);
     void onStencilAccess(ResourceAccess access);
 
-    void updateRenderPassForResolve(vk::Framebuffer *newFramebuffer,
-                                    const vk::RenderPassDesc &renderPassDesc);
+    void updateRenderPassForResolve(Framebuffer *newFramebuffer,
+                                    const RenderPassDesc &renderPassDesc);
 
     bool hasDepthStencilWriteOrClear() const
     {
@@ -1267,9 +1305,9 @@ bool FormatHasNecessaryFeature(RendererVk *renderer,
                                VkFormatFeatureFlags featureBits);
 
 bool CanCopyWithTransfer(RendererVk *renderer,
-                         const vk::Format &srcFormat,
+                         const Format &srcFormat,
                          VkImageTiling srcTilingMode,
-                         const vk::Format &destFormat,
+                         const Format &destFormat,
                          VkImageTiling destTilingMode);
 
 class ImageHelper final : public Resource, public angle::Subject
@@ -1339,17 +1377,17 @@ class ImageHelper final : public Resource, public angle::Subject
                                                uint32_t levelCount,
                                                uint32_t baseArrayLayer,
                                                uint32_t layerCount) const;
-    angle::Result initAliasedLayerImageView(Context *context,
-                                            gl::TextureType textureType,
-                                            VkImageAspectFlags aspectMask,
-                                            const gl::SwizzleState &swizzleMap,
-                                            ImageView *imageViewOut,
-                                            LevelIndex baseMipLevelVk,
-                                            uint32_t levelCount,
-                                            uint32_t baseArrayLayer,
-                                            uint32_t layerCount,
-                                            VkImageUsageFlags imageUsageFlags,
-                                            VkFormat imageViewFormat) const;
+    angle::Result initReinterpretedLayerImageView(Context *context,
+                                                  gl::TextureType textureType,
+                                                  VkImageAspectFlags aspectMask,
+                                                  const gl::SwizzleState &swizzleMap,
+                                                  ImageView *imageViewOut,
+                                                  LevelIndex baseMipLevelVk,
+                                                  uint32_t levelCount,
+                                                  uint32_t baseArrayLayer,
+                                                  uint32_t layerCount,
+                                                  VkImageUsageFlags imageUsageFlags,
+                                                  VkFormat imageViewFormat) const;
     angle::Result initImageView(Context *context,
                                 gl::TextureType textureType,
                                 VkImageAspectFlags aspectMask,
@@ -1446,12 +1484,12 @@ class ImageHelper final : public Resource, public angle::Subject
                      CommandBuffer *commandBuffer);
 
     static angle::Result CopyImageSubData(const gl::Context *context,
-                                          vk::ImageHelper *srcImage,
+                                          ImageHelper *srcImage,
                                           GLint srcLevel,
                                           GLint srcX,
                                           GLint srcY,
                                           GLint srcZ,
-                                          vk::ImageHelper *dstImage,
+                                          ImageHelper *dstImage,
                                           GLint dstLevel,
                                           GLint dstX,
                                           GLint dstY,

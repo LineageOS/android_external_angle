@@ -17,6 +17,7 @@
 #include "libANGLE/renderer/driver_utils.h"
 #include "libANGLE/renderer/vulkan/DisplayVk.h"
 #include "libANGLE/renderer/vulkan/RendererVk.h"
+#include "libANGLE/renderer/vulkan/vk_cache_utils.h"
 #include "vk_format_utils.h"
 
 namespace
@@ -36,7 +37,7 @@ bool HasShaderImageAtomicsSupport(const RendererVk *rendererVk,
 {
     // Only VK_FORMAT_R32_SFLOAT doesn't have mandatory support for the STORAGE_IMAGE_ATOMIC and
     // STORAGE_TEXEL_BUFFER_ATOMIC features.
-    const vk::Format &formatVk = rendererVk->getFormat(GL_R32F);
+    const Format &formatVk = rendererVk->getFormat(GL_R32F);
 
     const bool hasImageAtomicSupport = rendererVk->hasImageFormatFeatureBits(
         formatVk.vkImageFormat, VK_FORMAT_FEATURE_STORAGE_IMAGE_ATOMIC_BIT);
@@ -50,6 +51,9 @@ bool HasShaderImageAtomicsSupport(const RendererVk *rendererVk,
     return hasImageAtomicSupport && hasBufferAtomicSupport;
 }
 
+// Checks to see if each format can be reinterpreted to an equivalent format in a different
+// colorspace. If all supported formats can be reinterpreted, it returns true. Formats which are not
+// supported at all are ignored and not counted as failures.
 bool FormatReinterpretationSupported(const std::vector<GLenum> &optionalSizedFormats,
                                      const RendererVk *rendererVk,
                                      bool checkLinearColorspace)
@@ -59,23 +63,19 @@ bool FormatReinterpretationSupported(const std::vector<GLenum> &optionalSizedFor
         const gl::TextureCaps &baseCaps = rendererVk->getNativeTextureCaps().get(glFormat);
         if (baseCaps.texturable && baseCaps.filterable)
         {
-            const vk::Format &vkFormat = rendererVk->getFormat(glFormat);
+            const Format &vkFormat = rendererVk->getFormat(glFormat);
 
             VkFormat reinterpretedFormat = checkLinearColorspace
-                                               ? vk::ConvertToLinear(vkFormat.vkImageFormat)
-                                               : vk::ConvertToSRGB(vkFormat.vkImageFormat);
-            ASSERT(reinterpretedFormat != VK_FORMAT_UNDEFINED);
+                                               ? ConvertToLinear(vkFormat.vkImageFormat)
+                                               : ConvertToSRGB(vkFormat.vkImageFormat);
 
-            constexpr uint32_t kBitsSampleFilter =
-                VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
-                VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
-
-            if (!rendererVk->hasImageFormatFeatureBits(reinterpretedFormat, kBitsSampleFilter))
+            if (!rendererVk->haveSameFormatFeatureBits(vkFormat.vkImageFormat, reinterpretedFormat))
             {
                 return false;
             }
         }
     }
+
     return true;
 }
 
@@ -136,16 +136,15 @@ bool GetTextureSRGBOverrideSupport(const RendererVk *rendererVk,
     std::vector<GLenum> optionalR8LinearFormats   = {GL_R8};
     std::vector<GLenum> optionalBPTCLinearFormats = {GL_COMPRESSED_RGBA_BPTC_UNORM_EXT};
 
-    if (!vk::FormatReinterpretationSupported(optionalLinearFormats, rendererVk,
-                                             kNonLinearColorspace))
+    if (!FormatReinterpretationSupported(optionalLinearFormats, rendererVk, kNonLinearColorspace))
     {
         return false;
     }
 
     if (supportedExtensions.textureCompressionS3TCsRGB == true)
     {
-        if (!vk::FormatReinterpretationSupported(optionalS3TCLinearFormats, rendererVk,
-                                                 kNonLinearColorspace))
+        if (!FormatReinterpretationSupported(optionalS3TCLinearFormats, rendererVk,
+                                             kNonLinearColorspace))
         {
             return false;
         }
@@ -153,8 +152,8 @@ bool GetTextureSRGBOverrideSupport(const RendererVk *rendererVk,
 
     if (supportedExtensions.sRGBR8EXT == true)
     {
-        if (!vk::FormatReinterpretationSupported(optionalR8LinearFormats, rendererVk,
-                                                 kNonLinearColorspace))
+        if (!FormatReinterpretationSupported(optionalR8LinearFormats, rendererVk,
+                                             kNonLinearColorspace))
         {
             return false;
         }
@@ -164,14 +163,23 @@ bool GetTextureSRGBOverrideSupport(const RendererVk *rendererVk,
 
     if (supportedExtensions.textureCompressionBPTC == true)
     {
-        if (!vk::FormatReinterpretationSupported(optionalBPTCLinearFormats, rendererVk,
-                                                 kNonLinearColorspace))
+        if (!FormatReinterpretationSupported(optionalBPTCLinearFormats, rendererVk,
+                                             kNonLinearColorspace))
         {
             return false;
         }
     }
 
     return true;
+}
+
+bool HasTexelBufferSupport(const RendererVk *rendererVk, GLenum formatGL)
+{
+    const Format &formatVk = rendererVk->getFormat(formatGL);
+
+    return rendererVk->hasBufferFormatFeatureBits(
+        formatVk.vkBufferFormat,
+        VK_FORMAT_FEATURE_UNIFORM_TEXEL_BUFFER_BIT | VK_FORMAT_FEATURE_STORAGE_TEXEL_BUFFER_BIT);
 }
 
 bool HasTextureBufferSupport(const RendererVk *rendererVk)
@@ -219,27 +227,40 @@ bool HasTextureBufferSupport(const RendererVk *rendererVk)
     //     VK_FORMAT_R32G32B32A32_SFLOAT
     //
 
-    // TODO: RGB32 formats currently don't have STORAGE_TEXEL_BUFFER support on any known platform.
-    // Despite this limitation, we expose EXT_texture_buffer.  http://anglebug.com/3573
     const std::array<GLenum, 12> &optionalFormats = {
         GL_R8,   GL_R8I,  GL_R8UI,  GL_RG8,   GL_RG8I,  GL_RG8UI,
         GL_R16F, GL_R16I, GL_R16UI, GL_RG16F, GL_RG16I, GL_RG16UI,
-        // GL_RGB32F,
-        // GL_RGB32I,
-        // GL_RGB32UI,
     };
 
     for (GLenum formatGL : optionalFormats)
     {
-        const vk::Format &formatVk = rendererVk->getFormat(formatGL);
-
-        if (!rendererVk->hasBufferFormatFeatureBits(formatVk.vkBufferFormat,
-                                                    VK_FORMAT_FEATURE_UNIFORM_TEXEL_BUFFER_BIT |
-                                                        VK_FORMAT_FEATURE_STORAGE_TEXEL_BUFFER_BIT))
+        if (!HasTexelBufferSupport(rendererVk, formatGL))
         {
             return false;
         }
     }
+
+    // TODO: RGB32 formats currently don't have STORAGE_TEXEL_BUFFER support on any known platform.
+    // Despite this limitation, we expose EXT_texture_buffer.  http://anglebug.com/3573
+    if (rendererVk->getFeatures().exposeNonConformantExtensionsAndVersions.enabled)
+    {
+        return true;
+    }
+
+    const std::array<GLenum, 3> &optionalFormats2 = {
+        GL_RGB32F,
+        GL_RGB32I,
+        GL_RGB32UI,
+    };
+
+    for (GLenum formatGL : optionalFormats2)
+    {
+        if (!HasTexelBufferSupport(rendererVk, formatGL))
+        {
+            return false;
+        }
+    }
+
     return true;
 }
 }  // namespace
@@ -254,6 +275,19 @@ GLint LimitToInt(const LargerInt physicalDeviceValue)
     // in floating point can cause the value to exceed INT_MAX.  This trips dEQP up.
     return static_cast<GLint>(std::min(
         physicalDeviceValue, static_cast<LargerInt>(std::numeric_limits<int32_t>::max() / 2)));
+}
+
+template <typename LargerInt>
+uint16_t LimitToDynamicScissorSentinelMinusOne(const LargerInt physicalDeviceValue)
+{
+    static_assert(sizeof(LargerInt) >= sizeof(int32_t),
+                  "Incorrect usage of LimitToDynamicScissorSentinelMinusOne");
+
+    // Limit to kDynamicScissorSentinel-1. This is used to pack drawable offset/dimension to
+    // uint16_t for space conservation. The UINT16_MAX is reserved for special value like
+    // kDynamicScissorSentinel.
+    return static_cast<uint16_t>(
+        std::min<int32_t>(physicalDeviceValue, vk::kDynamicScissorSentinel - 1));
 }
 
 void RendererVk::ensureCapsInitialized() const
@@ -425,6 +459,12 @@ void RendererVk::ensureCapsInitialized() const
         vk::GetTextureSRGBOverrideSupport(this, mNativeExtensions);
     mNativeExtensions.textureSRGBDecode = vk::GetTextureSRGBDecodeSupport(this);
 
+    // Vulkan natively supports io interface block.  This extension is not fully implemented yet
+    // however.  http://anglebug.com/3580
+    mNativeExtensions.shaderIoBlocksOES =
+        getFeatures().exposeNonConformantExtensionsAndVersions.enabled;
+    mNativeExtensions.shaderIoBlocksEXT = mNativeExtensions.shaderIoBlocksOES;
+
     mNativeExtensions.gpuShader5EXT = vk::CanSupportGPUShader5EXT(mPhysicalDeviceFeatures);
 
     mNativeExtensions.textureFilteringCHROMIUM = getFeatures().supportsFilteringPrecision.enabled;
@@ -437,7 +477,7 @@ void RendererVk::ensureCapsInitialized() const
 
     // Enable EXT_external_buffer on Andoid. External buffers are implemented using Android hadware
     // buffer (struct AHardwareBuffer).
-    mNativeExtensions.externalBufferEXT = IsAndroid() && (GetAndroidSDKVersion() >= 26);
+    mNativeExtensions.externalBufferEXT = IsAndroid() && GetAndroidSDKVersion() >= 26;
 
     // From the Vulkan specs:
     // sampleRateShading specifies whether Sample Shading and multisample interpolation are
@@ -445,8 +485,16 @@ void RendererVk::ensureCapsInitialized() const
     // VkPipelineMultisampleStateCreateInfo structure must be set to VK_FALSE and the
     // minSampleShading member is ignored. This also specifies whether shader modules can declare
     // the SampleRateShading capability
-    bool supportSampleRateShading      = (mPhysicalDeviceFeatures.sampleRateShading == VK_TRUE);
+    bool supportSampleRateShading      = mPhysicalDeviceFeatures.sampleRateShading == VK_TRUE;
     mNativeExtensions.sampleShadingOES = supportSampleRateShading;
+
+    // From the SPIR-V spec at 3.21. BuiltIn, SampleId and SamplePosition needs
+    // SampleRateShading. https://www.khronos.org/registry/spir-v/specs/unified1/SPIRV.html
+    // To replace non-constant index to constant 0 index, this extension assumes that ANGLE only
+    // supports the number of samples less than or equal to 32.
+    constexpr unsigned int kNotSupportedSampleCounts = VK_SAMPLE_COUNT_64_BIT;
+    mNativeExtensions.sampleVariablesOES =
+        supportSampleRateShading && vk_gl::GetMaxSampleCount(kNotSupportedSampleCounts) == 0;
 
     mNativeCaps.minInterpolationOffset          = limitsVk.minInterpolationOffset;
     mNativeCaps.maxInterpolationOffset          = limitsVk.maxInterpolationOffset;
@@ -463,21 +511,11 @@ void RendererVk::ensureCapsInitialized() const
     // OES_shader_multisample_interpolation requires a maximum value of -0.5 for
     // MIN_FRAGMENT_INTERPOLATION_OFFSET_OES and minimum 0.5 for
     // MAX_FRAGMENT_INTERPOLATION_OFFSET_OES.  Vulkan has an identical limit for
-    // minInterpolationOffset, but it's limit for maxInterpolationOffset is 0.5-(1/ULP).
+    // minInterpolationOffset, but its limit for maxInterpolationOffset is 0.5-(1/ULP).
     // OES_shader_multisample_interpolation is therefore only supported if
     // maxInterpolationOffset is at least 0.5.
     mNativeExtensions.multisampleInterpolationOES =
-        supportSampleRateShading && (mNativeCaps.maxInterpolationOffset >= 0.5);
-    // OES_shader_multisample_interpolation requires OES_sample_variables, disable for now
-    mNativeExtensions.multisampleInterpolationOES = false;
-
-    // From the SPIR-V spec at 3.21. BuiltIn, SampleId and SamplePosition needs
-    // SampleRateShading. https://www.khronos.org/registry/spir-v/specs/unified1/SPIRV.html
-    // To replace non-constant index to constant 0 index, this extension assumes that ANGLE only
-    // supports the number of samples less than or equal to 32.
-    constexpr unsigned int kNotSupportedSampleCounts = VK_SAMPLE_COUNT_64_BIT;
-    mNativeExtensions.sampleVariablesOES =
-        supportSampleRateShading && (vk_gl::GetMaxSampleCount(kNotSupportedSampleCounts) == 0);
+        mNativeExtensions.sampleVariablesOES && mNativeCaps.maxInterpolationOffset >= 0.5;
 
     // https://vulkan.lunarg.com/doc/view/1.0.30.0/linux/vkspec.chunked/ch31s02.html
     mNativeCaps.maxElementIndex  = std::numeric_limits<GLuint>::max() - 1;
@@ -498,12 +536,16 @@ void RendererVk::ensureCapsInitialized() const
 
     mNativeCaps.maxDrawBuffers =
         std::min(limitsVk.maxColorAttachments, limitsVk.maxFragmentOutputAttachments);
-    mNativeCaps.maxFramebufferWidth  = LimitToInt(limitsVk.maxFramebufferWidth);
-    mNativeCaps.maxFramebufferHeight = LimitToInt(limitsVk.maxFramebufferHeight);
-    mNativeCaps.maxColorAttachments  = LimitToInt(limitsVk.maxColorAttachments);
-    mNativeCaps.maxViewportWidth     = LimitToInt(limitsVk.maxViewportDimensions[0]);
-    mNativeCaps.maxViewportHeight    = LimitToInt(limitsVk.maxViewportDimensions[1]);
-    mNativeCaps.maxSampleMaskWords   = LimitToInt(limitsVk.maxSampleMaskWords);
+    mNativeCaps.maxFramebufferWidth =
+        LimitToDynamicScissorSentinelMinusOne(limitsVk.maxFramebufferWidth);
+    mNativeCaps.maxFramebufferHeight =
+        LimitToDynamicScissorSentinelMinusOne(limitsVk.maxFramebufferHeight);
+    mNativeCaps.maxColorAttachments = LimitToInt(limitsVk.maxColorAttachments);
+    mNativeCaps.maxViewportWidth =
+        LimitToDynamicScissorSentinelMinusOne(limitsVk.maxViewportDimensions[0]);
+    mNativeCaps.maxViewportHeight =
+        LimitToDynamicScissorSentinelMinusOne(limitsVk.maxViewportDimensions[1]);
+    mNativeCaps.maxSampleMaskWords = LimitToInt(limitsVk.maxSampleMaskWords);
     mNativeCaps.maxColorTextureSamples =
         limitsVk.sampledImageColorSampleCounts & vk_gl::kSupportedSampleCounts;
     mNativeCaps.maxDepthTextureSamples =
@@ -868,8 +910,9 @@ void RendererVk::ensureCapsInitialized() const
     // Geometry shader is optional.
     if (mPhysicalDeviceFeatures.geometryShader)
     {
-        // TODO : Remove below comment when http://anglebug.com/3571 will be completed
-        // mNativeExtensions.geometryShader = true;
+        // TODO: geometry shader support is incomplete.  http://anglebug.com/3571
+        mNativeExtensions.geometryShader =
+            getFeatures().exposeNonConformantExtensionsAndVersions.enabled;
         mNativeCaps.maxFramebufferLayers = LimitToInt(limitsVk.maxFramebufferLayers);
         mNativeCaps.layerProvokingVertex = GL_LAST_VERTEX_CONVENTION_EXT;
 
