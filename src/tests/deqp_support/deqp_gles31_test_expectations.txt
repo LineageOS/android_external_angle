@@ -185,17 +185,9 @@
 
 // Geometry shader support:
 5430 VULKAN : dEQP-GLES31.functional.geometry_shading.query.primitives_generated_* = FAIL
-5407 VULKAN : dEQP-GLES31.functional.geometry_shading.layered.* = SKIP
-5407 VULKAN : dEQP-GLES31.functional.geometry_shading.instanced.invocation_per_layer* = SKIP
-5407 VULKAN : dEQP-GLES31.functional.geometry_shading.instanced.multiple_layers_per_invocation* = SKIP
+5452 VULKAN : dEQP-GLES31.functional.geometry_shading.layered.layer_provoking_vertex_* = FAIL
 3571 VULKAN : dEQP-GLES31.functional.geometry_shading.*transform_feedback* = SKIP
 3571 VULKAN : dEQP-GLES31.functional.program_interface_query.transform_feedback_varying.*geo* = SKIP
-
-// Shader I/O blocks:
-// Missing matching of block names with unnamed SSBOs with the same member variable
-3580 VULKAN : dEQP-GLES31.functional.shaders.linkage.es31.shader_storage_block.ambiguous_variable_name_3 = FAIL
-// Missing matching of struct name in member fields of matching nameless I/O blocks
-3580 VULKAN : dEQP-GLES31.functional.separate_shader.validation.es31.io_blocks.mismatch_different_member_struct_names = FAIL
 
 ////
 //// AMD Vulkan expectations
@@ -351,3 +343,7 @@
 3588 VULKAN ANDROID : dEQP-GLES31.functional.shaders.sample_variables.sample_pos.correctness.multisample_*_1 = FAIL
 3588 VULKAN ANDROID : dEQP-GLES31.functional.shaders.sample_variables.sample_pos.correctness.multisample_*_2 = FAIL
 3588 VULKAN ANDROID : dEQP-GLES31.functional.shaders.sample_variables.sample_pos.correctness.multisample_*_4 = FAIL
+
+// When ANGLE allows non-conformant features, imageAtomicExchange with r32f fails
+5503 VULKAN ANDROID : dEQP-GLES31.functional.image_load_store.*.atomic.exchange_r32f* = FAIL
+5503 SWIFTSHADER : dEQP-GLES31.functional.image_load_store.*.atomic.exchange_r32f* = SKIP

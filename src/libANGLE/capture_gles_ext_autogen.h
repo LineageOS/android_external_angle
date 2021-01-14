@@ -902,6 +902,12 @@ angle::CallCapture CaptureBufferStorageEXT(const State &glState,
                                            const void *data,
                                            GLbitfield flags);
 
+// GL_EXT_clip_control
+angle::CallCapture CaptureClipControlEXT(const State &glState,
+                                         bool isCallValid,
+                                         GLenum origin,
+                                         GLenum depth);
+
 // GL_EXT_copy_image
 angle::CallCapture CaptureCopyImageSubDataEXT(const State &glState,
                                               bool isCallValid,
@@ -1596,6 +1602,9 @@ angle::CallCapture CaptureValidateProgramPipelineEXT(const State &glState,
                                                      bool isCallValid,
                                                      ProgramPipelineID pipelinePacked);
 
+// GL_EXT_shader_framebuffer_fetch_non_coherent
+angle::CallCapture CaptureFramebufferFetchBarrierEXT(const State &glState, bool isCallValid);
+
 // GL_EXT_shader_io_blocks
 
 // GL_EXT_tessellation_shader
@@ -1761,6 +1770,20 @@ angle::CallCapture CaptureTestFenceNV(const State &glState,
                                       bool isCallValid,
                                       FenceNVID fencePacked,
                                       GLboolean returnValue);
+
+// GL_NV_framebuffer_blit
+angle::CallCapture CaptureBlitFramebufferNV(const State &glState,
+                                            bool isCallValid,
+                                            GLint srcX0,
+                                            GLint srcY0,
+                                            GLint srcX1,
+                                            GLint srcY1,
+                                            GLint dstX0,
+                                            GLint dstY0,
+                                            GLint dstX1,
+                                            GLint dstY1,
+                                            GLbitfield mask,
+                                            GLenum filter);
 
 // GL_OES_EGL_image
 angle::CallCapture CaptureEGLImageTargetRenderbufferStorageOES(const State &glState,

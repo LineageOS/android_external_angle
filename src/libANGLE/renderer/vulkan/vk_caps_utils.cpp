@@ -40,12 +40,12 @@ bool HasShaderImageAtomicsSupport(const RendererVk *rendererVk,
     const Format &formatVk = rendererVk->getFormat(GL_R32F);
 
     const bool hasImageAtomicSupport = rendererVk->hasImageFormatFeatureBits(
-        formatVk.vkImageFormat, VK_FORMAT_FEATURE_STORAGE_IMAGE_ATOMIC_BIT);
+        formatVk.actualImageFormatID, VK_FORMAT_FEATURE_STORAGE_IMAGE_ATOMIC_BIT);
     bool hasBufferAtomicSupport = true;
     if (supportedExtensions.textureBufferAny())
     {
         hasBufferAtomicSupport = rendererVk->hasBufferFormatFeatureBits(
-            formatVk.vkBufferFormat, VK_FORMAT_FEATURE_STORAGE_TEXEL_BUFFER_ATOMIC_BIT);
+            formatVk.actualBufferFormatID, VK_FORMAT_FEATURE_STORAGE_TEXEL_BUFFER_ATOMIC_BIT);
     }
 
     return hasImageAtomicSupport && hasBufferAtomicSupport;
@@ -65,11 +65,19 @@ bool FormatReinterpretationSupported(const std::vector<GLenum> &optionalSizedFor
         {
             const Format &vkFormat = rendererVk->getFormat(glFormat);
 
-            VkFormat reinterpretedFormat = checkLinearColorspace
-                                               ? ConvertToLinear(vkFormat.vkImageFormat)
-                                               : ConvertToSRGB(vkFormat.vkImageFormat);
+            angle::FormatID reinterpretedFormatID =
+                checkLinearColorspace ? ConvertToLinear(vkFormat.actualImageFormatID)
+                                      : ConvertToSRGB(vkFormat.actualImageFormatID);
 
-            if (!rendererVk->haveSameFormatFeatureBits(vkFormat.vkImageFormat, reinterpretedFormat))
+            const Format &reinterpretedVkFormat = rendererVk->getFormat(reinterpretedFormatID);
+
+            if (reinterpretedVkFormat.actualImageFormatID != reinterpretedFormatID)
+            {
+                return false;
+            }
+
+            if (!rendererVk->haveSameFormatFeatureBits(vkFormat.actualImageFormatID,
+                                                       reinterpretedFormatID))
             {
                 return false;
             }
@@ -178,7 +186,7 @@ bool HasTexelBufferSupport(const RendererVk *rendererVk, GLenum formatGL)
     const Format &formatVk = rendererVk->getFormat(formatGL);
 
     return rendererVk->hasBufferFormatFeatureBits(
-        formatVk.vkBufferFormat,
+        formatVk.actualBufferFormatID,
         VK_FORMAT_FEATURE_UNIFORM_TEXEL_BUFFER_BIT | VK_FORMAT_FEATURE_STORAGE_TEXEL_BUFFER_BIT);
 }
 
@@ -334,7 +342,7 @@ void RendererVk::ensureCapsInitialized() const
     mNativeExtensions.textureStorage         = true;
     mNativeExtensions.drawBuffers            = true;
     mNativeExtensions.fragDepth              = true;
-    mNativeExtensions.framebufferBlit        = true;
+    mNativeExtensions.framebufferBlitANGLE   = true;
     mNativeExtensions.framebufferMultisample = true;
     mNativeExtensions.multisampledRenderToTexture =
         getFeatures().enableMultisampledRenderToTexture.enabled;
@@ -610,9 +618,8 @@ void RendererVk::ensureCapsInitialized() const
 
     // Uniforms are implemented using a uniform buffer, so the max number of uniforms we can
     // support is the max buffer range divided by the size of a single uniform (4X float).
-    mNativeCaps.maxVertexUniformVectors    = maxUniformVectors;
-    mNativeCaps.maxFragmentUniformVectors  = maxUniformVectors;
-    mNativeCaps.maxFragmentInputComponents = maxUniformComponents;
+    mNativeCaps.maxVertexUniformVectors   = maxUniformVectors;
+    mNativeCaps.maxFragmentUniformVectors = maxUniformVectors;
     for (gl::ShaderType shaderType : gl::AllShaderTypes())
     {
         mNativeCaps.maxShaderUniformComponents[shaderType] = maxUniformComponents;
@@ -825,17 +832,14 @@ void RendererVk::ensureCapsInitialized() const
     // vars section. It is implicit that we need to actually reserve it for Vulkan in that case.
     GLint reservedVaryingVectorCount = 1;
 
-    // reserve 1 extra for ANGLEPosition when GLLineRasterization is enabled
-    constexpr GLint kRservedVaryingForGLLineRasterization = 1;
-    // reserve 2 extra for builtin varables when feedback is enabled
-    // possible capturable out varable: gl_Position, gl_PointSize
-    // https://www.khronos.org/registry/OpenGL/specs/es/3.1/GLSL_ES_Specification_3.10.withchanges.pdf
-    // page 105
-    constexpr GLint kReservedVaryingForTransformFeedbackExtension = 2;
+    // Reserve 1 extra for ANGLEPosition when GLLineRasterization is enabled
+    constexpr GLint kReservedVaryingForGLLineRasterization = 1;
+    // Reserve 1 extra for transform feedback capture of gl_Position.
+    constexpr GLint kReservedVaryingForTransformFeedbackExtension = 1;
 
     if (getFeatures().basicGLLineRasterization.enabled)
     {
-        reservedVaryingVectorCount += kRservedVaryingForGLLineRasterization;
+        reservedVaryingVectorCount += kReservedVaryingForGLLineRasterization;
     }
     if (getFeatures().supportsTransformFeedbackExtension.enabled)
     {
@@ -846,7 +850,10 @@ void RendererVk::ensureCapsInitialized() const
         std::min(limitsVk.maxVertexOutputComponents, limitsVk.maxFragmentInputComponents);
     mNativeCaps.maxVaryingVectors =
         LimitToInt((maxVaryingCount / kComponentsPerVector) - reservedVaryingVectorCount);
-    mNativeCaps.maxVertexOutputComponents = LimitToInt(limitsVk.maxVertexOutputComponents);
+    mNativeCaps.maxVertexOutputComponents =
+        LimitToInt(limitsVk.maxVertexOutputComponents) - reservedVaryingVectorCount * 4;
+    mNativeCaps.maxFragmentInputComponents =
+        LimitToInt(limitsVk.maxFragmentInputComponents) - reservedVaryingVectorCount * 4;
 
     mNativeCaps.maxTransformFeedbackInterleavedComponents =
         gl::IMPLEMENTATION_MAX_TRANSFORM_FEEDBACK_INTERLEAVED_COMPONENTS;
@@ -905,20 +912,24 @@ void RendererVk::ensureCapsInitialized() const
     // imageAtomicExchange supports r32f.  Exposing this extension is thus restricted to this format
     // having support for the aforementioned features.
     mNativeExtensions.shaderImageAtomicOES =
-        vk::HasShaderImageAtomicsSupport(this, mNativeExtensions);
+        vk::HasShaderImageAtomicsSupport(this, mNativeExtensions) ||
+        getFeatures().exposeNonConformantExtensionsAndVersions.enabled;
 
-    // Geometry shader is optional.
-    if (mPhysicalDeviceFeatures.geometryShader)
+    // Geometry shaders are required for ES 3.2.
+    // We can't support GS when we are emulating line raster due to the tricky position varying.
+    if (mPhysicalDeviceFeatures.geometryShader && !mFeatures.basicGLLineRasterization.enabled)
     {
         // TODO: geometry shader support is incomplete.  http://anglebug.com/3571
         mNativeExtensions.geometryShader =
-            getFeatures().exposeNonConformantExtensionsAndVersions.enabled;
+            mFeatures.exposeNonConformantExtensionsAndVersions.enabled;
         mNativeCaps.maxFramebufferLayers = LimitToInt(limitsVk.maxFramebufferLayers);
         mNativeCaps.layerProvokingVertex = GL_LAST_VERTEX_CONVENTION_EXT;
 
-        mNativeCaps.maxGeometryInputComponents  = LimitToInt(limitsVk.maxGeometryInputComponents);
-        mNativeCaps.maxGeometryOutputComponents = LimitToInt(limitsVk.maxGeometryOutputComponents);
-        mNativeCaps.maxGeometryOutputVertices   = LimitToInt(limitsVk.maxGeometryOutputVertices);
+        mNativeCaps.maxGeometryInputComponents =
+            LimitToInt(limitsVk.maxGeometryInputComponents) - reservedVaryingVectorCount * 4;
+        mNativeCaps.maxGeometryOutputComponents =
+            LimitToInt(limitsVk.maxGeometryOutputComponents) - reservedVaryingVectorCount * 4;
+        mNativeCaps.maxGeometryOutputVertices = LimitToInt(limitsVk.maxGeometryOutputVertices);
         mNativeCaps.maxGeometryTotalOutputComponents =
             LimitToInt(limitsVk.maxGeometryTotalOutputComponents);
         mNativeCaps.maxShaderStorageBlocks[gl::ShaderType::Geometry] =
@@ -933,8 +944,7 @@ void RendererVk::ensureCapsInitialized() const
     if (mPhysicalDeviceFeatures.shaderClipDistance && limitsVk.maxClipDistances >= 8)
     {
         mNativeExtensions.clipDistanceAPPLE = true;
-        mNativeCaps.maxClipDistances =
-            std::min<GLuint>(limitsVk.maxClipDistances, gl::IMPLEMENTATION_MAX_CLIP_DISTANCES);
+        mNativeCaps.maxClipDistances        = limitsVk.maxClipDistances;
     }
 }
 

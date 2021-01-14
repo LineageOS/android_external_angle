@@ -16,6 +16,7 @@
 #include "util/egl_loader_autogen.h"
 #include "util/frame_capture_test_utils.h"
 #include "util/png_utils.h"
+#include "util/test_utils.h"
 
 #include "restricted_traces/restricted_traces_autogen.h"
 
@@ -283,6 +284,23 @@ TracePerfTest::TracePerfTest()
         addExtensionPrerequisite("GL_EXT_shadow_samplers");
     }
 
+    if (param.testID == RestrictedTraceID::world_war_doh)
+    {
+        // Linux+Nvidia doesn't support GL_KHR_texture_compression_astc_ldr (possibly others also)
+        addExtensionPrerequisite("GL_KHR_texture_compression_astc_ldr");
+    }
+
+    if (param.testID == RestrictedTraceID::saint_seiya_awakening)
+    {
+        addExtensionPrerequisite("GL_EXT_shadow_samplers");
+
+        // TODO(https://anglebug.com/5517) Linux+Intel generates "Framebuffer is incomplete" errors.
+        if (IsLinux() && IsIntel() && param.getRenderer() == EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE)
+        {
+            mSkipTest = true;
+        }
+    }
+
     // We already swap in TracePerfTest::drawBenchmark, no need to swap again in the harness.
     disableTestHarnessSwap();
 
@@ -309,10 +327,17 @@ void TracePerfTest::initializeBenchmark()
     mEndFrame                  = traceInfo.endFrame;
     SetBinaryDataDecompressCallback(params.testID, DecompressBinaryData);
 
-    std::stringstream testDataDirStr;
-    testDataDirStr << ANGLE_TRACE_DATA_DIR << "/" << traceInfo.name;
-    std::string testDataDir = testDataDirStr.str();
-    SetBinaryDataDir(params.testID, testDataDir.c_str());
+    std::string relativeTestDataDir = std::string("src/tests/restricted_traces/") + traceInfo.name;
+
+    constexpr size_t kMaxDataDirLen = 1000;
+    char testDataDir[kMaxDataDirLen];
+    if (!angle::FindTestDataPath(relativeTestDataDir.c_str(), testDataDir, kMaxDataDirLen))
+    {
+        ERR() << "Could not find test data folder.";
+        mSkipTest = true;
+    }
+
+    SetBinaryDataDir(params.testID, testDataDir);
 
     mWindowWidth  = mTestParams.windowWidth;
     mWindowHeight = mTestParams.windowHeight;

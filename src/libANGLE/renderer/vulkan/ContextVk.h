@@ -322,9 +322,11 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     angle::Result onPauseTransformFeedback();
     void pauseTransformFeedbackIfStartedAndRebindBuffersOnResume();
 
-    // When UtilsVk issues draw or dispatch calls, it binds descriptor sets that the context is not
-    // aware of.  This function is called to make sure affected descriptor set bindings are dirtied
-    // for the next application draw/dispatch call.
+    // When UtilsVk issues draw or dispatch calls, it binds a new pipeline and descriptor sets that
+    // the context is not aware of.  These functions are called to make sure the pipeline and
+    // affected descriptor set bindings are dirtied for the next application draw/dispatch call.
+    void invalidateGraphicsPipeline();
+    void invalidateComputePipeline();
     void invalidateGraphicsDescriptorSet(DescriptorSetIndex usedDescriptorSet);
     void invalidateComputeDescriptorSet(DescriptorSetIndex usedDescriptorSet);
 
@@ -450,13 +452,14 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     }
 
     void onDepthStencilDraw(gl::LevelIndex level,
-                            uint32_t layer,
+                            uint32_t layerStart,
+                            uint32_t layerCount,
                             vk::ImageHelper *image,
                             vk::ImageHelper *resolveImage)
     {
         ASSERT(mRenderPassCommands->started());
-        mRenderPassCommands->depthStencilImagesDraw(&mResourceUseList, level, layer, image,
-                                                    resolveImage);
+        mRenderPassCommands->depthStencilImagesDraw(&mResourceUseList, level, layerStart,
+                                                    layerCount, image, resolveImage);
     }
 
     void onImageHelperRelease(const vk::ImageHelper *image)
@@ -568,10 +571,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     vk::PerfCounters &getPerfCounters() { return mPerfCounters; }
 
     void onSyncHelperInitialize() { mSyncObjectPendingFlush = true; }
-
-    // When UtilsVk issues a draw call on the currently running render pass, the pipelines and
-    // descriptor sets it binds need to be undone.
-    void invalidateGraphicsPipelineAndDescriptorSets();
+    void onEGLSyncHelperInitialize() { mEGLSyncObjectPendingFlush = true; }
 
     // Implementation of MultisampleTextureInitializer
     angle::Result initializeMultisampleTextureToBlack(const gl::Context *context,
@@ -609,7 +609,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
         uint32_t dynamicOffset;
         vk::BindingPointer<vk::DescriptorSetLayout> descriptorSetLayout;
         vk::RefCountedDescriptorPoolBinding descriptorPoolBinding;
-        angle::FastIntegerMap<VkDescriptorSet> descriptorSetCache;
+        DriverUniformsDescriptorSetCache descriptorSetCache;
 
         DriverUniformsDescriptorSet();
         ~DriverUniformsDescriptorSet();
@@ -999,7 +999,8 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     // Track SyncHelper object been added into secondary command buffer that has not been flushed to
     // vulkan.
     bool mSyncObjectPendingFlush;
-    uint32_t mDeferredFlushCount;
+    bool mEGLSyncObjectPendingFlush;
+    bool mHasDeferredFlush;
 
     // Semaphores that must be waited on in the next submission.
     std::vector<VkSemaphore> mWaitSemaphores;

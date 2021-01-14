@@ -573,54 +573,54 @@ void UtilsVk::destroy(RendererVk *renderer)
 
     for (vk::ShaderProgramHelper &program : mConvertIndexPrograms)
     {
-        program.destroy(device);
+        program.destroy(renderer);
     }
     for (vk::ShaderProgramHelper &program : mConvertIndirectLineLoopPrograms)
     {
-        program.destroy(device);
+        program.destroy(renderer);
     }
     for (vk::ShaderProgramHelper &program : mConvertIndexIndirectLineLoopPrograms)
     {
-        program.destroy(device);
+        program.destroy(renderer);
     }
     for (vk::ShaderProgramHelper &program : mConvertVertexPrograms)
     {
-        program.destroy(device);
+        program.destroy(renderer);
     }
-    mImageClearProgramVSOnly.destroy(device);
+    mImageClearProgramVSOnly.destroy(renderer);
     for (vk::ShaderProgramHelper &program : mImageClearProgram)
     {
-        program.destroy(device);
+        program.destroy(renderer);
     }
     for (vk::ShaderProgramHelper &program : mImageCopyPrograms)
     {
-        program.destroy(device);
+        program.destroy(renderer);
     }
     for (vk::ShaderProgramHelper &program : mBlitResolvePrograms)
     {
-        program.destroy(device);
+        program.destroy(renderer);
     }
     for (vk::ShaderProgramHelper &program : mBlitResolveStencilNoExportPrograms)
     {
-        program.destroy(device);
+        program.destroy(renderer);
     }
     for (vk::ShaderProgramHelper &program : mOverlayCullPrograms)
     {
-        program.destroy(device);
+        program.destroy(renderer);
     }
     for (vk::ShaderProgramHelper &program : mOverlayDrawPrograms)
     {
-        program.destroy(device);
+        program.destroy(renderer);
     }
     for (vk::ShaderProgramHelper &program : mGenerateMipmapPrograms)
     {
-        program.destroy(device);
+        program.destroy(renderer);
     }
 
     for (auto &programIter : mUnresolvePrograms)
     {
         vk::ShaderProgramHelper &program = programIter.second;
-        program.destroy(device);
+        program.destroy(renderer);
     }
     mUnresolvePrograms.clear();
 
@@ -995,6 +995,8 @@ angle::Result UtilsVk::setupProgram(ContextVk *contextVk,
         // TODO: https://issuetracker.google.com/issues/169788986: Update serial handling.
         pipelineAndSerial->updateSerial(serial);
         commandBuffer->bindComputePipeline(pipelineAndSerial->get());
+
+        contextVk->invalidateComputePipeline();
     }
     else
     {
@@ -1014,6 +1016,8 @@ angle::Result UtilsVk::setupProgram(ContextVk *contextVk,
             *pipelineDesc, gl::AttributesMask(), gl::ComponentTypeMask(), &descPtr, &helper));
         helper->updateSerial(serial);
         commandBuffer->bindGraphicsPipeline(helper->getPipeline());
+
+        contextVk->invalidateGraphicsPipeline();
     }
 
     if (descriptorSet != VK_NULL_HANDLE)
@@ -1606,9 +1610,6 @@ angle::Result UtilsVk::clearFramebuffer(ContextVk *contextVk,
     commandBuffer->draw(3, 0);
     ANGLE_TRY(contextVk->resumeRenderPassQueriesIfActive());
 
-    // Make sure what's bound here is correctly reverted on the next draw.
-    contextVk->invalidateGraphicsPipelineAndDescriptorSets();
-
     // If transform feedback was active, we can't pause and resume it in the same render pass
     // because we can't insert a memory barrier for the counter buffers.  In that case, break the
     // render pass.
@@ -2134,9 +2135,9 @@ angle::Result UtilsVk::copyImage(ContextVk *contextVk,
     shaderParams.rotateXY                = 0;
 
     shaderParams.srcIsSRGB =
-        gl::GetSizedInternalFormatInfo(srcFormat.internalFormat).colorEncoding == GL_SRGB;
+        gl::GetSizedInternalFormatInfo(srcFormat.intendedGLFormat).colorEncoding == GL_SRGB;
     shaderParams.destIsSRGB =
-        gl::GetSizedInternalFormatInfo(dstFormat.internalFormat).colorEncoding == GL_SRGB;
+        gl::GetSizedInternalFormatInfo(dstFormat.intendedGLFormat).colorEncoding == GL_SRGB;
 
     // If both src and dest are sRGB, and there is no alpha multiplication/division necessary, then
     // the shader can work with sRGB data and pretend they are linear.

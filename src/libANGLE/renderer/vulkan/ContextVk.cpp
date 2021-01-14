@@ -60,21 +60,14 @@ struct GraphicsDriverUniforms
 {
     std::array<float, 4> viewport;
 
-    // Used to flip gl_FragCoord (both .xy for Android pre-rotation; only .y for desktop)
-    std::array<float, 2> halfRenderArea;
-    std::array<float, 2> flipXY;
-    std::array<float, 2> negFlipXY;
-
     // 32 bits for 32 clip planes
     uint32_t enabledClipPlanes;
 
     uint32_t xfbActiveUnpaused;
-    uint32_t xfbVerticesPerDraw;
+    int32_t xfbVerticesPerInstance;
 
     // Used to replace gl_NumSamples. Because gl_NumSamples cannot be recognized in SPIR-V.
     int32_t numSamples;
-
-    std::array<int32_t, 2> padding;
 
     std::array<int32_t, 4> xfbBufferOffsets;
 
@@ -87,6 +80,20 @@ struct GraphicsDriverUniforms
 
     // We'll use x, y, z for near / far / diff respectively.
     std::array<float, 4> depthRange;
+};
+static_assert(sizeof(GraphicsDriverUniforms) % (sizeof(uint32_t) * 4) == 0,
+              "GraphicsDriverUniforms should 16bytes aligned");
+
+// TODO: http://issuetracker.google.com/173636783 Once the bug is fixed, we should remove this.
+struct GraphicsDriverUniformsExtended
+{
+    GraphicsDriverUniforms common;
+
+    // Used to flip gl_FragCoord (both .xy for Android pre-rotation; only .y for desktop)
+    std::array<float, 2> halfRenderArea;
+    std::array<float, 2> flipXY;
+    std::array<float, 2> negFlipXY;
+    std::array<int32_t, 2> padding;
 
     // Used to pre-rotate gl_Position for swapchain images on Android (a mat2, which is padded to
     // the size of two vec4's).
@@ -356,6 +363,7 @@ void ContextVk::DriverUniformsDescriptorSet::destroy(RendererVk *renderer)
     descriptorPoolBinding.reset();
     dynamicBuffer.destroy(renderer);
     descriptorSetCache.clear();
+    descriptorSetCache.destroy(renderer);
 }
 
 // ContextVk implementation.
@@ -389,7 +397,8 @@ ContextVk::ContextVk(const gl::State &state, gl::ErrorSet *errorSet, RendererVk 
       mRenderPassCommands(nullptr),
       mGpuEventsEnabled(false),
       mSyncObjectPendingFlush(false),
-      mDeferredFlushCount(0),
+      mEGLSyncObjectPendingFlush(false),
+      mHasDeferredFlush(false),
       mGpuClockSync{std::numeric_limits<double>::max(), std::numeric_limits<double>::max()},
       mGpuEventTimestampOrigin(0),
       mPerfCounters{},
@@ -407,6 +416,13 @@ ContextVk::ContextVk(const gl::State &state, gl::ErrorSet *errorSet, RendererVk 
 
     mIndexedDirtyBitsMask.set();
 
+    // Once a command buffer is ended, all bindings (through |vkCmdBind*| calls) are lost per Vulkan
+    // spec.  Once a new command buffer is allocated, we must make sure every previously bound
+    // resource is bound again.
+    //
+    // Note that currently these dirty bits are set every time a new render pass command buffer is
+    // begun.  However, using ANGLE's SecondaryCommandBuffer, the Vulkan command buffer (which is
+    // the primary command buffer) is not ended, so technically we don't need to rebind these.
     mNewGraphicsCommandBufferDirtyBits.set(DIRTY_BIT_PIPELINE);
     mNewGraphicsCommandBufferDirtyBits.set(DIRTY_BIT_TEXTURES);
     mNewGraphicsCommandBufferDirtyBits.set(DIRTY_BIT_VERTEX_BUFFERS);
@@ -414,6 +430,10 @@ ContextVk::ContextVk(const gl::State &state, gl::ErrorSet *errorSet, RendererVk 
     mNewGraphicsCommandBufferDirtyBits.set(DIRTY_BIT_SHADER_RESOURCES);
     mNewGraphicsCommandBufferDirtyBits.set(DIRTY_BIT_DESCRIPTOR_SETS);
     mNewGraphicsCommandBufferDirtyBits.set(DIRTY_BIT_DRIVER_UNIFORMS_BINDING);
+    if (getFeatures().supportsTransformFeedbackExtension.enabled)
+    {
+        mNewGraphicsCommandBufferDirtyBits.set(DIRTY_BIT_TRANSFORM_FEEDBACK_BUFFERS);
+    }
 
     mNewComputeCommandBufferDirtyBits.set(DIRTY_BIT_PIPELINE);
     mNewComputeCommandBufferDirtyBits.set(DIRTY_BIT_TEXTURES);
@@ -527,16 +547,17 @@ void ContextVk::onDestroy(const gl::Context *context)
     mOutsideRenderPassCommands = nullptr;
     mRenderPassCommands        = nullptr;
 
-    ASSERT(mCurrentGarbage.empty());
-
     mRenderer->releaseSharedResources(&mResourceUseList);
 
     mUtils.destroy(mRenderer);
 
-    mRenderPassCache.destroy(device);
+    mRenderPassCache.destroy(mRenderer);
     mShaderLibrary.destroy(device);
     mGpuEventQueryPool.destroy(device);
     mCommandPool.destroy(device);
+
+    ASSERT(mCurrentGarbage.empty());
+    ASSERT(mResourceUseList.empty());
 }
 
 angle::Result ContextVk::getIncompleteTexture(const gl::Context *context,
@@ -693,14 +714,29 @@ angle::Result ContextVk::initialize()
 
 angle::Result ContextVk::flush(const gl::Context *context)
 {
-    // If we are in middle of renderpass and it is not a shared context, then we will defer the
-    // glFlush call here until the renderpass ends. If sync object has been used, we must respect
-    // glFlush call, otherwise we a wait for sync object without GL_SYNC_FLUSH_COMMANDS_BIT may
-    // never come back.
-    if (mRenderer->getFeatures().deferFlushUntilEndRenderPass.enabled && !context->isShared() &&
-        !mSyncObjectPendingFlush && hasStartedRenderPass())
+    // If a sync object has been used or this is a shared context, then we need to flush the
+    // commands and end the render pass to make sure the sync object (and any preceding commands)
+    // lands in the correct place within the command stream.
+    // EGL sync objects can span across context share groups, so don't defer flushes if there's one
+    // pending a flush.
+    if (mSyncObjectPendingFlush && context->isShared() && !mEGLSyncObjectPendingFlush)
     {
-        mDeferredFlushCount++;
+        // Flush the commands to create a sync point in the command stream.
+        ANGLE_TRY(flushCommandsAndEndRenderPass());
+        // Move the resources to the share group, so they are released during the next vkQueueSubmit
+        // performed by any context in the share group. Note that this relies heavily on the global
+        // mutex to guarantee that no two contexts are modifying the lists at the same time.
+        getShareGroupVk()->acquireResourceUseList(std::move(mResourceUseList));
+        mHasDeferredFlush = true;
+        return angle::Result::Continue;
+    }
+
+    // EGL sync objects can span across context share groups, so don't defer flushes if there's one
+    // pending a flush.
+    if (!mEGLSyncObjectPendingFlush &&
+        mRenderer->getFeatures().deferFlushUntilEndRenderPass.enabled && hasStartedRenderPass())
+    {
+        mHasDeferredFlush = true;
         return angle::Result::Continue;
     }
 
@@ -773,8 +809,11 @@ angle::Result ContextVk::setupDraw(const gl::Context *context,
         mGraphicsDirtyBits.set(DIRTY_BIT_DESCRIPTOR_SETS);
     }
 
-    // Update transform feedback offsets on every draw call.
-    if (mState.isTransformFeedbackActiveUnpaused())
+    // Update transform feedback offsets on every draw call when emulating transform feedback.  This
+    // relies on the fact that no geometry/tessellation, indirect or indexed calls are supported in
+    // ES3.1 (and emulation is not done for ES3.2).
+    if (getFeatures().emulateTransformFeedback.enabled &&
+        mState.isTransformFeedbackActiveUnpaused())
     {
         ASSERT(firstVertexOrInvalid != -1);
         mXfbBaseVertex             = firstVertexOrInvalid;
@@ -1562,9 +1601,11 @@ angle::Result ContextVk::submitFrame(const vk::Semaphore *signalSemaphore)
         dumpCommandStreamDiagnostics();
     }
 
-    ANGLE_TRY(mRenderer->submitFrame(
-        this, mContextPriority, std::move(mWaitSemaphores), std::move(mWaitSemaphoreStageMasks),
-        signalSemaphore, std::move(mResourceUseList), std::move(mCurrentGarbage), &mCommandPool));
+    getShareGroupVk()->acquireResourceUseList(std::move(mResourceUseList));
+    ANGLE_TRY(mRenderer->submitFrame(this, mContextPriority, std::move(mWaitSemaphores),
+                                     std::move(mWaitSemaphoreStageMasks), signalSemaphore,
+                                     getShareGroupVk()->releaseResourceUseLists(),
+                                     std::move(mCurrentGarbage), &mCommandPool));
 
     onRenderPassFinished();
     mComputeDirtyBits |= mNewComputeCommandBufferDirtyBits;
@@ -3526,6 +3567,16 @@ angle::Result ContextVk::onPauseTransformFeedback()
     return angle::Result::Continue;
 }
 
+void ContextVk::invalidateGraphicsPipeline()
+{
+    mGraphicsDirtyBits.set(DIRTY_BIT_PIPELINE);
+}
+
+void ContextVk::invalidateComputePipeline()
+{
+    mComputeDirtyBits.set(DIRTY_BIT_PIPELINE);
+}
+
 void ContextVk::invalidateGraphicsDescriptorSet(DescriptorSetIndex usedDescriptorSet)
 {
     // UtilsVk currently only uses set 0
@@ -3729,55 +3780,90 @@ angle::Result ContextVk::handleDirtyGraphicsDriverUniforms(const gl::Context *co
                                                            vk::CommandBuffer *commandBuffer)
 {
     // Allocate a new region in the dynamic buffer.
+    bool useGraphicsDriverUniformsExtended = getFeatures().forceDriverUniformOverSpecConst.enabled;
     uint8_t *ptr;
     bool newBuffer;
-    ANGLE_TRY(allocateDriverUniforms(sizeof(GraphicsDriverUniforms),
-                                     &mDriverUniforms[PipelineType::Graphics], &ptr, &newBuffer));
+    GraphicsDriverUniforms *driverUniforms;
+    size_t driverUniformSize;
+
+    if (useGraphicsDriverUniformsExtended)
+    {
+        driverUniformSize = sizeof(GraphicsDriverUniformsExtended);
+    }
+    else
+    {
+        driverUniformSize = sizeof(GraphicsDriverUniforms);
+    }
+
+    ANGLE_TRY(allocateDriverUniforms(driverUniformSize, &mDriverUniforms[PipelineType::Graphics],
+                                     &ptr, &newBuffer));
+
+    if (useGraphicsDriverUniformsExtended)
+    {
+        float halfRenderAreaWidth =
+            static_cast<float>(mDrawFramebuffer->getState().getDimensions().width) * 0.5f;
+        float halfRenderAreaHeight =
+            static_cast<float>(mDrawFramebuffer->getState().getDimensions().height) * 0.5f;
+
+        float flipX = 1.0f;
+        float flipY = -1.0f;
+        // Y-axis flipping only comes into play with the default framebuffer (i.e. a swapchain
+        // image). For 0-degree rotation, an FBO or pbuffer could be the draw framebuffer, and so we
+        // must check whether flipY should be positive or negative.  All other rotations, will be to
+        // the default framebuffer, and so the value of isViewportFlipEnabledForDrawFBO() is assumed
+        // true; the appropriate flipY value is chosen such that gl_FragCoord is positioned at the
+        // lower-left corner of the window.
+        switch (mCurrentRotationDrawFramebuffer)
+        {
+            case SurfaceRotation::Identity:
+                flipX = 1.0f;
+                flipY = isViewportFlipEnabledForDrawFBO() ? -1.0f : 1.0f;
+                break;
+            case SurfaceRotation::Rotated90Degrees:
+                ASSERT(isViewportFlipEnabledForDrawFBO());
+                flipX = 1.0f;
+                flipY = 1.0f;
+                std::swap(halfRenderAreaWidth, halfRenderAreaHeight);
+                break;
+            case SurfaceRotation::Rotated180Degrees:
+                ASSERT(isViewportFlipEnabledForDrawFBO());
+                flipX = -1.0f;
+                flipY = 1.0f;
+                break;
+            case SurfaceRotation::Rotated270Degrees:
+                ASSERT(isViewportFlipEnabledForDrawFBO());
+                flipX = -1.0f;
+                flipY = -1.0f;
+                break;
+            default:
+                UNREACHABLE();
+                break;
+        }
+
+        GraphicsDriverUniformsExtended *driverUniformsExt =
+            reinterpret_cast<GraphicsDriverUniformsExtended *>(ptr);
+        driverUniformsExt->halfRenderArea = {halfRenderAreaWidth, halfRenderAreaHeight};
+        driverUniformsExt->flipXY         = {flipX, flipY};
+        driverUniformsExt->negFlipXY      = {flipX, -flipY};
+        memcpy(&driverUniformsExt->preRotation,
+               &kPreRotationMatrices[mCurrentRotationDrawFramebuffer],
+               sizeof(PreRotationMatrixValues));
+        memcpy(&driverUniformsExt->fragRotation,
+               &kFragRotationMatrices[mCurrentRotationDrawFramebuffer],
+               sizeof(PreRotationMatrixValues));
+        driverUniforms = &driverUniformsExt->common;
+    }
+    else
+    {
+        driverUniforms = reinterpret_cast<GraphicsDriverUniforms *>(ptr);
+    }
 
     gl::Rectangle glViewport = mState.getViewport();
-    float halfRenderAreaWidth =
-        static_cast<float>(mDrawFramebuffer->getState().getDimensions().width) * 0.5f;
-    float halfRenderAreaHeight =
-        static_cast<float>(mDrawFramebuffer->getState().getDimensions().height) * 0.5f;
     if (isRotatedAspectRatioForDrawFBO())
     {
         // The surface is rotated 90/270 degrees.  This changes the aspect ratio of the surface.
         std::swap(glViewport.x, glViewport.y);
         std::swap(glViewport.width, glViewport.height);
-    }
-    float flipX = 1.0f;
-    float flipY = -1.0f;
-    // Y-axis flipping only comes into play with the default framebuffer (i.e. a swapchain image).
-    // For 0-degree rotation, an FBO or pbuffer could be the draw framebuffer, and so we must check
-    // whether flipY should be positive or negative.  All other rotations, will be to the default
-    // framebuffer, and so the value of isViewportFlipEnabledForDrawFBO() is assumed true; the
-    // appropriate flipY value is chosen such that gl_FragCoord is positioned at the lower-left
-    // corner of the window.
-    switch (mCurrentRotationDrawFramebuffer)
-    {
-        case SurfaceRotation::Identity:
-            flipX = 1.0f;
-            flipY = isViewportFlipEnabledForDrawFBO() ? -1.0f : 1.0f;
-            break;
-        case SurfaceRotation::Rotated90Degrees:
-            ASSERT(isViewportFlipEnabledForDrawFBO());
-            flipX = 1.0f;
-            flipY = 1.0f;
-            std::swap(halfRenderAreaWidth, halfRenderAreaHeight);
-            break;
-        case SurfaceRotation::Rotated180Degrees:
-            ASSERT(isViewportFlipEnabledForDrawFBO());
-            flipX = -1.0f;
-            flipY = 1.0f;
-            break;
-        case SurfaceRotation::Rotated270Degrees:
-            ASSERT(isViewportFlipEnabledForDrawFBO());
-            flipX = -1.0f;
-            flipY = -1.0f;
-            break;
-        default:
-            UNREACHABLE();
-            break;
     }
 
     uint32_t xfbActiveUnpaused = mState.isTransformFeedbackActiveUnpaused();
@@ -3788,27 +3874,16 @@ angle::Result ContextVk::handleDirtyGraphicsDriverUniforms(const gl::Context *co
     int32_t numSamples   = mDrawFramebuffer->getSamples();
 
     // Copy and flush to the device.
-    GraphicsDriverUniforms *driverUniforms = reinterpret_cast<GraphicsDriverUniforms *>(ptr);
-    *driverUniforms                        = {
+    *driverUniforms = {
         {static_cast<float>(glViewport.x), static_cast<float>(glViewport.y),
          static_cast<float>(glViewport.width), static_cast<float>(glViewport.height)},
-        {halfRenderAreaWidth, halfRenderAreaHeight},
-        {flipX, flipY},
-        {flipX, -flipY},
         mState.getEnabledClipDistances().bits(),
         xfbActiveUnpaused,
-        mXfbVertexCountPerInstance,
+        static_cast<int32_t>(mXfbVertexCountPerInstance),
         numSamples,
         {},
         {},
-        {},
-        {depthRangeNear, depthRangeFar, depthRangeDiff, 0.0f},
-        {},
-        {}};
-    memcpy(&driverUniforms->preRotation, &kPreRotationMatrices[mCurrentRotationDrawFramebuffer],
-           sizeof(PreRotationMatrixValues));
-    memcpy(&driverUniforms->fragRotation, &kFragRotationMatrices[mCurrentRotationDrawFramebuffer],
-           sizeof(PreRotationMatrixValues));
+        {depthRangeNear, depthRangeFar, depthRangeDiff, 0.0f}};
 
     if (xfbActiveUnpaused)
     {
@@ -3825,7 +3900,7 @@ angle::Result ContextVk::handleDirtyGraphicsDriverUniforms(const gl::Context *co
                                                      driverUniforms->acbBufferOffsets.size());
     }
 
-    return updateDriverUniformsDescriptorSet(newBuffer, sizeof(GraphicsDriverUniforms),
+    return updateDriverUniformsDescriptorSet(newBuffer, driverUniformSize,
                                              &mDriverUniforms[PipelineType::Graphics]);
 }
 
@@ -4225,9 +4300,9 @@ angle::Result ContextVk::flushImpl(const vk::Semaphore *signalSemaphore)
 {
     ANGLE_TRACE_EVENT0("gpu.angle", "ContextVk::flushImpl");
 
-    // We must set this to zero before calling flushCommandsAndEndRenderPass to prevent it from
+    // We must set this to false before calling flushCommandsAndEndRenderPass to prevent it from
     // calling back to flushImpl.
-    mDeferredFlushCount     = 0;
+    mHasDeferredFlush       = false;
     mSyncObjectPendingFlush = false;
 
     ANGLE_TRY(flushCommandsAndEndRenderPass());
@@ -4620,7 +4695,6 @@ angle::Result ContextVk::flushCommandsAndEndRenderPass()
 
     if (!mRenderPassCommands->started())
     {
-        ASSERT(!mDeferredFlushCount);
         onRenderPassFinished();
         return angle::Result::Continue;
     }
@@ -4676,7 +4750,7 @@ angle::Result ContextVk::flushCommandsAndEndRenderPass()
         ANGLE_TRY(flushOutsideRenderPassCommands());
     }
 
-    if (mDeferredFlushCount > 0)
+    if (mHasDeferredFlush)
     {
         // If we have deferred glFlush call in the middle of renderpass, flush them now.
         ANGLE_TRY(flushImpl(nullptr));
@@ -4913,12 +4987,6 @@ VkWriteDescriptorSet *ContextVk::allocWriteDescriptorSets(size_t count)
 void ContextVk::setDefaultUniformBlocksMinSizeForTesting(size_t minSize)
 {
     mDefaultUniformStorage.setMinimumSizeForTesting(minSize);
-}
-
-void ContextVk::invalidateGraphicsPipelineAndDescriptorSets()
-{
-    mGraphicsDirtyBits.set(DIRTY_BIT_PIPELINE);
-    mGraphicsDirtyBits.set(DIRTY_BIT_DESCRIPTOR_SETS);
 }
 
 angle::Result ContextVk::initializeMultisampleTextureToBlack(const gl::Context *context,

@@ -623,6 +623,9 @@ EXPORTS
     ; GL_EXT_buffer_storage
     glBufferStorageEXT
 
+    ; GL_EXT_clip_control
+    glClipControlEXT
+
     ; GL_EXT_copy_image
     glCopyImageSubDataEXT
 
@@ -778,6 +781,9 @@ EXPORTS
     glUseProgramStagesEXT
     glValidateProgramPipelineEXT
 
+    ; GL_EXT_shader_framebuffer_fetch_non_coherent
+    glFramebufferFetchBarrierEXT
+
     ; GL_EXT_shader_io_blocks
 
     ; GL_EXT_tessellation_shader
@@ -834,6 +840,9 @@ EXPORTS
     glIsFenceNV
     glSetFenceNV
     glTestFenceNV
+
+    ; GL_NV_framebuffer_blit
+    glBlitFramebufferNV
 
     ; GL_OES_EGL_image
     glEGLImageTargetRenderbufferStorageOES
@@ -1017,6 +1026,7 @@ EXPORTS
     glBlendFunciOESContextANGLE
     glBlitFramebufferContextANGLE
     glBlitFramebufferANGLEContextANGLE
+    glBlitFramebufferNVContextANGLE
     glBufferDataContextANGLE
     glBufferStorageEXTContextANGLE
     glBufferStorageExternalEXTContextANGLE
@@ -1036,6 +1046,7 @@ EXPORTS
     glClearStencilContextANGLE
     glClientActiveTextureContextANGLE
     glClientWaitSyncContextANGLE
+    glClipControlEXTContextANGLE
     glClipPlanefContextANGLE
     glClipPlanexContextANGLE
     glColor4fContextANGLE
@@ -1172,6 +1183,7 @@ EXPORTS
     glFogfvContextANGLE
     glFogxContextANGLE
     glFogxvContextANGLE
+    glFramebufferFetchBarrierEXTContextANGLE
     glFramebufferParameteriContextANGLE
     glFramebufferRenderbufferContextANGLE
     glFramebufferRenderbufferOESContextANGLE

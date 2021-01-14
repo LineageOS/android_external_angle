@@ -1010,7 +1010,8 @@ class CommandBufferHelper : angle::NonCopyable
 
     void depthStencilImagesDraw(ResourceUseList *resourceUseList,
                                 gl::LevelIndex level,
-                                uint32_t layer,
+                                uint32_t layerStart,
+                                uint32_t layerCount,
                                 ImageHelper *image,
                                 ImageHelper *resolveImage);
 
@@ -1234,6 +1235,7 @@ class CommandBufferHelper : angle::NonCopyable
     ImageHelper *mDepthStencilResolveImage;
     gl::LevelIndex mDepthStencilLevelIndex;
     uint32_t mDepthStencilLayerIndex;
+    uint32_t mDepthStencilLayerCount;
 };
 
 // Imagine an image going through a few layout transitions:
@@ -1300,7 +1302,7 @@ enum class ImageLayout
 VkImageLayout ConvertImageLayoutToVkImageLayout(ImageLayout imageLayout);
 
 bool FormatHasNecessaryFeature(RendererVk *renderer,
-                               VkFormat format,
+                               angle::FormatID formatID,
                                VkImageTiling tilingMode,
                                VkFormatFeatureFlags featureBits);
 
@@ -1387,7 +1389,7 @@ class ImageHelper final : public Resource, public angle::Subject
                                                   uint32_t baseArrayLayer,
                                                   uint32_t layerCount,
                                                   VkImageUsageFlags imageUsageFlags,
-                                                  VkFormat imageViewFormat) const;
+                                                  angle::FormatID imageViewFormat) const;
     angle::Result initImageView(Context *context,
                                 gl::TextureType textureType,
                                 VkImageAspectFlags aspectMask,
@@ -1508,7 +1510,8 @@ class ImageHelper final : public Resource, public angle::Subject
     // Data staging
     void removeSingleSubresourceStagedUpdates(ContextVk *contextVk,
                                               gl::LevelIndex levelIndexGL,
-                                              uint32_t layerIndex);
+                                              uint32_t layerIndex,
+                                              uint32_t layerCount);
     void removeStagedUpdates(Context *context,
                              gl::LevelIndex levelGLStart,
                              gl::LevelIndex levelGLEnd);
@@ -1594,6 +1597,7 @@ class ImageHelper final : public Resource, public angle::Subject
     angle::Result flushSingleSubresourceStagedUpdates(ContextVk *contextVk,
                                                       gl::LevelIndex levelGL,
                                                       uint32_t layer,
+                                                      uint32_t layerCount,
                                                       ClearValuesArray *deferredClears,
                                                       uint32_t deferredClearIndex);
 
@@ -1612,7 +1616,9 @@ class ImageHelper final : public Resource, public angle::Subject
     // as with renderbuffers or surface images.
     angle::Result flushAllStagedUpdates(ContextVk *contextVk);
 
-    bool hasStagedUpdatesForSubresource(gl::LevelIndex levelGL, uint32_t layer) const;
+    bool hasStagedUpdatesForSubresource(gl::LevelIndex levelGL,
+                                        uint32_t layer,
+                                        uint32_t layerCount) const;
     bool hasStagedUpdatesInAllocatedLevels() const;
 
     void recordWriteBarrier(VkImageAspectFlags aspectMask,
@@ -1735,16 +1741,24 @@ class ImageHelper final : public Resource, public angle::Subject
 
     // Used by framebuffer and render pass functions to decide loadOps and invalidate/un-invalidate
     // render target contents.
-    bool hasSubresourceDefinedContent(gl::LevelIndex level, uint32_t layerIndex) const;
-    bool hasSubresourceDefinedStencilContent(gl::LevelIndex level, uint32_t layerIndex) const;
+    bool hasSubresourceDefinedContent(gl::LevelIndex level,
+                                      uint32_t layerIndex,
+                                      uint32_t layerCount) const;
+    bool hasSubresourceDefinedStencilContent(gl::LevelIndex level,
+                                             uint32_t layerIndex,
+                                             uint32_t layerCount) const;
     void invalidateSubresourceContent(ContextVk *contextVk,
                                       gl::LevelIndex level,
-                                      uint32_t layerIndex);
+                                      uint32_t layerIndex,
+                                      uint32_t layerCount);
     void invalidateSubresourceStencilContent(ContextVk *contextVk,
                                              gl::LevelIndex level,
-                                             uint32_t layerIndex);
-    void restoreSubresourceContent(gl::LevelIndex level, uint32_t layerIndex);
-    void restoreSubresourceStencilContent(gl::LevelIndex level, uint32_t layerIndex);
+                                             uint32_t layerIndex,
+                                             uint32_t layerCount);
+    void restoreSubresourceContent(gl::LevelIndex level, uint32_t layerIndex, uint32_t layerCount);
+    void restoreSubresourceStencilContent(gl::LevelIndex level,
+                                          uint32_t layerIndex,
+                                          uint32_t layerCount);
 
   private:
     enum class UpdateSource
@@ -1778,21 +1792,22 @@ class ImageHelper final : public Resource, public angle::Subject
         VkImageCopy copyRegion;
     };
 
-    struct SubresourceUpdate
+    struct SubresourceUpdate : angle::NonCopyable
     {
         SubresourceUpdate();
+        ~SubresourceUpdate();
         SubresourceUpdate(BufferHelper *bufferHelperIn, const VkBufferImageCopy &copyRegion);
         SubresourceUpdate(ImageHelper *image, const VkImageCopy &copyRegion);
         SubresourceUpdate(VkImageAspectFlags aspectFlags,
                           const VkClearValue &clearValue,
                           const gl::ImageIndex &imageIndex);
-        SubresourceUpdate(const SubresourceUpdate &other);
+        SubresourceUpdate(SubresourceUpdate &&other);
 
-        SubresourceUpdate &operator=(const SubresourceUpdate &other);
+        SubresourceUpdate &operator=(SubresourceUpdate &&other);
 
         void release(RendererVk *renderer);
 
-        bool isUpdateToLayer(uint32_t layerIndex) const;
+        bool isUpdateToLayers(uint32_t layerIndex, uint32_t layerCount) const;
         void getDestSubresource(uint32_t imageLayerCount,
                                 uint32_t *baseLayerOut,
                                 uint32_t *layerCountOut) const;
@@ -1810,7 +1825,7 @@ class ImageHelper final : public Resource, public angle::Subject
     // Called from flushStagedUpdates, removes updates that are later superseded by another.  This
     // cannot be done at the time the updates were staged, as the image is not created (and thus the
     // extents are not known).
-    void removeSupersededUpdates(gl::TexLevelMask skipLevelsMask);
+    void removeSupersededUpdates(ContextVk *contextVk, gl::TexLevelMask skipLevelsMask);
 
     void initImageMemoryBarrierStruct(VkImageAspectFlags aspectMask,
                                       ImageLayout newLayout,
@@ -2074,7 +2089,7 @@ class ImageViewHelper final : public Resource
                                            LevelIndex levelVk,
                                            uint32_t layer,
                                            VkImageUsageFlags imageUsageFlags,
-                                           VkFormat vkImageFormat,
+                                           angle::FormatID formatID,
                                            const ImageView **imageViewOut);
 
     // Creates a storage view with a single layer of the level.
@@ -2083,8 +2098,14 @@ class ImageViewHelper final : public Resource
                                                 LevelIndex levelVk,
                                                 uint32_t layer,
                                                 VkImageUsageFlags imageUsageFlags,
-                                                VkFormat vkImageFormat,
+                                                angle::FormatID formatID,
                                                 const ImageView **imageViewOut);
+
+    // Creates a draw view with all layers of the level.
+    angle::Result getLevelDrawImageView(ContextVk *contextVk,
+                                        const ImageHelper &image,
+                                        LevelIndex levelVk,
+                                        const ImageView **imageViewOut);
 
     // Creates a draw view with a single layer of the level.
     angle::Result getLevelLayerDrawImageView(ContextVk *contextVk,
@@ -2183,6 +2204,7 @@ class ImageViewHelper final : public Resource
     bool mLinearColorspace;
 
     // Draw views
+    ImageViewVector mLevelDrawImageViews;
     LayerLevelImageViewVector mLayerLevelDrawImageViews;
 
     // Storage views
@@ -2267,7 +2289,7 @@ class ShaderProgramHelper : angle::NonCopyable
     ~ShaderProgramHelper();
 
     bool valid(const gl::ShaderType shaderType) const;
-    void destroy(VkDevice device);
+    void destroy(RendererVk *rendererVk);
     void release(ContextVk *contextVk);
 
     ShaderAndSerial &getShader(gl::ShaderType shaderType) { return mShaders[shaderType].get(); }

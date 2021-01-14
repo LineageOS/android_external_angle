@@ -53,7 +53,8 @@ void ProgramPipelineVk::fillProgramStateMap(
 }
 
 angle::Result ProgramPipelineVk::link(const gl::Context *glContext,
-                                      const gl::ProgramMergedVaryings &mergedVaryings)
+                                      const gl::ProgramMergedVaryings &mergedVaryings,
+                                      const gl::ProgramVaryingPacking &varyingPacking)
 {
     ContextVk *contextVk                  = vk::GetImpl(glContext);
     const gl::State &glState              = glContext->getState();
@@ -77,14 +78,14 @@ angle::Result ProgramPipelineVk::link(const gl::Context *glContext,
             // The program interface info must survive across shaders, except
             // for some program-specific values.
             ProgramVk *programVk = vk::GetImpl(glProgram);
-            GlslangProgramInterfaceInfo &programProgramInterfaceInfo =
+            const GlslangProgramInterfaceInfo &programProgramInterfaceInfo =
                 programVk->getGlslangProgramInterfaceInfo();
             glslangProgramInterfaceInfo.locationsUsedForXfbExtension =
                 programProgramInterfaceInfo.locationsUsedForXfbExtension;
 
-            GlslangAssignLocations(options, glProgram->getState().getExecutable(), shaderType,
-                                   frontShaderType, &glslangProgramInterfaceInfo,
-                                   &mExecutable.getShaderInterfaceVariableInfoMap());
+            GlslangAssignLocations(options, glProgram->getState().getExecutable(), varyingPacking,
+                                   shaderType, frontShaderType, &glslangProgramInterfaceInfo,
+                                   &mExecutable.mVariableInfoMap);
             frontShaderType = shaderType;
         }
     }

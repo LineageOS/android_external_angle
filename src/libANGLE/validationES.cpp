@@ -902,7 +902,7 @@ bool ValidFramebufferTarget(const Context *context, GLenum target)
 
         case GL_READ_FRAMEBUFFER:
         case GL_DRAW_FRAMEBUFFER:
-            return (context->getExtensions().framebufferBlit ||
+            return (context->getExtensions().framebufferBlitAny() ||
                     context->getClientMajorVersion() >= 3);
 
         default:
@@ -3625,7 +3625,7 @@ const char *ValidateDrawStates(const Context *context)
     VertexArray *vertexArray = state.getVertexArray();
     ASSERT(vertexArray);
 
-    if (!extensions.webglCompatibility && vertexArray->hasMappedEnabledArrayBuffer())
+    if (!extensions.webglCompatibility && vertexArray->hasInvalidMappedArrayBuffer())
     {
         return kBufferMapped;
     }
@@ -4439,6 +4439,13 @@ bool ValidateEGLImageTargetTexture2DOES(const Context *context,
     {
         context->validationError(GL_INVALID_OPERATION,
                                  "Image has more than 1 layer, target must be TEXTURE_2D_ARRAY");
+        return false;
+    }
+
+    if (imageObject->isYUV() && type != TextureType::External)
+    {
+        context->validationError(GL_INVALID_OPERATION,
+                                 "Image is YUV, target must be TEXTURE_EXTERNAL_OES");
         return false;
     }
 

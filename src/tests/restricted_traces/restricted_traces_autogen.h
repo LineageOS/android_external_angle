@@ -63,6 +63,7 @@ enum class RestrictedTraceID
     dragon_ball_legends,
     egypt_1500,
     fate_grand_order,
+    fifa_mobile,
     free_fire,
     google_maps,
     kartrider_rush,
@@ -73,10 +74,12 @@ enum class RestrictedTraceID
     nba2k20_800,
     pubg_mobile_lite,
     real_commando_secret_mission,
+    saint_seiya_awakening,
     temple_run_300,
     trex_200,
     whatsapp,
     world_of_tanks_blitz,
+    world_war_doh,
     InvalidEnum,
     EnumCount = InvalidEnum
 };

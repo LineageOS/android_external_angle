@@ -778,6 +778,9 @@ bool ValidateBufferStorageEXT(const Context *context,
                               const void *data,
                               GLbitfield flags);
 
+// GL_EXT_clip_control
+bool ValidateClipControlEXT(const Context *context, GLenum origin, GLenum depth);
+
 // GL_EXT_copy_image
 bool ValidateCopyImageSubDataEXT(const Context *context,
                                  GLuint srcName,
@@ -1316,6 +1319,9 @@ bool ValidateUseProgramStagesEXT(const Context *context,
                                  ShaderProgramID programPacked);
 bool ValidateValidateProgramPipelineEXT(const Context *context, ProgramPipelineID pipelinePacked);
 
+// GL_EXT_shader_framebuffer_fetch_non_coherent
+bool ValidateFramebufferFetchBarrierEXT(const Context *context);
+
 // GL_EXT_shader_io_blocks
 
 // GL_EXT_tessellation_shader
@@ -1440,6 +1446,19 @@ bool ValidateGetFenceivNV(const Context *context,
 bool ValidateIsFenceNV(const Context *context, FenceNVID fencePacked);
 bool ValidateSetFenceNV(const Context *context, FenceNVID fencePacked, GLenum condition);
 bool ValidateTestFenceNV(const Context *context, FenceNVID fencePacked);
+
+// GL_NV_framebuffer_blit
+bool ValidateBlitFramebufferNV(const Context *context,
+                               GLint srcX0,
+                               GLint srcY0,
+                               GLint srcX1,
+                               GLint srcY1,
+                               GLint dstX0,
+                               GLint dstY0,
+                               GLint dstX1,
+                               GLint dstY1,
+                               GLbitfield mask,
+                               GLenum filter);
 
 // GL_OES_EGL_image
 bool ValidateEGLImageTargetRenderbufferStorageOES(const Context *context,

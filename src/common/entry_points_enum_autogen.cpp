@@ -346,6 +346,8 @@ const char *GetEntryPointName(EntryPoint ep)
             return "glBlitFramebuffer";
         case EntryPoint::GLBlitFramebufferANGLE:
             return "glBlitFramebufferANGLE";
+        case EntryPoint::GLBlitFramebufferNV:
+            return "glBlitFramebufferNV";
         case EntryPoint::GLBlitNamedFramebuffer:
             return "glBlitNamedFramebuffer";
         case EntryPoint::GLBufferData:
@@ -424,6 +426,8 @@ const char *GetEntryPointName(EntryPoint ep)
             return "glClientWaitSync";
         case EntryPoint::GLClipControl:
             return "glClipControl";
+        case EntryPoint::GLClipControlEXT:
+            return "glClipControlEXT";
         case EntryPoint::GLClipPlane:
             return "glClipPlane";
         case EntryPoint::GLClipPlanef:
@@ -896,6 +900,8 @@ const char *GetEntryPointName(EntryPoint ep)
             return "glFogx";
         case EntryPoint::GLFogxv:
             return "glFogxv";
+        case EntryPoint::GLFramebufferFetchBarrierEXT:
+            return "glFramebufferFetchBarrierEXT";
         case EntryPoint::GLFramebufferParameteri:
             return "glFramebufferParameteri";
         case EntryPoint::GLFramebufferRenderbuffer:

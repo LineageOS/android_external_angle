@@ -672,6 +672,9 @@ ANGLE_EXPORT void GL_APIENTRY BufferStorageEXT(GLenum target,
                                                const void *data,
                                                GLbitfield flags);
 
+// GL_EXT_clip_control
+ANGLE_EXPORT void GL_APIENTRY ClipControlEXT(GLenum origin, GLenum depth);
+
 // GL_EXT_copy_image
 ANGLE_EXPORT void GL_APIENTRY CopyImageSubDataEXT(GLuint srcName,
                                                   GLenum srcTarget,
@@ -1062,6 +1065,9 @@ ANGLE_EXPORT void GL_APIENTRY UseProgramStagesEXT(GLuint pipeline,
                                                   GLuint program);
 ANGLE_EXPORT void GL_APIENTRY ValidateProgramPipelineEXT(GLuint pipeline);
 
+// GL_EXT_shader_framebuffer_fetch_non_coherent
+ANGLE_EXPORT void GL_APIENTRY FramebufferFetchBarrierEXT();
+
 // GL_EXT_shader_io_blocks
 
 // GL_EXT_tessellation_shader
@@ -1164,6 +1170,18 @@ ANGLE_EXPORT void GL_APIENTRY GetFenceivNV(GLuint fence, GLenum pname, GLint *pa
 ANGLE_EXPORT GLboolean GL_APIENTRY IsFenceNV(GLuint fence);
 ANGLE_EXPORT void GL_APIENTRY SetFenceNV(GLuint fence, GLenum condition);
 ANGLE_EXPORT GLboolean GL_APIENTRY TestFenceNV(GLuint fence);
+
+// GL_NV_framebuffer_blit
+ANGLE_EXPORT void GL_APIENTRY BlitFramebufferNV(GLint srcX0,
+                                                GLint srcY0,
+                                                GLint srcX1,
+                                                GLint srcY1,
+                                                GLint dstX0,
+                                                GLint dstY0,
+                                                GLint dstX1,
+                                                GLint dstY1,
+                                                GLbitfield mask,
+                                                GLenum filter);
 
 // GL_OES_EGL_image
 ANGLE_EXPORT void GL_APIENTRY EGLImageTargetRenderbufferStorageOES(GLenum target,
@@ -1604,6 +1622,17 @@ ANGLE_EXPORT void GL_APIENTRY BlitFramebufferANGLEContextANGLE(GLeglContext ctx,
                                                                GLint dstY1,
                                                                GLbitfield mask,
                                                                GLenum filter);
+ANGLE_EXPORT void GL_APIENTRY BlitFramebufferNVContextANGLE(GLeglContext ctx,
+                                                            GLint srcX0,
+                                                            GLint srcY0,
+                                                            GLint srcX1,
+                                                            GLint srcY1,
+                                                            GLint dstX0,
+                                                            GLint dstY0,
+                                                            GLint dstX1,
+                                                            GLint dstY1,
+                                                            GLbitfield mask,
+                                                            GLenum filter);
 ANGLE_EXPORT void GL_APIENTRY BufferDataContextANGLE(GLeglContext ctx,
                                                      GLenum target,
                                                      GLsizeiptr size,
@@ -1664,6 +1693,9 @@ ANGLE_EXPORT GLenum GL_APIENTRY ClientWaitSyncContextANGLE(GLeglContext ctx,
                                                            GLsync sync,
                                                            GLbitfield flags,
                                                            GLuint64 timeout);
+ANGLE_EXPORT void GL_APIENTRY ClipControlEXTContextANGLE(GLeglContext ctx,
+                                                         GLenum origin,
+                                                         GLenum depth);
 ANGLE_EXPORT void GL_APIENTRY ClipPlanefContextANGLE(GLeglContext ctx,
                                                      GLenum p,
                                                      const GLfloat *eqn);
@@ -2177,6 +2209,7 @@ ANGLE_EXPORT void GL_APIENTRY FogxContextANGLE(GLeglContext ctx, GLenum pname, G
 ANGLE_EXPORT void GL_APIENTRY FogxvContextANGLE(GLeglContext ctx,
                                                 GLenum pname,
                                                 const GLfixed *param);
+ANGLE_EXPORT void GL_APIENTRY FramebufferFetchBarrierEXTContextANGLE(GLeglContext ctx);
 ANGLE_EXPORT void GL_APIENTRY FramebufferParameteriContextANGLE(GLeglContext ctx,
                                                                 GLenum target,
                                                                 GLenum pname,

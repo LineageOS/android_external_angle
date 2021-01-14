@@ -1091,6 +1091,9 @@ TEST_P(StateChangeTestES3, SamplerMetadataUpdateOnSetProgram)
 {
     // http://anglebug.com/4092
     ANGLE_SKIP_TEST_IF(IsAndroid() && IsOpenGLES());
+    // TODO(anglebug.com/5491) Appears as though there's something wrong with textureSize on iOS
+    // unrelated to switching programs.
+    ANGLE_SKIP_TEST_IF(IsIOS() && IsOpenGLES());
     GLVertexArray vertexArray;
     glBindVertexArray(vertexArray);
 
@@ -4167,7 +4170,7 @@ class RobustBufferAccessWebGL2ValidationStateChangeTest : public WebGL2Validatio
     RobustBufferAccessWebGL2ValidationStateChangeTest()
     {
         // SwS/OSX GL do not support robustness. Mali does not support it.
-        if (!isSwiftshader() && !IsOSX() && !IsARM())
+        if (!isSwiftshader() && !IsOSX() && !IsIOS() && !IsARM())
         {
             setRobustAccess(true);
         }
@@ -4239,6 +4242,146 @@ TEST_P(ValidationStateChangeTest, MapBufferAndDraw)
     glUnmapBuffer(GL_ARRAY_BUFFER);
     ASSERT_GL_NO_ERROR();
 
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    ASSERT_GL_NO_ERROR();
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::blue);
+}
+
+// Tests that mapping an immutable and persistent buffer after calling glVertexAttribPointer()
+// allows rendering to succeed.
+TEST_P(ValidationStateChangeTest, MapImmutablePersistentBufferAndDraw)
+{
+    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_EXT_buffer_storage"));
+
+    // Initialize program and set up state.
+    ANGLE_GL_PROGRAM(program, kColorVS, kColorFS);
+
+    glUseProgram(program);
+    GLint positionLoc = glGetAttribLocation(program, "position");
+    ASSERT_NE(-1, positionLoc);
+    GLint colorLoc = glGetAttribLocation(program, "color");
+    ASSERT_NE(-1, colorLoc);
+
+    const std::array<Vector3, 6> &quadVertices = GetQuadVertices();
+    const size_t posBufferSize                 = quadVertices.size() * sizeof(Vector3);
+
+    GLBuffer posBuffer;
+    glBindBuffer(GL_ARRAY_BUFFER, posBuffer);
+    glBufferStorageEXT(GL_ARRAY_BUFFER, posBufferSize, quadVertices.data(),
+                       GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT_EXT);
+
+    // Start with position enabled.
+    glVertexAttribPointer(positionLoc, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
+    glEnableVertexAttribArray(positionLoc);
+
+    std::vector<GLColor> colorVertices(6, GLColor::blue);
+    const size_t colorBufferSize = sizeof(GLColor) * 6;
+
+    GLBuffer colorBuffer;
+    glBindBuffer(GL_ARRAY_BUFFER, colorBuffer);
+    glBufferStorageEXT(GL_ARRAY_BUFFER, colorBufferSize, colorVertices.data(),
+                       GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT_EXT);
+
+    // Start with color disabled.
+    glVertexAttribPointer(colorLoc, 4, GL_UNSIGNED_BYTE, GL_TRUE, 0, nullptr);
+    glDisableVertexAttribArray(colorLoc);
+
+    ASSERT_GL_NO_ERROR();
+
+    // Draw without a mapped buffer. Should succeed.
+    glVertexAttrib4f(colorLoc, 0, 1, 0, 1);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    ASSERT_GL_NO_ERROR();
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green);
+
+    // Map position buffer and draw. Should succeed.
+    glBindBuffer(GL_ARRAY_BUFFER, posBuffer);
+    glMapBufferRange(GL_ARRAY_BUFFER, 0, posBufferSize,
+                     GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT_EXT);
+    ASSERT_GL_NO_ERROR();
+
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    ASSERT_GL_NO_ERROR();
+    glUnmapBuffer(GL_ARRAY_BUFFER);
+
+    // Map then enable color buffer. Should succeed.
+    glBindBuffer(GL_ARRAY_BUFFER, colorBuffer);
+    glMapBufferRange(GL_ARRAY_BUFFER, 0, colorBufferSize,
+                     GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT_EXT);
+    glEnableVertexAttribArray(colorLoc);
+    ASSERT_GL_NO_ERROR();
+
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    ASSERT_GL_NO_ERROR();
+
+    // Unmap then draw. Should succeed.
+    glUnmapBuffer(GL_ARRAY_BUFFER);
+    ASSERT_GL_NO_ERROR();
+
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    ASSERT_GL_NO_ERROR();
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::blue);
+}
+
+// Tests that mapping an immutable and persistent buffer before calling glVertexAttribPointer()
+// allows rendering to succeed. This case is special in that the VertexArray is not observing the
+// buffer yet, so it's various cached buffer states aren't updated when the buffer is mapped.
+TEST_P(ValidationStateChangeTest, MapImmutablePersistentBufferThenVAPAndDraw)
+{
+    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_EXT_buffer_storage"));
+
+    // Initialize program and set up state.
+    ANGLE_GL_PROGRAM(program, kColorVS, kColorFS);
+
+    glUseProgram(program);
+    GLint positionLoc = glGetAttribLocation(program, "position");
+    ASSERT_NE(-1, positionLoc);
+    GLint colorLoc = glGetAttribLocation(program, "color");
+    ASSERT_NE(-1, colorLoc);
+
+    const std::array<Vector3, 6> &quadVertices = GetQuadVertices();
+    const size_t posBufferSize                 = quadVertices.size() * sizeof(Vector3);
+
+    GLBuffer posBuffer;
+    glBindBuffer(GL_ARRAY_BUFFER, posBuffer);
+    glBufferStorageEXT(GL_ARRAY_BUFFER, posBufferSize, quadVertices.data(),
+                       GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT_EXT);
+
+    glMapBufferRange(GL_ARRAY_BUFFER, 0, posBufferSize,
+                     GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT_EXT);
+
+    // Start with position enabled.
+    glVertexAttribPointer(positionLoc, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
+    glEnableVertexAttribArray(positionLoc);
+
+    std::vector<GLColor> colorVertices(6, GLColor::blue);
+    const size_t colorBufferSize = sizeof(GLColor) * 6;
+
+    GLBuffer colorBuffer;
+    glBindBuffer(GL_ARRAY_BUFFER, colorBuffer);
+    glBufferStorageEXT(GL_ARRAY_BUFFER, colorBufferSize, colorVertices.data(),
+                       GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT_EXT);
+
+    glMapBufferRange(GL_ARRAY_BUFFER, 0, colorBufferSize,
+                     GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT_EXT);
+    ASSERT_GL_NO_ERROR();
+
+    // Start with color disabled.
+    glVertexAttribPointer(colorLoc, 4, GL_UNSIGNED_BYTE, GL_TRUE, 0, nullptr);
+    glDisableVertexAttribArray(colorLoc);
+
+    ASSERT_GL_NO_ERROR();
+
+    // Draw without a mapped buffer. Should succeed.
+    glVertexAttrib4f(colorLoc, 0, 1, 0, 1);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    ASSERT_GL_NO_ERROR();
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green);
+
+    // Unmap then draw. Should succeed.
+    glUnmapBuffer(GL_ARRAY_BUFFER);
+    glEnableVertexAttribArray(colorLoc);
+    ASSERT_GL_NO_ERROR();
     glDrawArrays(GL_TRIANGLES, 0, 6);
     ASSERT_GL_NO_ERROR();
     EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::blue);
@@ -5776,6 +5919,9 @@ TEST_P(RobustBufferAccessWebGL2ValidationStateChangeTest, BindZeroSizeBufferThen
 
     // Mali does not support robustness now.
     ANGLE_SKIP_TEST_IF(IsARM());
+
+    // TODO(anglebug.com/5491)
+    ANGLE_SKIP_TEST_IF(IsIOS() && IsOpenGLES());
 
     std::vector<GLubyte> data(48, 1);
 

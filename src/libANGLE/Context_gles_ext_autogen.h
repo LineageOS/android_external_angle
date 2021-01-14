@@ -303,6 +303,8 @@
     /* GL_EXT_buffer_storage */                                                                    \
     void bufferStorage(BufferBinding targetPacked, GLsizeiptr size, const void *data,              \
                        GLbitfield flags);                                                          \
+    /* GL_EXT_clip_control */                                                                      \
+    void clipControl(GLenum origin, GLenum depth);                                                 \
     /* GL_EXT_compressed_ETC1_RGB8_sub_texture */                                                  \
     /* GL_EXT_copy_image */                                                                        \
     /* GL_EXT_debug_label */                                                                       \
@@ -388,6 +390,8 @@
     /* GL_EXT_semaphore_fd */                                                                      \
     void importSemaphoreFd(SemaphoreID semaphorePacked, HandleType handleTypePacked, GLint fd);    \
     /* GL_EXT_separate_shader_objects */                                                           \
+    /* GL_EXT_shader_framebuffer_fetch_non_coherent */                                             \
+    void framebufferFetchBarrier();                                                                \
     /* GL_EXT_shader_io_blocks */                                                                  \
     /* GL_EXT_tessellation_shader */                                                               \
     /* GL_EXT_texture_buffer */                                                                    \
@@ -413,6 +417,9 @@
     GLboolean isFenceNV(FenceNVID fencePacked) const;                                              \
     void setFenceNV(FenceNVID fencePacked, GLenum condition);                                      \
     GLboolean testFenceNV(FenceNVID fencePacked);                                                  \
+    /* GL_NV_framebuffer_blit */                                                                   \
+    void blitFramebufferNV(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, GLint dstX0,        \
+                           GLint dstY0, GLint dstX1, GLint dstY1, GLbitfield mask, GLenum filter); \
     /* GL_OES_EGL_image */                                                                         \
     void eGLImageTargetRenderbufferStorage(GLenum target, GLeglImageOES image);                    \
     void eGLImageTargetTexture2D(TextureType targetPacked, GLeglImageOES image);                   \

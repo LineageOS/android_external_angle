@@ -289,9 +289,6 @@ TEST_P(TransformFeedbackTest, SpanMultipleRenderPasses)
     // Fails on Mac GL drivers. http://anglebug.com/4992
     ANGLE_SKIP_TEST_IF(IsOpenGL() && IsOSX());
 
-    // anglebug.com/5428
-    ANGLE_SKIP_TEST_IF(IsLinux() && IsIntel() && IsVulkan());
-
     // anglebug.com/5429
     ANGLE_SKIP_TEST_IF(IsAndroid() && IsOpenGLES());
 
@@ -2431,20 +2428,20 @@ void main() {
     GLBuffer vertexBuffer, indexBuffer, xfbBuffer;
     GLVertexArray vao;
 
-    constexpr std::array<float, 4> kAttribInitData = {1, 2, 3, 4};
-    constexpr std::array<float, 4> kIndexInitData  = {0, 1, 2, 3};
-    constexpr std::array<float, 4> kXfbInitData    = {0, 0, 0, 0};
+    constexpr std::array<float, 4> kAttribInitData         = {1, 2, 3, 4};
+    constexpr std::array<unsigned short, 4> kIndexInitData = {0, 1, 2, 3};
+    constexpr std::array<float, 4> kXfbInitData            = {0, 0, 0, 0};
 
     // Initialize buffers.
     glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
-    glBufferData(GL_ARRAY_BUFFER, kAttribInitData.size() * sizeof(float), kAttribInitData.data(),
-                 GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, kAttribInitData.size() * sizeof(kAttribInitData[0]),
+                 kAttribInitData.data(), GL_STATIC_DRAW);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBuffer);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, kIndexInitData.size() * sizeof(float),
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, kIndexInitData.size() * sizeof(kIndexInitData[0]),
                  kIndexInitData.data(), GL_STATIC_DRAW);
     glBindBuffer(GL_ARRAY_BUFFER, xfbBuffer);
-    glBufferData(GL_ARRAY_BUFFER, kXfbInitData.size() * sizeof(float), kXfbInitData.data(),
-                 GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, kXfbInitData.size() * sizeof(kXfbInitData[0]),
+                 kXfbInitData.data(), GL_STATIC_DRAW);
 
     // This tests that having a transform feedback buffer bound in an unbound VAO
     // does not affect anything.
@@ -2660,6 +2657,9 @@ TEST_P(TransformFeedbackTestES32, PrimitivesWrittenAndGenerated)
     ANGLE_SKIP_TEST_IF(IsVulkan() && IsAMD() && IsWindows());
     ANGLE_SKIP_TEST_IF(IsVulkan() && IsNVIDIA() && IsWindows7());
 
+    // http://anglebug.com/5539
+    ANGLE_SKIP_TEST_IF(IsVulkan() && IsLinux());
+
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
@@ -2767,7 +2767,6 @@ TEST_P(TransformFeedbackTestES32, PrimitivesWrittenAndGenerated)
     GLuint readyPG = GL_FALSE;
     while (readyPW == GL_FALSE || readyPG == GL_FALSE)
     {
-        angle::Sleep(0);
         glGetQueryObjectuiv(primitivesWrittenQueries[0], GL_QUERY_RESULT_AVAILABLE, &readyPW);
         glGetQueryObjectuiv(primitivesGeneratedQueries[0], GL_QUERY_RESULT_AVAILABLE, &readyPG);
     }
@@ -2797,6 +2796,212 @@ TEST_P(TransformFeedbackTestES32, PrimitivesWrittenAndGenerated)
 
         EXPECT_EQ(primitivesWritten, kPrimitivesWrittenExpected[queryIndex]) << queryIndex;
         EXPECT_EQ(primitivesGenerated, kPrimitivesGeneratedExpected[queryIndex]) << queryIndex;
+    }
+}
+
+// Verify that capture of I/O block fields works, both when the instance name is specified and when
+// not.  This test uses interleaved components.
+TEST_P(TransformFeedbackTestES31, IOBlocksInterleaved)
+{
+    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_EXT_shader_io_blocks"));
+
+    // http://anglebug.com/5488
+    ANGLE_SKIP_TEST_IF(IsQualcomm() && IsOpenGLES());
+    // http://anglebug.com/5493
+    ANGLE_SKIP_TEST_IF(IsLinux() && IsAMD() && IsVulkan());
+
+    constexpr char kVS[] = R"(#version 310 es
+#extension GL_EXT_shader_io_blocks : require
+
+out VSBlock1
+{
+    vec4 a;
+    vec4 b[2];
+} blockOut1;
+
+out VSBlock2
+{
+    vec4 c;
+    mat3 d;
+    vec4 e;
+};
+
+out vec4 looseVarying;
+
+void main()
+{
+    blockOut1.a = vec4(0.15, 0.18, 0.21, 0.24);
+    blockOut1.b[0] = vec4(0.27, 0.30, 0.33, 0.36);
+    blockOut1.b[1] = vec4(0.39, 0.42, 0.45, 0.48);
+    c = vec4(0.51, 0.54, 0.57, 0.6);
+    d = mat3(vec3(0.63, 0.66, 0.69), vec3(0.72, 0.75, 0.78), vec3(0.81, 0.84, 0.87));
+    e = vec4(0.9, 0.93, 0.96, 0.99);
+    looseVarying = vec4(0.25, 0.5, 0.75, 1.0);
+})";
+
+    constexpr char kFS[] = R"(#version 310 es
+#extension GL_EXT_shader_io_blocks : require
+precision mediump float;
+
+layout(location = 0) out mediump vec4 color;
+
+in VSBlock2
+{
+    vec4 c;
+    mat3 d;
+    vec4 e;
+};
+
+void main()
+{
+    color = vec4(c.x, d[0].y, e.z, 1.0);
+})";
+
+    std::vector<std::string> tfVaryings     = {"VSBlock1.b", "d", "looseVarying"};
+    constexpr size_t kCapturedVaryingsCount = 3;
+    constexpr std::array<size_t, kCapturedVaryingsCount> kCaptureSizes = {8, 9, 4};
+    const std::vector<float> kExpected[kCapturedVaryingsCount]         = {
+        {0.27, 0.30, 0.33, 0.36, 0.39, 0.42, 0.45, 0.48},
+        {0.63, 0.66, 0.69, 0.72, 0.75, 0.78, 0.81, 0.84, 0.87},
+        {0.25, 0.5, 0.75, 1.0},
+    };
+
+    ANGLE_GL_PROGRAM_TRANSFORM_FEEDBACK(program, kVS, kFS, tfVaryings, GL_INTERLEAVED_ATTRIBS);
+    EXPECT_GL_NO_ERROR();
+
+    GLTransformFeedback xfb;
+    glBindTransformFeedback(GL_TRANSFORM_FEEDBACK, xfb);
+
+    GLBuffer xfbBuffer;
+
+    size_t totalSize = 0;
+    for (size_t index = 0; index < kCapturedVaryingsCount; ++index)
+    {
+        totalSize += kCaptureSizes[index];
+    }
+
+    glBindBuffer(GL_TRANSFORM_FEEDBACK_BUFFER, xfbBuffer);
+    glBufferData(GL_TRANSFORM_FEEDBACK_BUFFER, totalSize * sizeof(float), nullptr, GL_STATIC_DRAW);
+    glBindBufferBase(GL_TRANSFORM_FEEDBACK_BUFFER, 0, xfbBuffer);
+
+    glUseProgram(program);
+
+    glBeginTransformFeedback(GL_POINTS);
+    glDrawArrays(GL_POINTS, 0, 1);
+    glEndTransformFeedback();
+
+    const float *bufferData = static_cast<float *>(glMapBufferRange(
+        GL_TRANSFORM_FEEDBACK_BUFFER, 0, totalSize * sizeof(float), GL_MAP_READ_BIT));
+
+    size_t currentOffset = 0;
+    for (size_t index = 0; index < kCapturedVaryingsCount; ++index)
+    {
+        for (size_t component = 0; component < kCaptureSizes[index]; ++component)
+        {
+            EXPECT_NEAR(bufferData[currentOffset + component], kExpected[index][component], 0.001f)
+                << index << " " << component;
+        }
+        currentOffset += kCaptureSizes[index];
+    }
+
+    glUnmapBuffer(GL_TRANSFORM_FEEDBACK_BUFFER);
+}
+
+// Verify that capture of I/O block fields works.  This test uses separate components.
+TEST_P(TransformFeedbackTestES31, IOBlocksSeparate)
+{
+    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_EXT_shader_io_blocks"));
+
+    // http://anglebug.com/5487
+    ANGLE_SKIP_TEST_IF(IsLinux() && (IsIntel() || IsAMD()) && IsOpenGL());
+
+    // http://anglebug.com/5488
+    ANGLE_SKIP_TEST_IF(IsQualcomm() && IsOpenGLES());
+
+    // http://anglebug.com/5493
+    ANGLE_SKIP_TEST_IF(IsLinux() && IsAMD() && IsVulkan());
+
+    constexpr char kVS[] = R"(#version 310 es
+#extension GL_EXT_shader_io_blocks : require
+
+out VSBlock
+{
+    float a;
+    vec2 b;
+};
+
+out float c;
+
+void main()
+{
+    a = 0.25;
+    b = vec2(0.5, 0.75);
+    c = 1.0;
+})";
+
+    constexpr char kFS[] = R"(#version 310 es
+#extension GL_EXT_shader_io_blocks : require
+precision mediump float;
+
+layout(location = 0) out mediump vec4 color;
+
+in VSBlock
+{
+    float a;
+    vec2 b;
+};
+
+void main()
+{
+    color = vec4(a, b, 1.0);
+})";
+
+    std::vector<std::string> tfVaryings                                = {"a", "b", "c"};
+    constexpr size_t kCapturedVaryingsCount                            = 3;
+    constexpr std::array<size_t, kCapturedVaryingsCount> kCaptureSizes = {1, 2, 1};
+    const std::vector<float> kExpected[kCapturedVaryingsCount]         = {
+        {0.25},
+        {0.5, 0.75},
+        {1.0},
+    };
+
+    ANGLE_GL_PROGRAM_TRANSFORM_FEEDBACK(program, kVS, kFS, tfVaryings, GL_SEPARATE_ATTRIBS);
+    EXPECT_GL_NO_ERROR();
+
+    GLTransformFeedback xfb;
+    glBindTransformFeedback(GL_TRANSFORM_FEEDBACK, xfb);
+
+    std::array<GLBuffer, kCapturedVaryingsCount> xfbBuffers;
+
+    for (size_t index = 0; index < kCapturedVaryingsCount; ++index)
+    {
+        glBindBuffer(GL_TRANSFORM_FEEDBACK_BUFFER, xfbBuffers[index]);
+        glBufferData(GL_TRANSFORM_FEEDBACK_BUFFER, kCaptureSizes[index] * sizeof(float), nullptr,
+                     GL_STATIC_DRAW);
+        glBindBufferBase(GL_TRANSFORM_FEEDBACK_BUFFER, index, xfbBuffers[index]);
+    }
+
+    glUseProgram(program);
+
+    glBeginTransformFeedback(GL_POINTS);
+    glDrawArrays(GL_POINTS, 0, 1);
+    glEndTransformFeedback();
+
+    for (size_t index = 0; index < kCapturedVaryingsCount; ++index)
+    {
+        glBindBuffer(GL_TRANSFORM_FEEDBACK_BUFFER, xfbBuffers[index]);
+
+        const float *bufferData = static_cast<float *>(
+            glMapBufferRange(GL_TRANSFORM_FEEDBACK_BUFFER, 0, kCaptureSizes[index] * sizeof(float),
+                             GL_MAP_READ_BIT));
+
+        for (size_t component = 0; component < kCaptureSizes[index]; ++component)
+        {
+            EXPECT_NEAR(bufferData[component], kExpected[index][component], 0.001f)
+                << index << " " << component;
+        }
+
+        glUnmapBuffer(GL_TRANSFORM_FEEDBACK_BUFFER);
     }
 }
 

@@ -155,7 +155,7 @@ void UnpackAttachmentDesc(VkAttachmentDescription *desc,
 {
     // We would only need this flag for duplicated attachments. Apply it conservatively.
     desc->flags   = VK_ATTACHMENT_DESCRIPTION_MAY_ALIAS_BIT;
-    desc->format  = format.vkImageFormat;
+    desc->format  = format.actualImageVkFormat();
     desc->samples = gl_vk::GetSamples(samples);
     desc->loadOp  = static_cast<VkAttachmentLoadOp>(ops.loadOp);
     desc->storeOp =
@@ -179,7 +179,7 @@ void UnpackColorResolveAttachmentDesc(VkAttachmentDescription *desc,
     // attachments simultaneously, so this flag can likely be removed without any issue if it incurs
     // a performance penalty.
     desc->flags  = VK_ATTACHMENT_DESCRIPTION_MAY_ALIAS_BIT;
-    desc->format = format.vkImageFormat;
+    desc->format = format.actualImageVkFormat();
 
     // This function is for color resolve attachments.
     const angle::Format &angleFormat = format.actualImageFormat();
@@ -212,7 +212,7 @@ void UnpackDepthStencilResolveAttachmentDesc(VkAttachmentDescription *desc,
     // There cannot be simultaneous usages of the depth/stencil resolve image, as depth/stencil
     // resolve currently only comes from depth/stencil renderbuffers.
     desc->flags  = 0;
-    desc->format = format.vkImageFormat;
+    desc->format = format.actualImageVkFormat();
 
     // This function is for depth/stencil resolve attachment.
     const angle::Format &angleFormat = format.intendedFormat();
@@ -1712,8 +1712,7 @@ angle::Result GraphicsPipelineDesc::initializePipeline(
         angle::FormatID formatID         = static_cast<angle::FormatID>(packedAttrib.format);
         const Format &format             = contextVk->getRenderer()->getFormat(formatID);
         const angle::Format &angleFormat = format.intendedFormat();
-        VkFormat vkFormat =
-            packedAttrib.compressed ? format.vkCompressedBufferFormat : format.vkBufferFormat;
+        VkFormat vkFormat                = format.actualBufferVkFormat(packedAttrib.compressed);
 
         gl::ComponentType attribType =
             GetVertexAttributeComponentType(angleFormat.isPureInt(), angleFormat.vertexAttribType);
@@ -2887,7 +2886,7 @@ void FramebufferDesc::update(uint32_t index, ImageOrBufferViewSubresourceSerial 
     mSerials[index] = serial;
     if (serial.viewSerial.valid())
     {
-        mMaxIndex = std::max(mMaxIndex, static_cast<uint16_t>(index + 1));
+        SetBitField(mMaxIndex, std::max(mMaxIndex, static_cast<uint16_t>(index + 1)));
     }
 }
 
@@ -2919,19 +2918,21 @@ void FramebufferDesc::updateDepthStencilResolve(ImageOrBufferViewSubresourceSeri
 size_t FramebufferDesc::hash() const
 {
     return angle::ComputeGenericHash(&mSerials, sizeof(mSerials[0]) * mMaxIndex) ^
-           mUnresolveAttachmentMask.bits();
+           mLayerCount << 16 ^ mUnresolveAttachmentMask.bits();
 }
 
 void FramebufferDesc::reset()
 {
-    mMaxIndex = 0;
+    mMaxIndex   = 0;
+    mLayerCount = 0;
     mUnresolveAttachmentMask.reset();
     memset(&mSerials, 0, sizeof(mSerials));
 }
 
 bool FramebufferDesc::operator==(const FramebufferDesc &other) const
 {
-    if (mMaxIndex != other.mMaxIndex || mUnresolveAttachmentMask != other.mUnresolveAttachmentMask)
+    if (mMaxIndex != other.mMaxIndex || mLayerCount != other.mLayerCount ||
+        mUnresolveAttachmentMask != other.mUnresolveAttachmentMask)
     {
         return false;
     }
@@ -2956,6 +2957,11 @@ uint32_t FramebufferDesc::attachmentCount() const
 FramebufferNonResolveAttachmentMask FramebufferDesc::getUnresolveAttachmentMask() const
 {
     return mUnresolveAttachmentMask;
+}
+
+void FramebufferDesc::updateLayerCount(uint32_t layerCount)
+{
+    SetBitField(mLayerCount, layerCount);
 }
 
 // SamplerDesc implementation.
@@ -3192,8 +3198,15 @@ RenderPassCache::~RenderPassCache()
     ASSERT(mPayload.empty());
 }
 
-void RenderPassCache::destroy(VkDevice device)
+void RenderPassCache::destroy(RendererVk *rendererVk)
 {
+    rendererVk->accumulateCacheStats(VulkanCacheType::CompatibleRenderPass,
+                                     mCompatibleRenderPassCacheStats);
+    rendererVk->accumulateCacheStats(VulkanCacheType::RenderPassWithOps,
+                                     mRenderPassWithOpsCacheStats);
+
+    VkDevice device = rendererVk->getDevice();
+
     for (auto &outerIt : mPayload)
     {
         for (auto &innerIt : outerIt.second)
@@ -3268,6 +3281,7 @@ angle::Result RenderPassCache::getRenderPassWithOpsImpl(ContextVk *contextVk,
             // TODO(jmadill): Could possibly use an MRU cache here.
             vk::GetRenderPassAndUpdateCounters(contextVk, updatePerfCounters, &innerIt->second,
                                                renderPassOut);
+            mRenderPassWithOpsCacheStats.hit();
             return angle::Result::Continue;
         }
     }
@@ -3277,6 +3291,7 @@ angle::Result RenderPassCache::getRenderPassWithOpsImpl(ContextVk *contextVk,
         outerIt            = emplaceResult.first;
     }
 
+    mRenderPassWithOpsCacheStats.miss();
     vk::RenderPassHelper newRenderPass;
     ANGLE_TRY(vk::InitializeRenderPassFromDesc(contextVk, desc, attachmentOps, &newRenderPass));
 
@@ -3297,8 +3312,12 @@ GraphicsPipelineCache::~GraphicsPipelineCache()
     ASSERT(mPayload.empty());
 }
 
-void GraphicsPipelineCache::destroy(VkDevice device)
+void GraphicsPipelineCache::destroy(RendererVk *rendererVk)
 {
+    rendererVk->accumulateCacheStats(VulkanCacheType::GraphicsPipeline, mCacheStats);
+
+    VkDevice device = rendererVk->getDevice();
+
     for (auto &item : mPayload)
     {
         vk::PipelineHelper &pipeline = item.second;
@@ -3373,8 +3392,12 @@ DescriptorSetLayoutCache::~DescriptorSetLayoutCache()
     ASSERT(mPayload.empty());
 }
 
-void DescriptorSetLayoutCache::destroy(VkDevice device)
+void DescriptorSetLayoutCache::destroy(RendererVk *rendererVk)
 {
+    rendererVk->accumulateCacheStats(VulkanCacheType::DescriptorSetLayout, mCacheStats);
+
+    VkDevice device = rendererVk->getDevice();
+
     for (auto &item : mPayload)
     {
         vk::RefCountedDescriptorSetLayout &layout = item.second;
@@ -3395,9 +3418,11 @@ angle::Result DescriptorSetLayoutCache::getDescriptorSetLayout(
     {
         vk::RefCountedDescriptorSetLayout &layout = iter->second;
         descriptorSetLayoutOut->set(&layout);
+        mCacheStats.hit();
         return angle::Result::Continue;
     }
 
+    mCacheStats.miss();
     // We must unpack the descriptor set layout description.
     vk::DescriptorSetLayoutBindingVector bindingVector;
     std::vector<VkSampler> immutableSamplers;
@@ -3428,8 +3453,12 @@ PipelineLayoutCache::~PipelineLayoutCache()
     ASSERT(mPayload.empty());
 }
 
-void PipelineLayoutCache::destroy(VkDevice device)
+void PipelineLayoutCache::destroy(RendererVk *rendererVk)
 {
+    rendererVk->accumulateCacheStats(VulkanCacheType::PipelineLayout, mCacheStats);
+
+    VkDevice device = rendererVk->getDevice();
+
     for (auto &item : mPayload)
     {
         vk::RefCountedPipelineLayout &layout = item.second;
@@ -3450,9 +3479,11 @@ angle::Result PipelineLayoutCache::getPipelineLayout(
     {
         vk::RefCountedPipelineLayout &layout = iter->second;
         pipelineLayoutOut->set(&layout);
+        mCacheStats.hit();
         return angle::Result::Continue;
     }
 
+    mCacheStats.miss();
     // Note this does not handle gaps in descriptor set layouts gracefully.
     angle::FixedVector<VkDescriptorSetLayout, vk::kMaxDescriptorSetLayouts> setLayoutHandles;
     for (const vk::BindingPointer<vk::DescriptorSetLayout> &layoutPtr : descriptorSetLayouts)
@@ -3513,9 +3544,11 @@ SamplerYcbcrConversionCache::~SamplerYcbcrConversionCache()
     ASSERT(mPayload.empty());
 }
 
-void SamplerYcbcrConversionCache::destroy(RendererVk *renderer)
+void SamplerYcbcrConversionCache::destroy(RendererVk *rendererVk)
 {
-    VkDevice device = renderer->getDevice();
+    rendererVk->accumulateCacheStats(VulkanCacheType::SamplerYcbcrConversion, mCacheStats);
+
+    VkDevice device = rendererVk->getDevice();
 
     for (auto &iter : mPayload)
     {
@@ -3523,7 +3556,7 @@ void SamplerYcbcrConversionCache::destroy(RendererVk *renderer)
         ASSERT(!yuvSampler.isReferenced());
         yuvSampler.get().destroy(device);
 
-        renderer->getActiveHandleCounts().onDeallocate(vk::HandleType::SamplerYcbcrConversion);
+        rendererVk->getActiveHandleCounts().onDeallocate(vk::HandleType::SamplerYcbcrConversion);
     }
 
     mPayload.clear();
@@ -3540,9 +3573,11 @@ angle::Result SamplerYcbcrConversionCache::getYuvConversion(
     {
         vk::RefCountedSamplerYcbcrConversion &yuvConversion = iter->second;
         yuvConversionOut->set(&yuvConversion);
+        mCacheStats.hit();
         return angle::Result::Continue;
     }
 
+    mCacheStats.miss();
     vk::SamplerYcbcrConversion wrappedYuvConversion;
     ANGLE_VK_TRY(context, wrappedYuvConversion.init(context->getDevice(), yuvConversionCreateInfo));
 
@@ -3580,9 +3615,11 @@ SamplerCache::~SamplerCache()
     ASSERT(mPayload.empty());
 }
 
-void SamplerCache::destroy(RendererVk *renderer)
+void SamplerCache::destroy(RendererVk *rendererVk)
 {
-    VkDevice device = renderer->getDevice();
+    rendererVk->accumulateCacheStats(VulkanCacheType::Sampler, mCacheStats);
+
+    VkDevice device = rendererVk->getDevice();
 
     for (auto &iter : mPayload)
     {
@@ -3590,7 +3627,7 @@ void SamplerCache::destroy(RendererVk *renderer)
         ASSERT(!sampler.isReferenced());
         sampler.get().get().destroy(device);
 
-        renderer->getActiveHandleCounts().onDeallocate(vk::HandleType::Sampler);
+        rendererVk->getActiveHandleCounts().onDeallocate(vk::HandleType::Sampler);
     }
 
     mPayload.clear();
@@ -3605,9 +3642,11 @@ angle::Result SamplerCache::getSampler(ContextVk *contextVk,
     {
         vk::RefCountedSampler &sampler = iter->second;
         samplerOut->set(&sampler);
+        mCacheStats.hit();
         return angle::Result::Continue;
     }
 
+    mCacheStats.miss();
     vk::SamplerHelper samplerHelper(contextVk);
     ANGLE_TRY(desc.init(contextVk, &samplerHelper.get()));
 
@@ -3620,4 +3659,26 @@ angle::Result SamplerCache::getSampler(ContextVk *contextVk,
 
     return angle::Result::Continue;
 }
+
+// DriverUniformsDescriptorSetCache implementation.
+void DriverUniformsDescriptorSetCache::destroy(RendererVk *rendererVk)
+{
+    rendererVk->accumulateCacheStats(VulkanCacheType::DescriptorSet, mCacheStats);
+    mPayload.clear();
+}
+
+// DescriptorSetCache implementation.
+template <typename key, VulkanCacheType cacheType>
+void DescriptorSetCache<key, cacheType>::destroy(RendererVk *rendererVk)
+{
+    rendererVk->accumulateCacheStats(cacheType, mCacheStats);
+    mPayload.clear();
+}
+
+// RendererVk's methods are not accessible in vk_cache_utils.h
+// Below declarations are needed to avoid linker errors.
+template class DescriptorSetCache<vk::TextureDescriptorDesc, VulkanCacheType::TextureDescriptors>;
+
+template class DescriptorSetCache<vk::UniformsAndXfbDesc,
+                                  VulkanCacheType::UniformsAndXfbDescriptorSet>;
 }  // namespace rx

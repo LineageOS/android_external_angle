@@ -23,6 +23,7 @@ struct PlatformParameters;
 bool IsAndroid();
 bool IsLinux();
 bool IsOSX();
+bool IsIOS();
 bool IsOzone();
 bool IsWindows();
 bool IsWindows7();
@@ -44,6 +45,7 @@ bool IsIntel();
 bool IsAMD();
 bool IsARM();
 bool IsNVIDIA();
+bool IsQualcomm();
 
 // GPU devices.
 bool IsSwiftshaderDevice();

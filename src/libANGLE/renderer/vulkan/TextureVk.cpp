@@ -151,10 +151,12 @@ bool CanCopyWithDraw(RendererVk *renderer,
                      VkImageTiling destTilingMode)
 {
     // Checks that the formats in copy by drawing have the appropriate feature bits
-    bool srcFormatHasNecessaryFeature = vk::FormatHasNecessaryFeature(
-        renderer, srcFormat.vkImageFormat, srcTilingMode, VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT);
-    bool dstFormatHasNecessaryFeature = vk::FormatHasNecessaryFeature(
-        renderer, destFormat.vkImageFormat, destTilingMode, VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT);
+    bool srcFormatHasNecessaryFeature =
+        vk::FormatHasNecessaryFeature(renderer, srcFormat.actualImageFormatID, srcTilingMode,
+                                      VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT);
+    bool dstFormatHasNecessaryFeature =
+        vk::FormatHasNecessaryFeature(renderer, destFormat.actualImageFormatID, destTilingMode,
+                                      VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT);
 
     return srcFormatHasNecessaryFeature && dstFormatHasNecessaryFeature;
 }
@@ -178,7 +180,7 @@ bool CanGenerateMipmapWithCompute(RendererVk *renderer,
 
     // Format must have STORAGE support.
     const bool hasStorageSupport = renderer->hasImageFormatFeatureBits(
-        format.vkImageFormat, VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT);
+        format.actualImageFormatID, VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT);
 
     // No support for sRGB formats yet.
     const bool isSRGB = angleFormat.isSRGB;
@@ -203,29 +205,36 @@ void GetRenderTargetLayerCountAndIndex(vk::ImageHelper *image,
                                        GLuint *layerCount,
                                        GLuint *layerIndex)
 {
+    // If the render target is to a single layer (usual case), index.hasLayer() is true.  If the
+    // render target is layered (used with geometry shaders), it would be false.  In the latter
+    // case, layerIndex is given the value of layerCount to signify this.  The arrays indexed by
+    // layerIndex therefore contain the layered render target as the last element.
     switch (index.getType())
     {
         case gl::TextureType::_2D:
         case gl::TextureType::_2DMultisample:
-            *layerIndex = 0;
             *layerCount = 1;
+            *layerIndex = 0;
             return;
 
         case gl::TextureType::CubeMap:
-            *layerIndex = index.cubeMapFaceIndex();
             *layerCount = gl::kCubeFaceCount;
+            *layerIndex = index.hasLayer() ? index.cubeMapFaceIndex() : *layerCount;
             return;
 
         case gl::TextureType::_3D:
-            *layerIndex = index.hasLayer() ? index.getLayerIndex() : 0;
-            *layerCount = index.hasLayer() ? image->getExtents().depth : 1;
+        {
+            gl::LevelIndex levelGL(index.getLevelIndex());
+            *layerCount = image->getLevelExtents(image->toVkLevel(levelGL)).depth;
+            *layerIndex = index.hasLayer() ? index.getLayerIndex() : *layerCount;
             return;
+        }
 
         case gl::TextureType::_2DArray:
         case gl::TextureType::_2DMultisampleArray:
         case gl::TextureType::CubeMapArray:
-            *layerIndex = index.hasLayer() ? index.getLayerIndex() : 0;
-            *layerCount = index.hasLayer() ? image->getLayerCount() : 1;
+            *layerCount = image->getLayerCount();
+            *layerIndex = index.hasLayer() ? index.getLayerIndex() : *layerCount;
             return;
 
         default:
@@ -278,7 +287,7 @@ angle::Result CopyAndStageImageSubresource(ContextVk *contextVk,
     // Stage an update to the new image
     ASSERT(stagingBuffer);
     const gl::InternalFormat &formatInfo =
-        gl::GetSizedInternalFormatInfo(dstImage->getFormat().internalFormat);
+        gl::GetSizedInternalFormatInfo(dstImage->getFormat().intendedGLFormat);
     uint32_t bufferRowLength;
     uint32_t bufferImageHeight;
     ANGLE_VK_CHECK_MATH(contextVk,
@@ -1427,13 +1436,13 @@ void TextureVk::initImageUsageFlags(ContextVk *contextVk, const vk::Format &form
     {
         // Work around a bug in the Mock ICD:
         // https://github.com/KhronosGroup/Vulkan-Tools/issues/445
-        if (renderer->hasImageFormatFeatureBits(format.vkImageFormat,
+        if (renderer->hasImageFormatFeatureBits(format.actualImageFormatID,
                                                 VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT))
         {
             mImageUsageFlags |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
         }
     }
-    else if (renderer->hasImageFormatFeatureBits(format.vkImageFormat,
+    else if (renderer->hasImageFormatFeatureBits(format.actualImageFormatID,
                                                  VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT))
     {
         mImageUsageFlags |=
@@ -1524,7 +1533,8 @@ angle::Result TextureVk::redefineLevel(const gl::Context *context,
         // override them with this call.
         gl::LevelIndex levelIndexGL(index.getLevelIndex());
         uint32_t layerIndex = index.hasLayer() ? index.getLayerIndex() : 0;
-        mImage->removeSingleSubresourceStagedUpdates(contextVk, levelIndexGL, layerIndex);
+        mImage->removeSingleSubresourceStagedUpdates(contextVk, levelIndexGL, layerIndex,
+                                                     index.getLayerCount());
 
         if (mImage->valid())
         {
@@ -1849,7 +1859,7 @@ angle::Result TextureVk::generateMipmap(const gl::Context *context)
 
         return generateMipmapsWithCompute(contextVk);
     }
-    else if (renderer->hasImageFormatFeatureBits(mImage->getFormat().vkImageFormat,
+    else if (renderer->hasImageFormatFeatureBits(mImage->getFormat().actualImageFormatID,
                                                  kBlitFeatureFlags))
     {
         // Otherwise, use blit if possible.
@@ -1946,11 +1956,11 @@ angle::Result TextureVk::copyAndStageImageData(ContextVk *contextVk,
             {
                 // Note: if this level is incompatibly redefined, there will necessarily be a
                 // staged update, and the contents of the image are to be thrown away.
-                ASSERT(srcImage->hasStagedUpdatesForSubresource(levelGL, layer));
+                ASSERT(srcImage->hasStagedUpdatesForSubresource(levelGL, layer, 1));
                 continue;
             }
 
-            ASSERT(!srcImage->hasStagedUpdatesForSubresource(levelGL, layer));
+            ASSERT(!srcImage->hasStagedUpdatesForSubresource(levelGL, layer, 1));
 
             // Pull data from the current image and stage it as an update for the new image
 
@@ -2193,7 +2203,12 @@ angle::Result TextureVk::initRenderTargets(ContextVk *contextVk,
         return angle::Result::Continue;
     }
 
-    renderTargets.resize(layerCount);
+    // There are |layerCount| render targets, one for each layer.  There is also one render target
+    // viewing all layers.
+    renderTargets.resize(layerCount + 1);
+
+    const bool isMultisampledRenderToTexture =
+        renderToTextureIndex != gl::RenderToTextureImageIndex::Default;
 
     for (uint32_t layerIndex = 0; layerIndex < layerCount; ++layerIndex)
     {
@@ -2202,8 +2217,6 @@ angle::Result TextureVk::initRenderTargets(ContextVk *contextVk,
         vk::ImageHelper *resolveImage          = nullptr;
         vk::ImageViewHelper *resolveImageViews = nullptr;
 
-        const bool isMultisampledRenderToTexture =
-            renderToTextureIndex != gl::RenderToTextureImageIndex::Default;
         RenderTargetTransience transience = isMultisampledRenderToTexture
                                                 ? RenderTargetTransience::MultisampledTransient
                                                 : RenderTargetTransience::Default;
@@ -2230,8 +2243,18 @@ angle::Result TextureVk::initRenderTargets(ContextVk *contextVk,
 
         renderTargets[layerIndex].init(drawImage, drawImageViews, resolveImage, resolveImageViews,
                                        getNativeImageLevel(levelIndex),
-                                       getNativeImageLayer(layerIndex), transience);
+                                       getNativeImageLayer(layerIndex), 1, transience);
     }
+
+    // Create the layered render target.  Note that multisampled render to texture is not allowed
+    // with layered render targets.
+    if (!isMultisampledRenderToTexture)
+    {
+        renderTargets[layerCount].init(mImage, &getImageViews(), nullptr, nullptr,
+                                       getNativeImageLevel(levelIndex), getNativeImageLayer(0),
+                                       layerCount, RenderTargetTransience::Default);
+    }
+
     return angle::Result::Continue;
 }
 
@@ -2461,7 +2484,7 @@ bool TextureVk::shouldDecodeSRGB(ContextVk *contextVk,
     bool decodeSRGB          = format.actualImageFormat().isSRGB;
 
     // If the SRGB override is enabled, we also decode SRGB.
-    if (isSRGBOverrideEnabled() && vk::IsOverridableLinearFormat(format.vkImageFormat))
+    if (isSRGBOverrideEnabled() && IsOverridableLinearFormat(format.actualImageFormatID))
     {
         decodeSRGB = true;
     }
@@ -2535,7 +2558,7 @@ const vk::ImageView &TextureVk::getCopyImageViewAndRecordUse(ContextVk *contextV
     imageViews.retain(&contextVk->getResourceUseList());
 
     ASSERT(mImage->getFormat().actualImageFormat().isSRGB ==
-           (vk::ConvertToLinear(mImage->getFormat().vkImageFormat) != VK_FORMAT_UNDEFINED));
+           (ConvertToLinear(mImage->getFormat().actualImageFormatID) != angle::FormatID::NONE));
     if (mImage->getFormat().actualImageFormat().isSRGB)
     {
         return imageViews.getSRGBCopyImageView();
@@ -2575,7 +2598,7 @@ angle::Result TextureVk::getStorageImageView(ContextVk *contextVk,
 
         return getImageViews().getLevelLayerStorageImageView(
             contextVk, *mImage, nativeLevelVk, nativeLayer,
-            VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, format.vkImageFormat,
+            VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, format.actualImageFormatID,
             imageViewOut);
     }
 
@@ -2583,7 +2606,7 @@ angle::Result TextureVk::getStorageImageView(ContextVk *contextVk,
 
     return getImageViews().getLevelStorageImageView(
         contextVk, mState.getType(), *mImage, nativeLevelVk, nativeLayer,
-        VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, format.vkImageFormat,
+        VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, format.actualImageFormatID,
         imageViewOut);
 }
 
@@ -2625,13 +2648,15 @@ angle::Result TextureVk::initImage(ContextVk *contextVk,
     // With the introduction of sRGB related GLES extensions any texture could be respecified
     // causing it to be interpreted in a different colorspace. Create the VkImage accordingly.
     VkImageFormatListCreateInfoKHR *additionalCreateInfo = nullptr;
-    VkFormat imageFormat                                 = format.vkImageFormat;
-    VkFormat imageListFormat = format.actualImageFormat().isSRGB ? vk::ConvertToLinear(imageFormat)
-                                                                 : vk::ConvertToSRGB(imageFormat);
+    angle::FormatID imageFormat                          = format.actualImageFormatID;
+    angle::FormatID imageListFormat                      = format.actualImageFormat().isSRGB
+                                          ? ConvertToLinear(imageFormat)
+                                          : ConvertToSRGB(imageFormat);
+    VkFormat vkFormat = vk::GetVkFormatFromFormatID(imageListFormat);
 
     VkImageFormatListCreateInfoKHR formatListInfo = {};
     if (renderer->getFeatures().supportsImageFormatList.enabled &&
-        renderer->haveSameFormatFeatureBits(imageFormat, imageListFormat))
+        renderer->haveSameFormatFeatureBits(format.actualImageFormatID, imageListFormat))
     {
         mRequiresMutableStorage = true;
 
@@ -2642,7 +2667,7 @@ angle::Result TextureVk::initImage(ContextVk *contextVk,
         formatListInfo.sType           = VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO_KHR;
         formatListInfo.pNext           = nullptr;
         formatListInfo.viewFormatCount = 1;
-        formatListInfo.pViewFormats    = &imageListFormat;
+        formatListInfo.pViewFormats    = &vkFormat;
         additionalCreateInfo           = &formatListInfo;
     }
 
