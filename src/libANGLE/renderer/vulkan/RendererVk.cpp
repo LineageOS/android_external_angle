@@ -576,6 +576,8 @@ void RendererVk::onDestroy(vk::Context *context)
         vkDestroyDebugReportCallbackEXT(mInstance, mDebugReportCallback, nullptr);
     }
 
+    logCacheStats();
+
     if (mInstance)
     {
         vkDestroyInstance(mInstance, nullptr);
@@ -1809,8 +1811,7 @@ void RendererVk::initFeatures(DisplayVk *displayVk,
     // http://anglebug.com/2838
     ANGLE_FEATURE_CONDITION(&mFeatures, extraCopyBufferRegion, IsWindows() && isIntel);
 
-    // http://anglebug.com/3055
-    ANGLE_FEATURE_CONDITION(&mFeatures, forceCPUPathForCubeMapCopy, IsWindows() && isIntel);
+    ANGLE_FEATURE_CONDITION(&mFeatures, forceCPUPathForCubeMapCopy, false);
 
     // Work around incorrect NVIDIA point size range clamping.
     // http://anglebug.com/2970#c10
@@ -1978,9 +1979,6 @@ void RendererVk::initFeatures(DisplayVk *displayVk,
 
     // Android pre-rotation support can be disabled.
     ANGLE_FEATURE_CONDITION(&mFeatures, enablePreRotateSurfaces, IsAndroid());
-
-    // Currently disable FramebufferVk cache on Apple: http://anglebug.com/4442
-    ANGLE_FEATURE_CONDITION(&mFeatures, enableFramebufferVkCache, !IsApple());
 
     // Currently disabled by default: http://anglebug.com/3078
     ANGLE_FEATURE_CONDITION(
@@ -2246,36 +2244,36 @@ Serial RendererVk::issueShaderSerial()
 
 // These functions look at the mandatory format for support, and fallback to querying the device (if
 // necessary) to test the availability of the bits.
-bool RendererVk::hasLinearImageFormatFeatureBits(VkFormat format,
+bool RendererVk::hasLinearImageFormatFeatureBits(angle::FormatID formatID,
                                                  const VkFormatFeatureFlags featureBits) const
 {
-    return hasFormatFeatureBits<&VkFormatProperties::linearTilingFeatures>(format, featureBits);
+    return hasFormatFeatureBits<&VkFormatProperties::linearTilingFeatures>(formatID, featureBits);
 }
 
 VkFormatFeatureFlags RendererVk::getLinearImageFormatFeatureBits(
-    VkFormat format,
+    angle::FormatID formatID,
     const VkFormatFeatureFlags featureBits) const
 {
-    return getFormatFeatureBits<&VkFormatProperties::linearTilingFeatures>(format, featureBits);
+    return getFormatFeatureBits<&VkFormatProperties::linearTilingFeatures>(formatID, featureBits);
 }
 
 VkFormatFeatureFlags RendererVk::getImageFormatFeatureBits(
-    VkFormat format,
+    angle::FormatID formatID,
     const VkFormatFeatureFlags featureBits) const
 {
-    return getFormatFeatureBits<&VkFormatProperties::optimalTilingFeatures>(format, featureBits);
+    return getFormatFeatureBits<&VkFormatProperties::optimalTilingFeatures>(formatID, featureBits);
 }
 
-bool RendererVk::hasImageFormatFeatureBits(VkFormat format,
+bool RendererVk::hasImageFormatFeatureBits(angle::FormatID formatID,
                                            const VkFormatFeatureFlags featureBits) const
 {
-    return hasFormatFeatureBits<&VkFormatProperties::optimalTilingFeatures>(format, featureBits);
+    return hasFormatFeatureBits<&VkFormatProperties::optimalTilingFeatures>(formatID, featureBits);
 }
 
-bool RendererVk::hasBufferFormatFeatureBits(VkFormat format,
+bool RendererVk::hasBufferFormatFeatureBits(angle::FormatID formatID,
                                             const VkFormatFeatureFlags featureBits) const
 {
-    return hasFormatFeatureBits<&VkFormatProperties::bufferFeatures>(format, featureBits);
+    return hasFormatFeatureBits<&VkFormatProperties::bufferFeatures>(formatID, featureBits);
 }
 
 void RendererVk::outputVmaStatString()
@@ -2325,27 +2323,28 @@ angle::Result RendererVk::queueSubmitOneOff(vk::Context *context,
 }
 
 template <VkFormatFeatureFlags VkFormatProperties::*features>
-VkFormatFeatureFlags RendererVk::getFormatFeatureBits(VkFormat format,
+VkFormatFeatureFlags RendererVk::getFormatFeatureBits(angle::FormatID formatID,
                                                       const VkFormatFeatureFlags featureBits) const
 {
-    ASSERT(static_cast<uint32_t>(format) < vk::kNumVkFormats);
-    VkFormatProperties &deviceProperties = mFormatProperties[format];
+    VkFormatProperties &deviceProperties = mFormatProperties[formatID];
 
     if (deviceProperties.bufferFeatures == kInvalidFormatFeatureFlags)
     {
         // If we don't have the actual device features, see if the requested features are mandatory.
         // If so, there's no need to query the device.
-        const VkFormatProperties &mandatoryProperties = vk::GetMandatoryFormatSupport(format);
+        const VkFormatProperties &mandatoryProperties = vk::GetMandatoryFormatSupport(formatID);
         if (IsMaskFlagSet(mandatoryProperties.*features, featureBits))
         {
             return featureBits;
         }
 
+        VkFormat vkFormat = vk::GetVkFormatFromFormatID(formatID);
+
         // Otherwise query the format features and cache it.
-        vkGetPhysicalDeviceFormatProperties(mPhysicalDevice, format, &deviceProperties);
+        vkGetPhysicalDeviceFormatProperties(mPhysicalDevice, vkFormat, &deviceProperties);
         // Workaround for some Android devices that don't indicate filtering
         // support on D16_UNORM and they should.
-        if (mFeatures.forceD16TexFilter.enabled && format == VK_FORMAT_D16_UNORM)
+        if (mFeatures.forceD16TexFilter.enabled && vkFormat == VK_FORMAT_D16_UNORM)
         {
             deviceProperties.*features |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
         }
@@ -2355,14 +2354,16 @@ VkFormatFeatureFlags RendererVk::getFormatFeatureBits(VkFormat format,
 }
 
 template <VkFormatFeatureFlags VkFormatProperties::*features>
-bool RendererVk::hasFormatFeatureBits(VkFormat format, const VkFormatFeatureFlags featureBits) const
+bool RendererVk::hasFormatFeatureBits(angle::FormatID formatID,
+                                      const VkFormatFeatureFlags featureBits) const
 {
-    return IsMaskFlagSet(getFormatFeatureBits<features>(format, featureBits), featureBits);
+    return IsMaskFlagSet(getFormatFeatureBits<features>(formatID, featureBits), featureBits);
 }
 
-bool RendererVk::haveSameFormatFeatureBits(VkFormat fmt1, VkFormat fmt2) const
+bool RendererVk::haveSameFormatFeatureBits(angle::FormatID formatID1,
+                                           angle::FormatID formatID2) const
 {
-    if (fmt1 == VK_FORMAT_UNDEFINED || fmt2 == VK_FORMAT_UNDEFINED)
+    if (formatID1 == angle::FormatID::NONE || formatID2 == angle::FormatID::NONE)
     {
         return false;
     }
@@ -2372,12 +2373,12 @@ bool RendererVk::haveSameFormatFeatureBits(VkFormat fmt1, VkFormat fmt2) const
         VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
 
     VkFormatFeatureFlags fmt1LinearFeatureBits =
-        getLinearImageFormatFeatureBits(fmt1, kImageUsageFeatureBits);
+        getLinearImageFormatFeatureBits(formatID1, kImageUsageFeatureBits);
     VkFormatFeatureFlags fmt1OptimalFeatureBits =
-        getImageFormatFeatureBits(fmt1, kImageUsageFeatureBits);
+        getImageFormatFeatureBits(formatID1, kImageUsageFeatureBits);
 
-    return hasLinearImageFormatFeatureBits(fmt2, fmt1LinearFeatureBits) &&
-           hasImageFormatFeatureBits(fmt2, fmt1OptimalFeatureBits);
+    return hasLinearImageFormatFeatureBits(formatID2, fmt1LinearFeatureBits) &&
+           hasImageFormatFeatureBits(formatID2, fmt1OptimalFeatureBits);
 }
 
 angle::Result RendererVk::cleanupGarbage(Serial lastCompletedQueueSerial)
@@ -2514,7 +2515,7 @@ angle::Result RendererVk::submitFrame(vk::Context *context,
                                       std::vector<VkSemaphore> &&waitSemaphores,
                                       std::vector<VkPipelineStageFlags> &&waitSemaphoreStageMasks,
                                       const vk::Semaphore *signalSemaphore,
-                                      vk::ResourceUseList &&resourceUseList,
+                                      std::vector<vk::ResourceUseList> &&resourceUseLists,
                                       vk::GarbageList &&currentGarbage,
                                       vk::CommandPool *commandPool)
 {
@@ -2541,7 +2542,11 @@ angle::Result RendererVk::submitFrame(vk::Context *context,
 
     waitSemaphores.clear();
     waitSemaphoreStageMasks.clear();
-    resourceUseList.releaseResourceUsesAndUpdateSerials(submitQueueSerial);
+    for (vk::ResourceUseList &it : resourceUseLists)
+    {
+        it.releaseResourceUsesAndUpdateSerials(submitQueueSerial);
+    }
+    resourceUseLists.clear();
 
     return angle::Result::Continue;
 }
@@ -2709,6 +2714,21 @@ void RendererVk::recycleCommandBufferHelper(vk::CommandBufferHelper *commandBuff
     ASSERT(commandBuffer->empty());
     commandBuffer->markOpen();
     mCommandBufferHelperFreeList.push_back(commandBuffer);
+}
+
+void RendererVk::logCacheStats() const
+{
+    if (!vk::kOutputCumulativePerfCounters)
+    {
+        return;
+    }
+
+    int cacheType = 0;
+    INFO() << "Vulkan object cache hit ratios: ";
+    for (const CacheStats &stats : mVulkanCacheStats)
+    {
+        INFO() << "    CacheType " << cacheType++ << ": " << stats.getHitRatio();
+    }
 }
 
 vk::MemoryReport::MemoryReport()

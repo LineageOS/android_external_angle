@@ -4577,6 +4577,19 @@ CallCapture CaptureBufferStorageEXT(const State &glState,
     return CallCapture(angle::EntryPoint::GLBufferStorageEXT, std::move(paramBuffer));
 }
 
+CallCapture CaptureClipControlEXT(const State &glState,
+                                  bool isCallValid,
+                                  GLenum origin,
+                                  GLenum depth)
+{
+    ParamBuffer paramBuffer;
+
+    paramBuffer.addEnumParam("origin", GLenumGroup::DefaultGroup, ParamType::TGLenum, origin);
+    paramBuffer.addEnumParam("depth", GLenumGroup::DefaultGroup, ParamType::TGLenum, depth);
+
+    return CallCapture(angle::EntryPoint::GLClipControlEXT, std::move(paramBuffer));
+}
+
 CallCapture CaptureCopyImageSubDataEXT(const State &glState,
                                        bool isCallValid,
                                        GLuint srcName,
@@ -7521,6 +7534,13 @@ CallCapture CaptureValidateProgramPipelineEXT(const State &glState,
     return CallCapture(angle::EntryPoint::GLValidateProgramPipelineEXT, std::move(paramBuffer));
 }
 
+CallCapture CaptureFramebufferFetchBarrierEXT(const State &glState, bool isCallValid)
+{
+    ParamBuffer paramBuffer;
+
+    return CallCapture(angle::EntryPoint::GLFramebufferFetchBarrierEXT, std::move(paramBuffer));
+}
+
 CallCapture CapturePatchParameteriEXT(const State &glState,
                                       bool isCallValid,
                                       GLenum pname,
@@ -8250,6 +8270,36 @@ CallCapture CaptureTestFenceNV(const State &glState,
     paramBuffer.addReturnValue(std::move(returnValueCapture));
 
     return CallCapture(angle::EntryPoint::GLTestFenceNV, std::move(paramBuffer));
+}
+
+CallCapture CaptureBlitFramebufferNV(const State &glState,
+                                     bool isCallValid,
+                                     GLint srcX0,
+                                     GLint srcY0,
+                                     GLint srcX1,
+                                     GLint srcY1,
+                                     GLint dstX0,
+                                     GLint dstY0,
+                                     GLint dstX1,
+                                     GLint dstY1,
+                                     GLbitfield mask,
+                                     GLenum filter)
+{
+    ParamBuffer paramBuffer;
+
+    paramBuffer.addValueParam("srcX0", ParamType::TGLint, srcX0);
+    paramBuffer.addValueParam("srcY0", ParamType::TGLint, srcY0);
+    paramBuffer.addValueParam("srcX1", ParamType::TGLint, srcX1);
+    paramBuffer.addValueParam("srcY1", ParamType::TGLint, srcY1);
+    paramBuffer.addValueParam("dstX0", ParamType::TGLint, dstX0);
+    paramBuffer.addValueParam("dstY0", ParamType::TGLint, dstY0);
+    paramBuffer.addValueParam("dstX1", ParamType::TGLint, dstX1);
+    paramBuffer.addValueParam("dstY1", ParamType::TGLint, dstY1);
+    paramBuffer.addEnumParam("mask", GLenumGroup::ClearBufferMask, ParamType::TGLbitfield, mask);
+    paramBuffer.addEnumParam("filter", GLenumGroup::BlitFramebufferFilter, ParamType::TGLenum,
+                             filter);
+
+    return CallCapture(angle::EntryPoint::GLBlitFramebufferNV, std::move(paramBuffer));
 }
 
 CallCapture CaptureEGLImageTargetRenderbufferStorageOES(const State &glState,

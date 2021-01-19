@@ -278,6 +278,7 @@ class SpirvToMslCompiler : public spirv_cross::CompilerMSL
                    const angle::HashMap<std::string, uint32_t> &uboOriginalBindings,
                    const angle::HashMap<uint32_t, uint32_t> &xfbOriginalBindings,
                    const OriginalSamplerBindingMap &originalSamplerBindings,
+                   bool disableRasterization,
                    TranslatedShaderInfo *mslShaderInfoOut)
     {
         spirv_cross::CompilerMSL::Options compOpt;
@@ -300,6 +301,7 @@ class SpirvToMslCompiler : public spirv_cross::CompilerMSL
         }
 
         compOpt.pad_fragment_output_components = true;
+        compOpt.disable_rasterization          = disableRasterization;
 
         // Tell spirv-cross to map default & driver uniform & storage blocks as we want
         spirv_cross::ShaderResources mslRes = spirv_cross::CompilerMSL::get_shader_resources();
@@ -355,6 +357,7 @@ angle::Result ConvertSpirvToMsl(Context *context,
                                 const angle::HashMap<std::string, uint32_t> &uboOriginalBindings,
                                 const angle::HashMap<uint32_t, uint32_t> &xfbOriginalBindings,
                                 const OriginalSamplerBindingMap &originalSamplerBindings,
+                                bool disableRasterization,
                                 std::vector<uint32_t> *sprivCode,
                                 TranslatedShaderInfo *translatedShaderInfoOut)
 {
@@ -368,7 +371,7 @@ angle::Result ConvertSpirvToMsl(Context *context,
     // NOTE(hqle): spirv-cross uses exceptions to report error, what should we do here
     // in case of error?
     compilerMsl.compileEx(shaderType, uboOriginalBindings, xfbOriginalBindings,
-                          originalSamplerBindings, translatedShaderInfoOut);
+                          originalSamplerBindings, disableRasterization, translatedShaderInfoOut);
     if (translatedShaderInfoOut->metalShaderSource.size() == 0)
     {
         ANGLE_MTL_CHECK(context, false, GL_INVALID_OPERATION);
@@ -404,7 +407,7 @@ void GlslangGetShaderSource(const gl::ProgramState &programState,
                             const gl::ProgramLinkedResources &resources,
                             gl::ShaderMap<std::string> *shaderSourcesOut,
                             std::string *xfbOnlyShaderSourceOut,
-                            ShaderMapInterfaceVariableInfoMap *variableInfoMapOut,
+                            ShaderInterfaceVariableInfoMap *variableInfoMapOut,
                             ShaderInterfaceVariableInfoMap *xfbOnlyVSVariableInfoMapOut)
 {
     GlslangSourceOptions options = CreateSourceOptions();
@@ -422,18 +425,16 @@ void GlslangGetShaderSource(const gl::ProgramState &programState,
 
         GlslangProgramInterfaceInfo xfbOnlyInterfaceInfo;
         ResetGlslangProgramInterfaceInfo(&xfbOnlyInterfaceInfo);
-        ShaderMapInterfaceVariableInfoMap xfbOnlyVariableMaps;
 
         options.emulateTransformFeedback = true;
 
         rx::GlslangGenTransformFeedbackEmulationOutputs(
             options, programState, &xfbOnlyInterfaceInfo, xfbOnlyShaderSourceOut,
-            &xfbOnlyVariableMaps[gl::ShaderType::Vertex]);
+            xfbOnlyVSVariableInfoMapOut);
 
-        GlslangAssignLocations(options, programState.getExecutable(), gl::ShaderType::Vertex,
-                               gl::ShaderType::InvalidEnum, &xfbOnlyInterfaceInfo,
-                               &xfbOnlyVariableMaps);
-        *xfbOnlyVSVariableInfoMapOut = std::move(xfbOnlyVariableMaps[gl::ShaderType::Vertex]);
+        GlslangAssignLocations(options, programState.getExecutable(), resources.varyingPacking,
+                               gl::ShaderType::Vertex, gl::ShaderType::InvalidEnum,
+                               &xfbOnlyInterfaceInfo, xfbOnlyVSVariableInfoMapOut);
     }
 }
 
@@ -441,7 +442,7 @@ angle::Result GlslangGetShaderSpirvCode(ErrorHandler *context,
                                         const gl::ShaderBitSet &linkedShaderStages,
                                         const gl::Caps &glCaps,
                                         const gl::ShaderMap<std::string> &shaderSources,
-                                        const ShaderMapInterfaceVariableInfoMap &variableInfoMap,
+                                        const ShaderInterfaceVariableInfoMap &variableInfoMap,
                                         gl::ShaderMap<std::vector<uint32_t>> *shaderCodeOut)
 {
     gl::ShaderMap<SpirvBlob> initialSpirvBlobs;
@@ -452,14 +453,12 @@ angle::Result GlslangGetShaderSpirvCode(ErrorHandler *context,
 
     for (const gl::ShaderType shaderType : linkedShaderStages)
     {
-        // we pass in false here to skip modifications related to  early fragment tests
-        // optimizations and line rasterization. These are done in the initProgram time since they
-        // are related to context state. We must keep original untouched spriv blobs here because we
-        // do not have ability to add back in at initProgram time.
+        GlslangSpirvOptions options;
+        options.shaderType = shaderType;
+
         angle::Result status = GlslangTransformSpirvCode(
-            [context](GlslangError error) { return HandleError(context, error); }, shaderType,
-            false, false, variableInfoMap[shaderType], initialSpirvBlobs[shaderType],
-            &(*shaderCodeOut)[shaderType]);
+            [context](GlslangError error) { return HandleError(context, error); }, options,
+            variableInfoMap, initialSpirvBlobs[shaderType], &(*shaderCodeOut)[shaderType]);
         if (status != angle::Result::Continue)
         {
             return status;
@@ -493,9 +492,11 @@ angle::Result SpirvCodeToMsl(Context *context,
     for (uint32_t bufferIdx = 0; bufferIdx < kMaxShaderXFBs; ++bufferIdx)
     {
         std::string bufferName = rx::GetXfbBufferName(bufferIdx);
-        if (xfbVSVariableInfoMap.count(bufferName))
+        if (xfbVSVariableInfoMap.contains(gl::ShaderType::Vertex, bufferName))
         {
-            xfbOriginalBindings[xfbVSVariableInfoMap.at(bufferName).binding] = bufferIdx;
+            const ShaderInterfaceVariableInfo &info =
+                xfbVSVariableInfoMap.get(gl::ShaderType::Vertex, bufferName);
+            xfbOriginalBindings[info.binding] = bufferIdx;
         }
     }
 
@@ -519,15 +520,16 @@ angle::Result SpirvCodeToMsl(Context *context,
     {
         std::vector<uint32_t> &sprivCode = spirvShaderCode->at(shaderType);
         ANGLE_TRY(ConvertSpirvToMsl(context, shaderType, uboOriginalBindings, xfbOriginalBindings,
-                                    originalSamplerBindings, &sprivCode,
-                                    &mslShaderInfoOut->at(shaderType)));
+                                    originalSamplerBindings, /* disableRasterization */ false,
+                                    &sprivCode, &mslShaderInfoOut->at(shaderType)));
     }  // for (gl::ShaderType shaderType
 
     // Special version of XFB only
     if (xfbOnlySpirvCode && !programState.getLinkedTransformFeedbackVaryings().empty())
     {
         ANGLE_TRY(ConvertSpirvToMsl(context, gl::ShaderType::Vertex, uboOriginalBindings,
-                                    xfbOriginalBindings, originalSamplerBindings, xfbOnlySpirvCode,
+                                    xfbOriginalBindings, originalSamplerBindings,
+                                    /* disableRasterization */ true, xfbOnlySpirvCode,
                                     mslXfbOnlyShaderInfoOut));
     }
 

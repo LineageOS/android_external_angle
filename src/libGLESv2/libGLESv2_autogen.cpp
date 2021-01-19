@@ -3810,6 +3810,12 @@ void GL_APIENTRY glBufferStorageEXT(GLenum target,
     return gl::BufferStorageEXT(target, size, data, flags);
 }
 
+// GL_EXT_clip_control
+void GL_APIENTRY glClipControlEXT(GLenum origin, GLenum depth)
+{
+    return gl::ClipControlEXT(origin, depth);
+}
+
 // GL_EXT_copy_image
 void GL_APIENTRY glCopyImageSubDataEXT(GLuint srcName,
                                        GLenum srcTarget,
@@ -4606,6 +4612,12 @@ void GL_APIENTRY glValidateProgramPipelineEXT(GLuint pipeline)
     return gl::ValidateProgramPipelineEXT(pipeline);
 }
 
+// GL_EXT_shader_framebuffer_fetch_non_coherent
+void GL_APIENTRY glFramebufferFetchBarrierEXT()
+{
+    return gl::FramebufferFetchBarrierEXT();
+}
+
 // GL_EXT_shader_io_blocks
 
 // GL_EXT_tessellation_shader
@@ -4799,6 +4811,22 @@ void GL_APIENTRY glSetFenceNV(GLuint fence, GLenum condition)
 GLboolean GL_APIENTRY glTestFenceNV(GLuint fence)
 {
     return gl::TestFenceNV(fence);
+}
+
+// GL_NV_framebuffer_blit
+void GL_APIENTRY glBlitFramebufferNV(GLint srcX0,
+                                     GLint srcY0,
+                                     GLint srcX1,
+                                     GLint srcY1,
+                                     GLint dstX0,
+                                     GLint dstY0,
+                                     GLint dstX1,
+                                     GLint dstY1,
+                                     GLbitfield mask,
+                                     GLenum filter)
+{
+    return gl::BlitFramebufferNV(srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1, mask,
+                                 filter);
 }
 
 // GL_OES_EGL_image
@@ -5696,6 +5724,22 @@ void GL_APIENTRY glBlitFramebufferANGLEContextANGLE(GLeglContext ctx,
                                                 dstX1, dstY1, mask, filter);
 }
 
+void GL_APIENTRY glBlitFramebufferNVContextANGLE(GLeglContext ctx,
+                                                 GLint srcX0,
+                                                 GLint srcY0,
+                                                 GLint srcX1,
+                                                 GLint srcY1,
+                                                 GLint dstX0,
+                                                 GLint dstY0,
+                                                 GLint dstX1,
+                                                 GLint dstY1,
+                                                 GLbitfield mask,
+                                                 GLenum filter)
+{
+    return gl::BlitFramebufferNVContextANGLE(ctx, srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1,
+                                             dstY1, mask, filter);
+}
+
 void GL_APIENTRY glBufferDataContextANGLE(GLeglContext ctx,
                                           GLenum target,
                                           GLsizeiptr size,
@@ -5828,6 +5872,11 @@ GLenum GL_APIENTRY glClientWaitSyncContextANGLE(GLeglContext ctx,
                                                 GLuint64 timeout)
 {
     return gl::ClientWaitSyncContextANGLE(ctx, sync, flags, timeout);
+}
+
+void GL_APIENTRY glClipControlEXTContextANGLE(GLeglContext ctx, GLenum origin, GLenum depth)
+{
+    return gl::ClipControlEXTContextANGLE(ctx, origin, depth);
 }
 
 void GL_APIENTRY glClipPlanefContextANGLE(GLeglContext ctx, GLenum p, const GLfloat *eqn)
@@ -6820,6 +6869,11 @@ void GL_APIENTRY glFogxContextANGLE(GLeglContext ctx, GLenum pname, GLfixed para
 void GL_APIENTRY glFogxvContextANGLE(GLeglContext ctx, GLenum pname, const GLfixed *param)
 {
     return gl::FogxvContextANGLE(ctx, pname, param);
+}
+
+void GL_APIENTRY glFramebufferFetchBarrierEXTContextANGLE(GLeglContext ctx)
+{
+    return gl::FramebufferFetchBarrierEXTContextANGLE(ctx);
 }
 
 void GL_APIENTRY glFramebufferParameteriContextANGLE(GLeglContext ctx,

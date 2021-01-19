@@ -17,9 +17,23 @@
 
 #include "compiler/translator/TranslatorVulkan.h"
 #include "compiler/translator/tree_util/DriverUniform.h"
+#include "compiler/translator/tree_util/SpecializationConstant.h"
 
 namespace sh
 {
+
+// TODO: http://anglebug.com/5339 Implement it using actual specialization constant. For now we are
+// redirecting to driver uniforms
+class SpecConstMetal : public SpecConst
+{
+  public:
+    SpecConstMetal(TSymbolTable *symbolTable, ShCompileOptions compileOptions)
+        : SpecConst(symbolTable, compileOptions)
+    {}
+    ~SpecConstMetal() override {}
+
+  private:
+};
 
 class DriverUniformMetal : public DriverUniform
 {
@@ -27,6 +41,10 @@ class DriverUniformMetal : public DriverUniform
     DriverUniformMetal() : DriverUniform() {}
     ~DriverUniformMetal() override {}
 
+    TIntermBinary *getHalfRenderAreaRef() const override;
+    TIntermBinary *getFlipXYRef() const override;
+    TIntermBinary *getNegFlipXYRef() const override;
+    TIntermSwizzle *getNegFlipYRef() const override;
     TIntermBinary *getCoverageMaskFieldRef() const;
 
   protected:

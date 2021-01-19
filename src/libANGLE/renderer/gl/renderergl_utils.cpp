@@ -1220,7 +1220,12 @@ void GenerateCaps(const FunctionsGL *functions,
                               functions->hasGLExtension("GL_EXT_blend_minmax") ||
                               functions->isAtLeastGLES(gl::Version(3, 0)) ||
                               functions->hasGLESExtension("GL_EXT_blend_minmax");
-    extensions->framebufferBlit        = (functions->blitFramebuffer != nullptr);
+    extensions->framebufferBlitNV = functions->isAtLeastGL(gl::Version(3, 0)) ||
+                                    functions->hasGLExtension("GL_EXT_framebuffer_blit") ||
+                                    functions->isAtLeastGLES(gl::Version(3, 0)) ||
+                                    functions->hasGLESExtension("GL_NV_framebuffer_blit");
+    extensions->framebufferBlitANGLE =
+        extensions->framebufferBlitNV || functions->hasGLESExtension("GL_ANGLE_framebuffer_blit");
     extensions->framebufferMultisample = caps->maxSamples > 0;
     extensions->standardDerivativesOES = functions->isAtLeastGL(gl::Version(2, 0)) ||
                                          functions->hasGLExtension("GL_ARB_fragment_shader") ||
@@ -1631,6 +1636,7 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
     bool isNvidia   = IsNvidia(vendor);
     bool isQualcomm = IsQualcomm(vendor);
     bool isVMWare   = IsVMWare(vendor);
+    bool hasAMD     = systemInfo.hasAMDGPU();
 
     std::array<int, 3> mesaVersion = {0, 0, 0};
     bool isMesa                    = IsMesa(functions, &mesaVersion);
@@ -1764,7 +1770,8 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
                             IsApple() && isIntel && GetMacOSVersion() < OSVersion(10, 12, 6));
 
     ANGLE_FEATURE_CONDITION(features, adjustSrcDstRegionBlitFramebuffer,
-                            IsLinux() || (IsAndroid() && isNvidia) || (IsWindows() && isNvidia));
+                            IsLinux() || (IsAndroid() && isNvidia) || (IsWindows() && isNvidia) ||
+                                (IsApple() && functions->standard == STANDARD_GL_ES));
 
     ANGLE_FEATURE_CONDITION(features, clipSrcRegionBlitFramebuffer,
                             IsApple() || (IsLinux() && isAMD));
@@ -1820,8 +1827,7 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
 
     ANGLE_FEATURE_CONDITION(features, disableTimestampQueries, IsLinux() && isVMWare);
 
-    ANGLE_FEATURE_CONDITION(features, encodeAndDecodeSRGBForGenerateMipmap,
-                            IsApple() && functions->standard == STANDARD_GL_DESKTOP);
+    ANGLE_FEATURE_CONDITION(features, encodeAndDecodeSRGBForGenerateMipmap, IsApple());
 
     // anglebug.com/4674
     // The (redundant) explicit exclusion of Windows AMD is because the workaround fails
@@ -1881,17 +1887,18 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
     ANGLE_FEATURE_CONDITION(features, keepBufferShadowCopy, !CanMapBufferForRead(functions));
 
     ANGLE_FEATURE_CONDITION(features, setZeroLevelBeforeGenerateMipmap, IsApple());
+
+    ANGLE_FEATURE_CONDITION(features, promotePackedFormatsTo8BitPerChannel, IsApple() && hasAMD);
 }
 
 void InitializeFrontendFeatures(const FunctionsGL *functions, angle::FrontendFeatures *features)
 {
     VendorID vendor = GetVendorID(functions);
-    bool isIntel    = IsIntel(vendor);
     bool isQualcomm = IsQualcomm(vendor);
 
     ANGLE_FEATURE_CONDITION(features, disableProgramCachingForTransformFeedback,
                             IsAndroid() && isQualcomm);
-    ANGLE_FEATURE_CONDITION(features, syncFramebufferBindingsOnTexImage, IsWindows() && isIntel);
+    ANGLE_FEATURE_CONDITION(features, syncFramebufferBindingsOnTexImage, false);
 }
 
 }  // namespace nativegl_gl

@@ -488,6 +488,17 @@ bool HasBothDepthAndStencilAspects(VkImageAspectFlags aspectFlags)
     return IsMaskFlagSet(aspectFlags, kDepthStencilAspects);
 }
 
+uint8_t GetContentDefinedLayerRangeBits(uint32_t layerStart,
+                                        uint32_t layerCount,
+                                        uint32_t maxLayerCount)
+{
+    uint8_t layerRangeBits = layerCount >= maxLayerCount ? static_cast<uint8_t>(~0u)
+                                                         : angle::Bit<uint8_t>(layerCount) - 1;
+    layerRangeBits <<= layerStart;
+
+    return layerRangeBits;
+}
+
 uint32_t GetImageLayerCountForView(const ImageHelper &image)
 {
     // Depth > 1 means this is a 3D texture and depth is our layer count
@@ -682,13 +693,13 @@ VkImageLayout ConvertImageLayoutToVkImageLayout(ImageLayout imageLayout)
 }
 
 bool FormatHasNecessaryFeature(RendererVk *renderer,
-                               VkFormat format,
+                               angle::FormatID formatID,
                                VkImageTiling tilingMode,
                                VkFormatFeatureFlags featureBits)
 {
     return (tilingMode == VK_IMAGE_TILING_OPTIMAL)
-               ? renderer->hasImageFormatFeatureBits(format, featureBits)
-               : renderer->hasLinearImageFormatFeatureBits(format, featureBits);
+               ? renderer->hasImageFormatFeatureBits(formatID, featureBits)
+               : renderer->hasLinearImageFormatFeatureBits(formatID, featureBits);
 }
 
 bool CanCopyWithTransfer(RendererVk *renderer,
@@ -700,9 +711,10 @@ bool CanCopyWithTransfer(RendererVk *renderer,
     // Checks that the formats in the copy transfer have the appropriate tiling and transfer bits
     bool isTilingCompatible           = srcTilingMode == destTilingMode;
     bool srcFormatHasNecessaryFeature = FormatHasNecessaryFeature(
-        renderer, srcFormat.vkImageFormat, srcTilingMode, VK_FORMAT_FEATURE_TRANSFER_SRC_BIT);
-    bool dstFormatHasNecessaryFeature = FormatHasNecessaryFeature(
-        renderer, destFormat.vkImageFormat, destTilingMode, VK_FORMAT_FEATURE_TRANSFER_DST_BIT);
+        renderer, srcFormat.actualImageFormatID, srcTilingMode, VK_FORMAT_FEATURE_TRANSFER_SRC_BIT);
+    bool dstFormatHasNecessaryFeature =
+        FormatHasNecessaryFeature(renderer, destFormat.actualImageFormatID, destTilingMode,
+                                  VK_FORMAT_FEATURE_TRANSFER_DST_BIT);
 
     return isTilingCompatible && srcFormatHasNecessaryFeature && dstFormatHasNecessaryFeature;
 }
@@ -754,7 +766,8 @@ CommandBufferHelper::CommandBufferHelper()
       mDepthStencilImage(nullptr),
       mDepthStencilResolveImage(nullptr),
       mDepthStencilLevelIndex(0),
-      mDepthStencilLayerIndex(0)
+      mDepthStencilLayerIndex(0),
+      mDepthStencilLayerCount(0)
 {}
 
 CommandBufferHelper::~CommandBufferHelper()
@@ -898,7 +911,8 @@ void CommandBufferHelper::imageWrite(ResourceUseList *resourceUseList,
 
 void CommandBufferHelper::depthStencilImagesDraw(ResourceUseList *resourceUseList,
                                                  gl::LevelIndex level,
-                                                 uint32_t layer,
+                                                 uint32_t layerStart,
+                                                 uint32_t layerCount,
                                                  ImageHelper *image,
                                                  ImageHelper *resolveImage)
 {
@@ -913,7 +927,8 @@ void CommandBufferHelper::depthStencilImagesDraw(ResourceUseList *resourceUseLis
     mRenderPassUsedImages.insert(image->getImageSerial().getValue());
     mDepthStencilImage      = image;
     mDepthStencilLevelIndex = level;
-    mDepthStencilLayerIndex = layer;
+    mDepthStencilLayerIndex = layerStart;
+    mDepthStencilLayerCount = layerCount;
 
     if (resolveImage)
     {
@@ -1001,8 +1016,8 @@ void CommandBufferHelper::restoreDepthContent()
     if (mDepthStencilImage)
     {
         ASSERT(mDepthStencilImage->valid());
-        mDepthStencilImage->restoreSubresourceContent(mDepthStencilLevelIndex,
-                                                      mDepthStencilLayerIndex);
+        mDepthStencilImage->restoreSubresourceContent(
+            mDepthStencilLevelIndex, mDepthStencilLayerIndex, mDepthStencilLayerCount);
         mDepthInvalidateArea = gl::Rectangle();
     }
 }
@@ -1013,8 +1028,8 @@ void CommandBufferHelper::restoreStencilContent()
     if (mDepthStencilImage)
     {
         ASSERT(mDepthStencilImage->valid());
-        mDepthStencilImage->restoreSubresourceStencilContent(mDepthStencilLevelIndex,
-                                                             mDepthStencilLayerIndex);
+        mDepthStencilImage->restoreSubresourceStencilContent(
+            mDepthStencilLevelIndex, mDepthStencilLayerIndex, mDepthStencilLayerCount);
         mStencilInvalidateArea = gl::Rectangle();
     }
 }
@@ -1106,8 +1121,8 @@ void CommandBufferHelper::finalizeDepthStencilImageLayout()
         }
         if (definedAspects != 0)
         {
-            mDepthStencilImage->onWrite(mDepthStencilLevelIndex, 1, mDepthStencilLayerIndex, 1,
-                                        definedAspects);
+            mDepthStencilImage->onWrite(mDepthStencilLevelIndex, 1, mDepthStencilLayerIndex,
+                                        mDepthStencilLayerCount, definedAspects);
         }
     }
 }
@@ -1150,7 +1165,7 @@ void CommandBufferHelper::finalizeDepthStencilResolveImageLayout()
         if (definedAspects != 0)
         {
             mDepthStencilResolveImage->onWrite(mDepthStencilLevelIndex, 1, mDepthStencilLayerIndex,
-                                               1, definedAspects);
+                                               mDepthStencilLayerCount, definedAspects);
         }
     }
 }
@@ -3498,10 +3513,8 @@ void ImageHelper::setContentDefined(LevelIndex levelStart,
         return;
     }
 
-    uint8_t layerRangeBits = layerCount >= kMaxContentDefinedLayerCount
-                                 ? static_cast<uint8_t>(~0u)
-                                 : angle::Bit<uint8_t>(layerCount) - 1;
-    layerRangeBits <<= layerStart;
+    uint8_t layerRangeBits =
+        GetContentDefinedLayerRangeBits(layerStart, layerCount, kMaxContentDefinedLayerCount);
 
     for (uint32_t levelOffset = 0; levelOffset < levelCount; ++levelOffset)
     {
@@ -3607,7 +3620,7 @@ angle::Result ImageHelper::initExternal(Context *context,
     imageInfo.pNext                 = externalImageCreateInfo;
     imageInfo.flags                 = GetImageCreateFlags(textureType) | additionalCreateFlags;
     imageInfo.imageType             = mImageType;
-    imageInfo.format                = format.vkImageFormat;
+    imageInfo.format                = format.actualImageVkFormat();
     imageInfo.extent                = mExtents;
     imageInfo.mipLevels             = mipLevels;
     imageInfo.arrayLayers           = mLayerCount;
@@ -3859,7 +3872,7 @@ angle::Result ImageHelper::initLayerImageView(Context *context,
 {
     return initLayerImageViewImpl(context, textureType, aspectMask, swizzleMap, imageViewOut,
                                   baseMipLevelVk, levelCount, baseArrayLayer, layerCount,
-                                  mFormat->vkImageFormat, nullptr);
+                                  mFormat->actualImageVkFormat(), nullptr);
 }
 
 angle::Result ImageHelper::initLayerImageViewWithFormat(Context *context,
@@ -3875,7 +3888,7 @@ angle::Result ImageHelper::initLayerImageViewWithFormat(Context *context,
 {
     return initLayerImageViewImpl(context, textureType, aspectMask, swizzleMap, imageViewOut,
                                   baseMipLevelVk, levelCount, baseArrayLayer, layerCount,
-                                  format.vkImageFormat, nullptr);
+                                  format.actualImageVkFormat(), nullptr);
 }
 
 angle::Result ImageHelper::initLayerImageViewImpl(
@@ -3950,7 +3963,7 @@ angle::Result ImageHelper::initReinterpretedLayerImageView(Context *context,
                                                            uint32_t baseArrayLayer,
                                                            uint32_t layerCount,
                                                            VkImageUsageFlags imageUsageFlags,
-                                                           VkFormat imageViewFormat) const
+                                                           angle::FormatID imageViewFormat) const
 {
     VkImageViewUsageCreateInfo imageViewUsageCreateInfo = {};
     imageViewUsageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO;
@@ -3959,7 +3972,8 @@ angle::Result ImageHelper::initReinterpretedLayerImageView(Context *context,
 
     return initLayerImageViewImpl(context, textureType, aspectMask, swizzleMap, imageViewOut,
                                   baseMipLevelVk, levelCount, baseArrayLayer, layerCount,
-                                  imageViewFormat, &imageViewUsageCreateInfo);
+                                  vk::GetVkFormatFromFormatID(imageViewFormat),
+                                  &imageViewUsageCreateInfo);
 }
 
 void ImageHelper::destroy(RendererVk *renderer)
@@ -4026,7 +4040,7 @@ angle::Result ImageHelper::init2DStaging(Context *context,
     imageInfo.sType                 = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.flags                 = 0;
     imageInfo.imageType             = mImageType;
-    imageInfo.format                = format.vkImageFormat;
+    imageInfo.format                = format.actualImageVkFormat();
     imageInfo.extent                = mExtents;
     imageInfo.mipLevels             = 1;
     imageInfo.arrayLayers           = mLayerCount;
@@ -4379,6 +4393,14 @@ void ImageHelper::clearColor(const VkClearColorValue &color,
     range.baseArrayLayer          = baseArrayLayer;
     range.layerCount              = layerCount;
 
+    if (mImageType == VK_IMAGE_TYPE_3D)
+    {
+        ASSERT(baseArrayLayer == 0);
+        ASSERT(layerCount == 1 ||
+               layerCount == static_cast<uint32_t>(getLevelExtents(baseMipLevelVk).depth));
+        range.layerCount = 1;
+    }
+
     commandBuffer->clearColorImage(mImage, getCurrentLayout(), color, 1, &range);
 }
 
@@ -4394,15 +4416,22 @@ void ImageHelper::clearDepthStencil(VkImageAspectFlags clearAspectFlags,
 
     ASSERT(mCurrentLayout == ImageLayout::TransferDst);
 
-    VkImageSubresourceRange clearRange = {
-        /*aspectMask*/ clearAspectFlags,
-        /*baseMipLevel*/ baseMipLevelVk.get(),
-        /*levelCount*/ levelCount,
-        /*baseArrayLayer*/ baseArrayLayer,
-        /*layerCount*/ layerCount,
-    };
+    VkImageSubresourceRange range = {};
+    range.aspectMask              = clearAspectFlags;
+    range.baseMipLevel            = baseMipLevelVk.get();
+    range.levelCount              = levelCount;
+    range.baseArrayLayer          = baseArrayLayer;
+    range.layerCount              = layerCount;
 
-    commandBuffer->clearDepthStencilImage(mImage, getCurrentLayout(), depthStencil, 1, &clearRange);
+    if (mImageType == VK_IMAGE_TYPE_3D)
+    {
+        ASSERT(baseArrayLayer == 0);
+        ASSERT(layerCount == 1 ||
+               layerCount == static_cast<uint32_t>(getLevelExtents(baseMipLevelVk).depth));
+        range.layerCount = 1;
+    }
+
+    commandBuffer->clearDepthStencilImage(mImage, getCurrentLayout(), depthStencil, 1, &range);
 }
 
 void ImageHelper::clear(VkImageAspectFlags aspectFlags,
@@ -4656,7 +4685,8 @@ void ImageHelper::resolve(ImageHelper *dest,
 
 void ImageHelper::removeSingleSubresourceStagedUpdates(ContextVk *contextVk,
                                                        gl::LevelIndex levelIndexGL,
-                                                       uint32_t layerIndex)
+                                                       uint32_t layerIndex,
+                                                       uint32_t layerCount)
 {
     mCurrentSingleClearValue.reset();
 
@@ -4670,7 +4700,7 @@ void ImageHelper::removeSingleSubresourceStagedUpdates(ContextVk *contextVk,
     for (size_t index = 0; index < levelUpdates->size();)
     {
         auto update = levelUpdates->begin() + index;
-        if (update->isUpdateToLayer(layerIndex))
+        if (update->isUpdateToLayers(layerIndex, layerCount))
         {
             update->release(contextVk->getRenderer());
             levelUpdates->erase(update);
@@ -4951,28 +4981,47 @@ void ImageHelper::onWrite(gl::LevelIndex levelStart,
     setContentDefined(toVkLevel(levelStart), levelCount, layerStart, layerCount, aspectFlags);
 }
 
-bool ImageHelper::hasSubresourceDefinedContent(gl::LevelIndex level, uint32_t layerIndex) const
+bool ImageHelper::hasSubresourceDefinedContent(gl::LevelIndex level,
+                                               uint32_t layerIndex,
+                                               uint32_t layerCount) const
 {
-    return layerIndex >= kMaxContentDefinedLayerCount
-               ? true
-               : getLevelContentDefined(toVkLevel(level)).test(layerIndex);
+    if (layerIndex >= kMaxContentDefinedLayerCount)
+    {
+        return true;
+    }
+
+    uint8_t layerRangeBits =
+        GetContentDefinedLayerRangeBits(layerIndex, layerCount, kMaxContentDefinedLayerCount);
+    return (getLevelContentDefined(toVkLevel(level)) & LevelContentDefinedMask(layerRangeBits))
+        .any();
 }
 
 bool ImageHelper::hasSubresourceDefinedStencilContent(gl::LevelIndex level,
-                                                      uint32_t layerIndex) const
+                                                      uint32_t layerIndex,
+                                                      uint32_t layerCount) const
 {
-    return layerIndex >= kMaxContentDefinedLayerCount
-               ? true
-               : getLevelStencilContentDefined(toVkLevel(level)).test(layerIndex);
+    if (layerIndex >= kMaxContentDefinedLayerCount)
+    {
+        return true;
+    }
+
+    uint8_t layerRangeBits =
+        GetContentDefinedLayerRangeBits(layerIndex, layerCount, kMaxContentDefinedLayerCount);
+    return (getLevelStencilContentDefined(toVkLevel(level)) &
+            LevelContentDefinedMask(layerRangeBits))
+        .any();
 }
 
 void ImageHelper::invalidateSubresourceContent(ContextVk *contextVk,
                                                gl::LevelIndex level,
-                                               uint32_t layerIndex)
+                                               uint32_t layerIndex,
+                                               uint32_t layerCount)
 {
     if (layerIndex < kMaxContentDefinedLayerCount)
     {
-        getLevelContentDefined(toVkLevel(level)).reset(layerIndex);
+        uint8_t layerRangeBits =
+            GetContentDefinedLayerRangeBits(layerIndex, layerCount, kMaxContentDefinedLayerCount);
+        getLevelContentDefined(toVkLevel(level)) &= static_cast<uint8_t>(~layerRangeBits);
     }
     else
     {
@@ -4984,11 +5033,14 @@ void ImageHelper::invalidateSubresourceContent(ContextVk *contextVk,
 
 void ImageHelper::invalidateSubresourceStencilContent(ContextVk *contextVk,
                                                       gl::LevelIndex level,
-                                                      uint32_t layerIndex)
+                                                      uint32_t layerIndex,
+                                                      uint32_t layerCount)
 {
     if (layerIndex < kMaxContentDefinedLayerCount)
     {
-        getLevelStencilContentDefined(toVkLevel(level)).reset(layerIndex);
+        uint8_t layerRangeBits =
+            GetContentDefinedLayerRangeBits(layerIndex, layerCount, kMaxContentDefinedLayerCount);
+        getLevelStencilContentDefined(toVkLevel(level)) &= static_cast<uint8_t>(~layerRangeBits);
     }
     else
     {
@@ -4998,19 +5050,27 @@ void ImageHelper::invalidateSubresourceStencilContent(ContextVk *contextVk,
     }
 }
 
-void ImageHelper::restoreSubresourceContent(gl::LevelIndex level, uint32_t layerIndex)
+void ImageHelper::restoreSubresourceContent(gl::LevelIndex level,
+                                            uint32_t layerIndex,
+                                            uint32_t layerCount)
 {
     if (layerIndex < kMaxContentDefinedLayerCount)
     {
-        getLevelContentDefined(toVkLevel(level)).set(layerIndex);
+        uint8_t layerRangeBits =
+            GetContentDefinedLayerRangeBits(layerIndex, layerCount, kMaxContentDefinedLayerCount);
+        getLevelContentDefined(toVkLevel(level)) |= layerRangeBits;
     }
 }
 
-void ImageHelper::restoreSubresourceStencilContent(gl::LevelIndex level, uint32_t layerIndex)
+void ImageHelper::restoreSubresourceStencilContent(gl::LevelIndex level,
+                                                   uint32_t layerIndex,
+                                                   uint32_t layerCount)
 {
     if (layerIndex < kMaxContentDefinedLayerCount)
     {
-        getLevelStencilContentDefined(toVkLevel(level)).set(layerIndex);
+        uint8_t layerRangeBits =
+            GetContentDefinedLayerRangeBits(layerIndex, layerCount, kMaxContentDefinedLayerCount);
+        getLevelStencilContentDefined(toVkLevel(level)) |= layerRangeBits;
     }
 }
 
@@ -5295,7 +5355,7 @@ angle::Result ImageHelper::stageRobustResourceClearWithFormat(ContextVk *context
 
     // Robust clears must only be staged if we do not have any prior data for this subresource.
     ASSERT(!hasStagedUpdatesForSubresource(gl::LevelIndex(index.getLevelIndex()),
-                                           index.getLayerIndex()));
+                                           index.getLayerIndex(), index.getLayerCount()));
 
     VkClearValue clearValue = GetRobustResourceClearValue(format);
 
@@ -5414,6 +5474,7 @@ void ImageHelper::stageSelfForBaseLevel()
 angle::Result ImageHelper::flushSingleSubresourceStagedUpdates(ContextVk *contextVk,
                                                                gl::LevelIndex levelGL,
                                                                uint32_t layer,
+                                                               uint32_t layerCount,
                                                                ClearValuesArray *deferredClears,
                                                                uint32_t deferredClearIndex)
 {
@@ -5422,6 +5483,8 @@ angle::Result ImageHelper::flushSingleSubresourceStagedUpdates(ContextVk *contex
     {
         return angle::Result::Continue;
     }
+
+    LevelIndex levelVk = toVkLevel(levelGL);
 
     // Handle deferred clears. Search the updates list for a matching clear index.
     if (deferredClears)
@@ -5432,12 +5495,17 @@ angle::Result ImageHelper::flushSingleSubresourceStagedUpdates(ContextVk *contex
         {
             SubresourceUpdate &update = (*levelUpdates)[updateIndex];
 
-            if (update.isUpdateToLayer(layer))
+            if (update.isUpdateToLayers(layer, layerCount))
             {
                 // On any data update, exit out. We'll need to do a full upload.
-                if (update.updateSource != UpdateSource::Clear ||
-                    (update.clear.layerCount != 1 &&
-                     !(update.clear.layerCount == VK_REMAINING_ARRAY_LAYERS && mLayerCount == 1)))
+                const bool isClear              = update.updateSource == UpdateSource::Clear;
+                const uint32_t updateLayerCount = isClear ? update.clear.layerCount : 0;
+                const uint32_t imageLayerCount =
+                    mImageType == VK_IMAGE_TYPE_3D ? getLevelExtents(levelVk).depth : mLayerCount;
+
+                if (!isClear || (updateLayerCount != layerCount &&
+                                 !(update.clear.layerCount == VK_REMAINING_ARRAY_LAYERS &&
+                                   imageLayerCount == layerCount)))
                 {
                     foundClear.reset();
                     break;
@@ -5459,17 +5527,17 @@ angle::Result ImageHelper::flushSingleSubresourceStagedUpdates(ContextVk *contex
 
             // Do not call onWrite as it removes mCurrentSingleClearValue, but instead call
             // setContentDefined directly.
-            setContentDefined(toVkLevel(levelGL), 1, layer, 1, update.aspectFlags);
+            setContentDefined(toVkLevel(levelGL), 1, layer, layerCount, update.aspectFlags);
 
             // We process the updates again to erase any clears for this level.
-            removeSingleSubresourceStagedUpdates(contextVk, levelGL, layer);
+            removeSingleSubresourceStagedUpdates(contextVk, levelGL, layer, layerCount);
             return angle::Result::Continue;
         }
 
         // Otherwise we proceed with a normal update.
     }
 
-    return flushStagedUpdates(contextVk, levelGL, levelGL + 1, layer, layer + 1, {});
+    return flushStagedUpdates(contextVk, levelGL, levelGL + 1, layer, layer + layerCount, {});
 }
 
 angle::Result ImageHelper::flushStagedUpdates(ContextVk *contextVk,
@@ -5484,7 +5552,7 @@ angle::Result ImageHelper::flushStagedUpdates(ContextVk *contextVk,
         return angle::Result::Continue;
     }
 
-    removeSupersededUpdates(skipLevelsMask);
+    removeSupersededUpdates(contextVk, skipLevelsMask);
 
     // If a clear is requested and we know it was previously cleared with the same value, we drop
     // the clear.
@@ -5572,7 +5640,7 @@ angle::Result ImageHelper::flushStagedUpdates(ContextVk *contextVk,
             if (isUpdateLevelOutsideRange || areUpdateLayersOutsideRange ||
                 skipLevelsMask.test(updateMipLevelVk.get()))
             {
-                updatesToKeep.emplace_back(update);
+                updatesToKeep.emplace_back(std::move(update));
                 continue;
             }
 
@@ -5691,7 +5759,9 @@ angle::Result ImageHelper::flushAllStagedUpdates(ContextVk *contextVk)
     return flushStagedUpdates(contextVk, mBaseLevel, mBaseLevel + mLevelCount, 0, mLayerCount, {});
 }
 
-bool ImageHelper::hasStagedUpdatesForSubresource(gl::LevelIndex levelGL, uint32_t layer) const
+bool ImageHelper::hasStagedUpdatesForSubresource(gl::LevelIndex levelGL,
+                                                 uint32_t layer,
+                                                 uint32_t layerCount) const
 {
     // Check to see if any updates are staged for the given level and layer
 
@@ -5706,9 +5776,13 @@ bool ImageHelper::hasStagedUpdatesForSubresource(gl::LevelIndex levelGL, uint32_
         uint32_t updateBaseLayer, updateLayerCount;
         update.getDestSubresource(mLayerCount, &updateBaseLayer, &updateLayerCount);
 
-        if (layer >= updateBaseLayer && layer < (updateBaseLayer + updateLayerCount))
+        const uint32_t updateLayerEnd = updateBaseLayer + updateLayerCount;
+        const uint32_t layerEnd       = layer + layerCount;
+
+        if ((layer >= updateBaseLayer && layer < updateLayerEnd) ||
+            (layerEnd > updateBaseLayer && layerEnd <= updateLayerEnd))
         {
-            // The layer is within the range
+            // The layers intersect with the update range
             return true;
         }
     }
@@ -5740,7 +5814,7 @@ bool ImageHelper::hasStagedUpdatesInLevels(gl::LevelIndex levelStart, gl::LevelI
     return false;
 }
 
-void ImageHelper::removeSupersededUpdates(gl::TexLevelMask skipLevelsMask)
+void ImageHelper::removeSupersededUpdates(ContextVk *contextVk, gl::TexLevelMask skipLevelsMask)
 {
     if (mLayerCount > 64)
     {
@@ -5748,6 +5822,8 @@ void ImageHelper::removeSupersededUpdates(gl::TexLevelMask skipLevelsMask)
         // efficiency, hence the limit.
         return;
     }
+
+    RendererVk *renderer = contextVk->getRenderer();
 
     // Go over updates in reverse order, and mark the layers they completely overwrite.  If an
     // update is encountered whose layers are all already marked, that update is superseded by
@@ -5764,7 +5840,7 @@ void ImageHelper::removeSupersededUpdates(gl::TexLevelMask skipLevelsMask)
     // Note: this lambda only needs |this|, but = is specified because clang warns about kIndex* not
     // needing capture, while MSVC fails to compile without capturing them.
     auto markLayersAndDropSuperseded = [=, &supersededLayers,
-                                        &levelExtents](const SubresourceUpdate &update) {
+                                        &levelExtents](SubresourceUpdate &update) {
         uint32_t updateBaseLayer, updateLayerCount;
         update.getDestSubresource(mLayerCount, &updateBaseLayer, &updateLayerCount);
 
@@ -5788,6 +5864,10 @@ void ImageHelper::removeSupersededUpdates(gl::TexLevelMask skipLevelsMask)
 
         if (isColorOrDepthSuperseded && isStencilSuperseded)
         {
+            ANGLE_PERF_WARNING(contextVk->getDebug(), GL_DEBUG_SEVERITY_LOW,
+                               "Dropped image update that is superseded by an overlapping one");
+
+            update.release(renderer);
             return true;
         }
 
@@ -5872,7 +5952,7 @@ angle::Result ImageHelper::copyImageDataToBuffer(ContextVk *contextVk,
     //  per pixel which is sufficient to contain its depth aspect (no stencil aspect).
     uint32_t pixelBytes         = imageFormat.pixelBytes;
     uint32_t depthBytesPerPixel = imageFormat.depthBits >> 3;
-    if (mFormat->vkImageFormat == VK_FORMAT_D24_UNORM_S8_UINT)
+    if (mFormat->actualImageVkFormat() == VK_FORMAT_D24_UNORM_S8_UINT)
     {
         pixelBytes         = 5;
         depthBytesPerPixel = 4;
@@ -6067,7 +6147,7 @@ angle::Result ImageHelper::readPixels(ContextVk *contextVk,
 
     ImageHelper *src = this;
 
-    ASSERT(!hasStagedUpdatesForSubresource(levelGL, layer));
+    ASSERT(!hasStagedUpdatesForSubresource(levelGL, layer, 1));
 
     if (isMultisampled)
     {
@@ -6199,6 +6279,11 @@ angle::Result ImageHelper::readPixels(ContextVk *contextVk,
 ImageHelper::SubresourceUpdate::SubresourceUpdate() : updateSource(UpdateSource::Buffer), buffer{}
 {}
 
+ImageHelper::SubresourceUpdate::~SubresourceUpdate()
+{
+    ASSERT(updateSource != UpdateSource::Image || image.image == nullptr);
+}
+
 ImageHelper::SubresourceUpdate::SubresourceUpdate(BufferHelper *bufferHelperIn,
                                                   const VkBufferImageCopy &copyRegionIn)
     : updateSource(UpdateSource::Buffer), buffer{bufferHelperIn, copyRegionIn}
@@ -6222,39 +6307,45 @@ ImageHelper::SubresourceUpdate::SubresourceUpdate(VkImageAspectFlags aspectFlags
         imageIndex.hasLayer() ? imageIndex.getLayerCount() : VK_REMAINING_ARRAY_LAYERS;
 }
 
-ImageHelper::SubresourceUpdate::SubresourceUpdate(const SubresourceUpdate &other)
+ImageHelper::SubresourceUpdate::SubresourceUpdate(SubresourceUpdate &&other)
     : updateSource(other.updateSource)
 {
-    if (updateSource == UpdateSource::Clear)
+    switch (updateSource)
     {
-        clear = other.clear;
-    }
-    else if (updateSource == UpdateSource::Buffer)
-    {
-        buffer = other.buffer;
-    }
-    else
-    {
-        image = other.image;
+        case UpdateSource::Clear:
+            clear = other.clear;
+            break;
+        case UpdateSource::Buffer:
+            buffer = other.buffer;
+            break;
+        case UpdateSource::Image:
+            image             = other.image;
+            other.image.image = nullptr;
+            break;
+        default:
+            UNREACHABLE();
     }
 }
 
-ImageHelper::SubresourceUpdate &ImageHelper::SubresourceUpdate::operator=(
-    const SubresourceUpdate &other)
+ImageHelper::SubresourceUpdate &ImageHelper::SubresourceUpdate::operator=(SubresourceUpdate &&other)
 {
-    updateSource = other.updateSource;
-    if (updateSource == UpdateSource::Clear)
-    {
-        clear = other.clear;
-    }
-    else if (updateSource == UpdateSource::Buffer)
-    {
-        buffer = other.buffer;
-    }
-    else
-    {
-        image = other.image;
-    }
+    // Given that the update is a union of three structs, we can't use std::swap on the fields.  For
+    // example, |this| may be an Image update and |other| may be a Buffer update.
+    // The following could work:
+    //
+    // SubresourceUpdate oldThis;
+    // Set oldThis to this->field based on updateSource
+    // Set this->otherField to other.otherField based on other.updateSource
+    // Set other.field to oldThis->field based on updateSource
+    // std::Swap(updateSource, other.updateSource);
+    //
+    // It's much simpler to just swap the memory instead.
+
+    SubresourceUpdate oldThis;
+    memcpy(&oldThis, this, sizeof(*this));
+    memcpy(this, &other, sizeof(*this));
+    memcpy(&other, &oldThis, sizeof(*this));
+
     return *this;
 }
 
@@ -6269,12 +6360,14 @@ void ImageHelper::SubresourceUpdate::release(RendererVk *renderer)
     }
 }
 
-bool ImageHelper::SubresourceUpdate::isUpdateToLayer(uint32_t layerIndex) const
+bool ImageHelper::SubresourceUpdate::isUpdateToLayers(uint32_t layerIndex,
+                                                      uint32_t layerCount) const
 {
     uint32_t updateBaseLayer, updateLayerCount;
     getDestSubresource(gl::ImageIndex::kEntireLevel, &updateBaseLayer, &updateLayerCount);
 
-    return updateBaseLayer == layerIndex;
+    return updateBaseLayer == layerIndex &&
+           (updateLayerCount == layerCount || updateLayerCount == VK_REMAINING_ARRAY_LAYERS);
 }
 
 void ImageHelper::SubresourceUpdate::getDestSubresource(uint32_t imageLayerCount,
@@ -6404,6 +6497,7 @@ ImageViewHelper::ImageViewHelper(ImageViewHelper &&other) : Resource(std::move(o
     std::swap(mLinearColorspace, other.mLinearColorspace);
 
     std::swap(mPerLevelStencilReadImageViews, other.mPerLevelStencilReadImageViews);
+    std::swap(mLevelDrawImageViews, other.mLevelDrawImageViews);
     std::swap(mLayerLevelDrawImageViews, other.mLayerLevelDrawImageViews);
     std::swap(mLevelStorageImageViews, other.mLevelStorageImageViews);
     std::swap(mLayerLevelStorageImageViews, other.mLayerLevelStorageImageViews);
@@ -6436,6 +6530,7 @@ void ImageViewHelper::release(RendererVk *renderer)
     ReleaseImageViews(&mPerLevelStencilReadImageViews, &garbage);
 
     // Release the draw views
+    ReleaseImageViews(&mLevelDrawImageViews, &garbage);
     for (ImageViewVector &layerViews : mLayerLevelDrawImageViews)
     {
         for (ImageView &imageView : layerViews)
@@ -6488,6 +6583,7 @@ void ImageViewHelper::destroy(VkDevice device)
     DestroyImageViews(&mPerLevelStencilReadImageViews, device);
 
     // Release the draw views
+    DestroyImageViews(&mLevelDrawImageViews, device);
     for (ImageViewVector &layerViews : mLayerLevelDrawImageViews)
     {
         for (ImageView &imageView : layerViews)
@@ -6624,17 +6720,18 @@ angle::Result ImageViewHelper::initSRGBReadViewsImpl(ContextVk *contextVk,
     // When we select the linear/srgb counterpart formats, we must first make sure they're
     // actually supported by the ICD. If they are not supported by the ICD, then we treat that as if
     // there is no counterpart format. (In this case, the relevant extension should not be exposed)
-    VkFormat srgbOverrideFormat = ConvertToSRGB(image.getFormat().vkImageFormat);
-    ASSERT((srgbOverrideFormat == VK_FORMAT_UNDEFINED) ||
+    angle::FormatID srgbOverrideFormat = ConvertToSRGB(image.getFormat().actualImageFormatID);
+    ASSERT((srgbOverrideFormat == angle::FormatID::NONE) ||
            (HasNonRenderableTextureFormatSupport(contextVk->getRenderer(), srgbOverrideFormat)));
 
-    VkFormat linearOverrideFormat = ConvertToLinear(image.getFormat().vkImageFormat);
-    ASSERT((linearOverrideFormat == VK_FORMAT_UNDEFINED) ||
+    angle::FormatID linearOverrideFormat = ConvertToLinear(image.getFormat().actualImageFormatID);
+    ASSERT((linearOverrideFormat == angle::FormatID::NONE) ||
            (HasNonRenderableTextureFormatSupport(contextVk->getRenderer(), linearOverrideFormat)));
 
-    VkFormat linearFormat =
-        (linearOverrideFormat != VK_FORMAT_UNDEFINED) ? linearOverrideFormat : format.vkImageFormat;
-    ASSERT(linearFormat != VK_FORMAT_UNDEFINED);
+    angle::FormatID linearFormat = (linearOverrideFormat != angle::FormatID::NONE)
+                                       ? linearOverrideFormat
+                                       : format.actualImageFormatID;
+    ASSERT(linearFormat != angle::FormatID::NONE);
 
     const VkImageAspectFlags aspectFlags = GetFormatAspectFlags(format.intendedFormat());
 
@@ -6645,7 +6742,7 @@ angle::Result ImageViewHelper::initSRGBReadViewsImpl(ContextVk *contextVk,
             &mPerLevelLinearReadImageViews[mCurrentMaxLevel.get()], baseLevel, levelCount,
             baseLayer, layerCount, imageUsageFlags, linearFormat));
     }
-    if (srgbOverrideFormat != VK_FORMAT_UNDEFINED &&
+    if (srgbOverrideFormat != angle::FormatID::NONE &&
         !mPerLevelSRGBReadImageViews[mCurrentMaxLevel.get()].valid())
     {
         ANGLE_TRY(image.initReinterpretedLayerImageView(
@@ -6669,7 +6766,7 @@ angle::Result ImageViewHelper::initSRGBReadViewsImpl(ContextVk *contextVk,
                 &mPerLevelLinearFetchImageViews[mCurrentMaxLevel.get()], baseLevel, levelCount,
                 baseLayer, layerCount, imageUsageFlags, linearFormat));
         }
-        if (srgbOverrideFormat != VK_FORMAT_UNDEFINED &&
+        if (srgbOverrideFormat != angle::FormatID::NONE &&
             !mPerLevelSRGBFetchImageViews[mCurrentMaxLevel.get()].valid())
         {
             ANGLE_TRY(image.initReinterpretedLayerImageView(
@@ -6686,7 +6783,7 @@ angle::Result ImageViewHelper::initSRGBReadViewsImpl(ContextVk *contextVk,
             &mPerLevelLinearCopyImageViews[mCurrentMaxLevel.get()], baseLevel, levelCount,
             baseLayer, layerCount, imageUsageFlags, linearFormat));
     }
-    if (srgbOverrideFormat != VK_FORMAT_UNDEFINED &&
+    if (srgbOverrideFormat != angle::FormatID::NONE &&
         !mPerLevelSRGBCopyImageViews[mCurrentMaxLevel.get()].valid())
     {
         ANGLE_TRY(image.initReinterpretedLayerImageView(
@@ -6704,7 +6801,7 @@ angle::Result ImageViewHelper::getLevelStorageImageView(ContextVk *contextVk,
                                                         LevelIndex levelVk,
                                                         uint32_t layer,
                                                         VkImageUsageFlags imageUsageFlags,
-                                                        VkFormat vkImageFormat,
+                                                        angle::FormatID formatID,
                                                         const ImageView **imageViewOut)
 {
     ASSERT(mImageViewSerial.valid());
@@ -6721,9 +6818,9 @@ angle::Result ImageViewHelper::getLevelStorageImageView(ContextVk *contextVk,
     }
 
     // Create the view.  Note that storage images are not affected by swizzle parameters.
-    return image.initReinterpretedLayerImageView(
-        contextVk, viewType, image.getAspectFlags(), gl::SwizzleState(), imageView, levelVk, 1,
-        layer, image.getLayerCount(), imageUsageFlags, vkImageFormat);
+    return image.initReinterpretedLayerImageView(contextVk, viewType, image.getAspectFlags(),
+                                                 gl::SwizzleState(), imageView, levelVk, 1, layer,
+                                                 image.getLayerCount(), imageUsageFlags, formatID);
 }
 
 angle::Result ImageViewHelper::getLevelLayerStorageImageView(ContextVk *contextVk,
@@ -6731,7 +6828,7 @@ angle::Result ImageViewHelper::getLevelLayerStorageImageView(ContextVk *contextV
                                                              LevelIndex levelVk,
                                                              uint32_t layer,
                                                              VkImageUsageFlags imageUsageFlags,
-                                                             VkFormat vkImageFormat,
+                                                             angle::FormatID formatID,
                                                              const ImageView **imageViewOut)
 {
     ASSERT(image.valid());
@@ -6754,7 +6851,36 @@ angle::Result ImageViewHelper::getLevelLayerStorageImageView(ContextVk *contextV
     gl::TextureType viewType = Get2DTextureType(1, image.getSamples());
     return image.initReinterpretedLayerImageView(contextVk, viewType, image.getAspectFlags(),
                                                  gl::SwizzleState(), imageView, levelVk, 1, layer,
-                                                 1, imageUsageFlags, vkImageFormat);
+                                                 1, imageUsageFlags, formatID);
+}
+
+angle::Result ImageViewHelper::getLevelDrawImageView(ContextVk *contextVk,
+                                                     const ImageHelper &image,
+                                                     LevelIndex levelVk,
+                                                     const ImageView **imageViewOut)
+{
+    ASSERT(image.valid());
+    ASSERT(mImageViewSerial.valid());
+    ASSERT(!image.getFormat().actualImageFormat().isBlock);
+
+    retain(&contextVk->getResourceUseList());
+
+    // Lazily allocate the storage for image views
+    ImageView *imageView = GetLevelImageView(&mLevelDrawImageViews, levelVk, image.getLevelCount());
+    *imageViewOut        = imageView;
+
+    if (imageView->valid())
+    {
+        return angle::Result::Continue;
+    }
+
+    // Lazily allocate the image view itself.
+    // Note that these views are specifically made to be used as framebuffer attachments, and
+    // therefore don't have swizzle.
+    const uint32_t layerCount = GetImageLayerCountForView(image);
+    gl::TextureType viewType  = Get2DTextureType(layerCount, image.getSamples());
+    return image.initLayerImageView(contextVk, viewType, image.getAspectFlags(), gl::SwizzleState(),
+                                    imageView, levelVk, 1, 0, layerCount);
 }
 
 angle::Result ImageViewHelper::getLevelLayerDrawImageView(ContextVk *contextVk,
@@ -6853,15 +6979,15 @@ void BufferViewHelper::release(RendererVk *renderer)
 
         // Ensure the resource use is always valid.
         mUse.init();
+
+        // Update image view serial.
+        mViewSerial = renderer->getResourceSerialFactory().generateImageOrBufferViewSerial();
     }
 
     mViews.clear();
 
     mOffset = 0;
     mSize   = 0;
-
-    // Update image view serial.
-    mViewSerial = renderer->getResourceSerialFactory().generateImageOrBufferViewSerial();
 }
 
 void BufferViewHelper::destroy(VkDevice device)
@@ -6887,7 +7013,9 @@ angle::Result BufferViewHelper::getView(ContextVk *contextVk,
 {
     ASSERT(format.valid());
 
-    auto iter = mViews.find(format.vkBufferFormat);
+    VkFormat viewVkFormat = format.actualBufferVkFormat(false);
+
+    auto iter = mViews.find(viewVkFormat);
     if (iter != mViews.end())
     {
         *viewOut = &iter->second;
@@ -6904,7 +7032,7 @@ angle::Result BufferViewHelper::getView(ContextVk *contextVk,
     VkBufferViewCreateInfo viewCreateInfo = {};
     viewCreateInfo.sType                  = VK_STRUCTURE_TYPE_BUFFER_VIEW_CREATE_INFO;
     viewCreateInfo.buffer                 = buffer.getBuffer().getHandle();
-    viewCreateInfo.format                 = format.vkBufferFormat;
+    viewCreateInfo.format                 = viewVkFormat;
     viewCreateInfo.offset                 = mOffset;
     viewCreateInfo.range                  = size;
 
@@ -6912,7 +7040,7 @@ angle::Result BufferViewHelper::getView(ContextVk *contextVk,
     ANGLE_VK_TRY(contextVk, view.init(contextVk->getDevice(), viewCreateInfo));
 
     // Cache the view
-    auto insertIter = mViews.insert({format.vkBufferFormat, std::move(view)});
+    auto insertIter = mViews.insert({viewVkFormat, std::move(view)});
     *viewOut        = &insertIter.first->second;
     ASSERT(insertIter.second);
 
@@ -6938,10 +7066,10 @@ bool ShaderProgramHelper::valid(const gl::ShaderType shaderType) const
     return mShaders[shaderType].valid();
 }
 
-void ShaderProgramHelper::destroy(VkDevice device)
+void ShaderProgramHelper::destroy(RendererVk *rendererVk)
 {
-    mGraphicsPipelines.destroy(device);
-    mComputePipeline.destroy(device);
+    mGraphicsPipelines.destroy(rendererVk);
+    mComputePipeline.destroy(rendererVk->getDevice());
     for (BindingPointer<ShaderAndSerial> &shader : mShaders)
     {
         shader.reset();

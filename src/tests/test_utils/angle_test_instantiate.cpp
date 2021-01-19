@@ -214,7 +214,16 @@ bool IsLinux()
 
 bool IsOSX()
 {
-#if defined(ANGLE_PLATFORM_APPLE)
+#if defined(ANGLE_PLATFORM_MACOS)
+    return true;
+#else
+    return false;
+#endif
+}
+
+bool IsIOS()
+{
+#if defined(ANGLE_PLATFORM_IOS)
     return true;
 #else
     return false;
@@ -350,6 +359,11 @@ bool IsNVIDIA()
     return HasSystemVendorID(kVendorID_NVIDIA);
 }
 
+bool IsQualcomm()
+{
+    return IsNexus5X() || IsNexus9() || IsPixelXL() || IsPixel2() || IsPixel2XL();
+}
+
 bool IsConfigAllowlisted(const SystemInfo &systemInfo, const PlatformParameters &param)
 {
     VendorID vendorID =
@@ -420,7 +434,7 @@ bool IsConfigAllowlisted(const SystemInfo &systemInfo, const PlatformParameters 
     }
 
 #if defined(ANGLE_PLATFORM_APPLE)
-    if (IsOSX())
+    if (IsOSX() || IsIOS())
     {
         // We do not support non-ANGLE bindings on OSX.
         if (param.driver != GLESDriverType::AngleEGL)
