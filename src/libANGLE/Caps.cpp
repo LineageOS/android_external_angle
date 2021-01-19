@@ -109,12 +109,12 @@ const TextureCaps &TextureCapsMap::get(GLenum internalFormat) const
 
 const TextureCaps &TextureCapsMap::get(angle::FormatID formatID) const
 {
-    return mFormatData[static_cast<size_t>(formatID)];
+    return mFormatData[formatID];
 }
 
 TextureCaps &TextureCapsMap::get(angle::FormatID formatID)
 {
-    return mFormatData[static_cast<size_t>(formatID)];
+    return mFormatData[formatID];
 }
 
 void TextureCapsMap::set(angle::FormatID formatID, const TextureCaps &caps)
@@ -949,7 +949,8 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_EXT_robustness"] = esOnlyExtension(&Extensions::robustness);
         map["GL_KHR_robust_buffer_access_behavior"] = esOnlyExtension(&Extensions::robustBufferAccessBehavior);
         map["GL_EXT_blend_minmax"] = enableableExtension(&Extensions::blendMinMax);
-        map["GL_ANGLE_framebuffer_blit"] = enableableExtension(&Extensions::framebufferBlit);
+        map["GL_ANGLE_framebuffer_blit"] = enableableExtension(&Extensions::framebufferBlitANGLE);
+        map["GL_NV_framebuffer_blit"] = enableableExtension(&Extensions::framebufferBlitNV);
         map["GL_ANGLE_framebuffer_multisample"] = enableableExtension(&Extensions::framebufferMultisample);
         map["GL_EXT_multisampled_render_to_texture"] = enableableExtension(&Extensions::multisampledRenderToTexture);
         map["GL_EXT_multisampled_render_to_texture2"] = enableableExtension(&Extensions::multisampledRenderToTexture2);
@@ -1042,6 +1043,7 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_OES_shader_multisample_interpolation"] = enableableExtension(&Extensions::multisampleInterpolationOES);
         map["GL_OES_shader_image_atomic"] = enableableExtension(&Extensions::shaderImageAtomicOES);
         map["GL_OES_sample_variables"] = enableableExtension(&Extensions::sampleVariablesOES);
+        map["GL_EXT_shader_framebuffer_fetch_non_coherent"] = enableableExtension(&Extensions::shaderFramebufferFetchNonCoherentEXT);
         map["GL_NV_robustness_video_memory_purge"] = esOnlyExtension(&Extensions::robustnessVideoMemoryPurgeNV);
         map["GL_ANGLE_get_tex_level_parameter"] = enableableExtension(&Extensions::getTexLevelParameterANGLE);
         map["GL_EXT_copy_image"] = enableableExtension(&Extensions::copyImageEXT);

@@ -85,6 +85,10 @@ enum class LinkMismatchError
     // Interface block specific
     LAYOUT_QUALIFIER_MISMATCH,
     MATRIX_PACKING_MISMATCH,
+
+    // I/O block specific
+    FIELD_LOCATION_MISMATCH,
+    FIELD_STRUCT_NAME_MISMATCH,
 };
 
 void LogLinkMismatch(InfoLog &infoLog,
@@ -352,20 +356,6 @@ class ProgramState final : angle::NonCopyable
 
     bool isSeparable() const { return mSeparable; }
 
-    PrimitiveMode getGeometryShaderInputPrimitiveType() const
-    {
-        return mGeometryShaderInputPrimitiveType;
-    }
-
-    PrimitiveMode getGeometryShaderOutputPrimitiveType() const
-    {
-        return mGeometryShaderOutputPrimitiveType;
-    }
-
-    int getGeometryShaderInvocations() const { return mGeometryShaderInvocations; }
-
-    int getGeometryShaderMaxVertices() const { return mGeometryShaderMaxVertices; }
-
     int getDrawIDLocation() const { return mDrawIDLocation; }
 
     int getBaseVertexLocation() const { return mBaseVertexLocation; }
@@ -378,7 +368,6 @@ class ProgramState final : angle::NonCopyable
     friend class MemoryProgramCache;
     friend class Program;
 
-    void updateTransformFeedbackStrides();
     void updateActiveSamplers();
     void updateProgramInterfaceInputs();
     void updateProgramInterfaceOutputs();
@@ -424,12 +413,6 @@ class ProgramState final : angle::NonCopyable
     // ANGLE_multiview.
     int mNumViews;
 
-    // GL_EXT_geometry_shader.
-    PrimitiveMode mGeometryShaderInputPrimitiveType;
-    PrimitiveMode mGeometryShaderOutputPrimitiveType;
-    int mGeometryShaderInvocations;
-    int mGeometryShaderMaxVertices;
-
     // GL_ANGLE_multi_draw
     int mDrawIDLocation;
 
@@ -466,7 +449,17 @@ struct ProgramVaryingRef
 
 using ProgramMergedVaryings = std::vector<ProgramVaryingRef>;
 
-class Program final : public LabeledObject, public angle::Subject
+// TODO: Copy necessary shader state into Program. http://anglebug.com/5506
+class HasAttachedShaders
+{
+  public:
+    virtual Shader *getAttachedShader(ShaderType shaderType) const = 0;
+
+  protected:
+    virtual ~HasAttachedShaders() {}
+};
+
+class Program final : public LabeledObject, public angle::Subject, public HasAttachedShaders
 {
   public:
     Program(rx::GLImplFactory *factory, ShaderProgramManager *manager, ShaderProgramID handle);
@@ -487,7 +480,7 @@ class Program final : public LabeledObject, public angle::Subject
     void detachShader(const Context *context, Shader *shader);
     int getAttachedShadersCount() const;
 
-    const Shader *getAttachedShader(ShaderType shaderType) const;
+    Shader *getAttachedShader(ShaderType shaderType) const override;
 
     void bindAttributeLocation(GLuint index, const char *name);
     void bindUniformLocation(UniformLocation location, const char *name);
@@ -495,10 +488,6 @@ class Program final : public LabeledObject, public angle::Subject
     // EXT_blend_func_extended
     void bindFragmentOutputLocation(GLuint index, const char *name);
     void bindFragmentOutputIndex(GLuint index, const char *name);
-
-    angle::Result linkMergedVaryings(const Context *context,
-                                     const ProgramExecutable &executable,
-                                     const ProgramMergedVaryings &mergedVaryings);
 
     // KHR_parallel_shader_compile
     // Try to link the program asynchrously. As a result, background threads may be launched to
@@ -764,13 +753,6 @@ class Program final : public LabeledObject, public angle::Subject
         return mState;
     }
 
-    static LinkMismatchError LinkValidateVariablesBase(
-        const sh::ShaderVariable &variable1,
-        const sh::ShaderVariable &variable2,
-        bool validatePrecision,
-        bool validateArraySize,
-        std::string *mismatchedStructOrBlockMemberName);
-
     GLuint getInputResourceIndex(const GLchar *name) const;
     GLuint getOutputResourceIndex(const GLchar *name) const;
     void getInputResourceName(GLuint index, GLsizei bufSize, GLsizei *length, GLchar *name) const;
@@ -848,34 +830,6 @@ class Program final : public LabeledObject, public angle::Subject
     const ProgramExecutable &getExecutable() const { return mState.getExecutable(); }
     ProgramExecutable &getExecutable() { return mState.getExecutable(); }
 
-    const char *validateDrawStates(const State &state, const gl::Extensions &extensions) const;
-
-    static void getFilteredVaryings(const std::vector<sh::ShaderVariable> &varyings,
-                                    std::vector<const sh::ShaderVariable *> *filteredVaryingsOut);
-    static bool doShaderVariablesMatch(int outputShaderVersion,
-                                       ShaderType outputShaderType,
-                                       ShaderType inputShaderType,
-                                       const sh::ShaderVariable &input,
-                                       const sh::ShaderVariable &output,
-                                       bool validateGeometryShaderInputs,
-                                       bool isSeparable,
-                                       gl::InfoLog &infoLog);
-    static bool linkValidateShaderInterfaceMatching(
-        const std::vector<sh::ShaderVariable> &outputVaryings,
-        const std::vector<sh::ShaderVariable> &inputVaryings,
-        ShaderType outputShaderType,
-        ShaderType inputShaderType,
-        int outputShaderVersion,
-        int inputShaderVersion,
-        bool isSeparable,
-        InfoLog &infoLog);
-    static bool linkValidateBuiltInVaryings(const std::vector<sh::ShaderVariable> &vertexVaryings,
-                                            const std::vector<sh::ShaderVariable> &fragmentVaryings,
-                                            int vertexShaderVersion,
-                                            InfoLog &infoLog);
-
-    void fillProgramStateMap(ShaderMap<const ProgramState *> *programStatesOut);
-
   private:
     struct LinkingState;
 
@@ -909,22 +863,6 @@ class Program final : public LabeledObject, public angle::Subject
 
     void updateLinkedShaderStages();
 
-    static LinkMismatchError LinkValidateVaryings(const sh::ShaderVariable &outputVarying,
-                                                  const sh::ShaderVariable &inputVarying,
-                                                  int shaderVersion,
-                                                  bool validateGeometryShaderInputVarying,
-                                                  bool isSeparable,
-                                                  std::string *mismatchedStructFieldName);
-
-    bool linkValidateTransformFeedback(const Version &version,
-                                       InfoLog &infoLog,
-                                       const ProgramMergedVaryings &linkedVaryings,
-                                       ShaderType stage,
-                                       const Caps &caps) const;
-
-    void gatherTransformFeedbackVaryings(const ProgramMergedVaryings &varyings, ShaderType stage);
-
-    ProgramMergedVaryings getMergedVaryings() const;
     int getOutputLocationForLink(const sh::ShaderVariable &outputVariable) const;
     bool isOutputSecondaryForLink(const sh::ShaderVariable &outputVariable) const;
     bool linkOutputVariables(const Caps &caps,

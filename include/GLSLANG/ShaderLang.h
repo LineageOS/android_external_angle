@@ -26,7 +26,7 @@
 
 // Version number for shader translation API.
 // It is incremented every time the API changes.
-#define ANGLE_SH_VERSION 246
+#define ANGLE_SH_VERSION 248
 
 enum ShShaderSpec
 {
@@ -346,7 +346,10 @@ const ShCompileOptions SH_ADD_PRE_ROTATION = UINT64_C(1) << 56;
 const ShCompileOptions SH_FORCE_SHADER_PRECISION_HIGHP_TO_MEDIUMP = UINT64_C(1) << 57;
 
 // Allow compiler to use specialization constant to do pre-rotation and y flip.
-const ShCompileOptions SH_USE_ROTATION_SPECIALIZATION_CONSTANT = UINT64_C(1) << 58;
+const ShCompileOptions SH_USE_SPECIALIZATION_CONSTANT = UINT64_C(1) << 58;
+
+// Ask compiler to generate transform feedback emulation support code.
+const ShCompileOptions SH_ADD_VULKAN_XFB_EMULATION_SUPPORT_CODE = UINT64_C(1) << 59;
 
 // Defines alternate strategies for implementing array index clamping.
 enum ShArrayIndexClampingStrategy
@@ -420,6 +423,7 @@ struct ShBuiltInResources
     int OES_texture_buffer;
     int EXT_texture_buffer;
     int OES_sample_variables;
+    int EXT_clip_cull_distance;
 
     // Set to 1 to enable replacing GL_EXT_draw_buffers #extension directives
     // with GL_NV_draw_buffers in ESSL output. This flag can be used to emulate
@@ -590,6 +594,8 @@ struct ShBuiltInResources
 
     // APPLE_clip_distance/EXT_clip_cull_distance constant
     int MaxClipDistances;
+    int MaxCullDistances;
+    int MaxCombinedClipAndCullDistances;
 };
 
 //
@@ -866,6 +872,9 @@ extern const char kAtomicCountersBlockName[];
 
 // Line raster emulation varying
 extern const char kLineRasterEmulationPosition[];
+
+// Transform feedback emulation helper function
+extern const char kXfbEmulationGetOffsetsFunctionName[];
 
 }  // namespace vk
 
