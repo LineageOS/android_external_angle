@@ -2741,7 +2741,7 @@ bool ValidateBlitFramebufferANGLE(const Context *context,
                                   GLbitfield mask,
                                   GLenum filter)
 {
-    if (!context->getExtensions().framebufferBlit)
+    if (!context->getExtensions().framebufferBlitANGLE)
     {
         context->validationError(GL_INVALID_OPERATION, kBlitExtensionNotAvailable);
         return false;
@@ -2856,6 +2856,28 @@ bool ValidateBlitFramebufferANGLE(const Context *context,
                 }
             }
         }
+    }
+
+    return ValidateBlitFramebufferParameters(context, srcX0, srcY0, srcX1, srcY1, dstX0, dstY0,
+                                             dstX1, dstY1, mask, filter);
+}
+
+bool ValidateBlitFramebufferNV(const Context *context,
+                               GLint srcX0,
+                               GLint srcY0,
+                               GLint srcX1,
+                               GLint srcY1,
+                               GLint dstX0,
+                               GLint dstY0,
+                               GLint dstX1,
+                               GLint dstY1,
+                               GLbitfield mask,
+                               GLenum filter)
+{
+    if (!context->getExtensions().framebufferBlitANGLE)
+    {
+        context->validationError(GL_INVALID_OPERATION, kBlitExtensionNotAvailable);
+        return false;
     }
 
     return ValidateBlitFramebufferParameters(context, srcX0, srcY0, srcX1, srcY1, dstX0, dstY0,

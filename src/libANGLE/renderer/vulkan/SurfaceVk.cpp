@@ -136,10 +136,11 @@ angle::Result InitImageHelper(DisplayVk *displayVk,
     // causing it to be interpreted in a different colorspace. Create the VkImage accordingly.
     VkImageCreateFlags imageCreateFlags                  = vk::kVkImageCreateFlagsNone;
     VkImageFormatListCreateInfoKHR *additionalCreateInfo = nullptr;
-    VkFormat vkImageFormat                               = vkFormat.vkImageFormat;
-    VkFormat vkImageListFormat                           = vkFormat.actualImageFormat().isSRGB
-                                     ? vk::ConvertToLinear(vkImageFormat)
-                                     : vk::ConvertToSRGB(vkImageFormat);
+    angle::FormatID imageFormat                          = vkFormat.actualImageFormatID;
+    angle::FormatID imageListFormat                      = vkFormat.actualImageFormat().isSRGB
+                                          ? ConvertToLinear(imageFormat)
+                                          : ConvertToSRGB(imageFormat);
+    VkFormat imageListVkFormat = vk::GetVkFormatFromFormatID(imageListFormat);
 
     VkImageFormatListCreateInfoKHR formatListInfo = {};
     if (renderer->getFeatures().supportsImageFormatList.enabled)
@@ -151,7 +152,7 @@ angle::Result InitImageHelper(DisplayVk *displayVk,
         formatListInfo.sType           = VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO_KHR;
         formatListInfo.pNext           = nullptr;
         formatListInfo.viewFormatCount = 1;
-        formatListInfo.pViewFormats    = &vkImageListFormat;
+        formatListInfo.pViewFormats    = &imageListVkFormat;
         additionalCreateInfo           = &formatListInfo;
     }
 
@@ -163,6 +164,12 @@ angle::Result InitImageHelper(DisplayVk *displayVk,
     return angle::Result::Continue;
 }
 }  // namespace
+
+#if defined(ANGLE_ENABLE_OVERLAY)
+constexpr bool kEnableOverlay = ANGLE_ENABLE_OVERLAY;
+#else
+constexpr bool kEnableOverlay = false;
+#endif
 
 SurfaceVk::SurfaceVk(const egl::SurfaceState &surfaceState) : SurfaceImpl(surfaceState) {}
 
@@ -275,10 +282,10 @@ OffscreenSurfaceVk::OffscreenSurfaceVk(const egl::SurfaceState &surfaceState, Re
       mDepthStencilAttachment(this)
 {
     mColorRenderTarget.init(&mColorAttachment.image, &mColorAttachment.imageViews, nullptr, nullptr,
-                            gl::LevelIndex(0), 0, RenderTargetTransience::Default);
+                            gl::LevelIndex(0), 0, 1, RenderTargetTransience::Default);
     mDepthStencilRenderTarget.init(&mDepthStencilAttachment.image,
                                    &mDepthStencilAttachment.imageViews, nullptr, nullptr,
-                                   gl::LevelIndex(0), 0, RenderTargetTransience::Default);
+                                   gl::LevelIndex(0), 0, 1, RenderTargetTransience::Default);
 }
 
 OffscreenSurfaceVk::~OffscreenSurfaceVk() {}
@@ -308,7 +315,7 @@ angle::Result OffscreenSurfaceVk::initializeImpl(DisplayVk *displayVk)
                                               renderer->getFormat(config->renderTargetFormat),
                                               samples, robustInit));
         mColorRenderTarget.init(&mColorAttachment.image, &mColorAttachment.imageViews, nullptr,
-                                nullptr, gl::LevelIndex(0), 0, RenderTargetTransience::Default);
+                                nullptr, gl::LevelIndex(0), 0, 1, RenderTargetTransience::Default);
     }
 
     if (config->depthStencilFormat != GL_NONE)
@@ -318,7 +325,7 @@ angle::Result OffscreenSurfaceVk::initializeImpl(DisplayVk *displayVk)
             robustInit));
         mDepthStencilRenderTarget.init(&mDepthStencilAttachment.image,
                                        &mDepthStencilAttachment.imageViews, nullptr, nullptr,
-                                       gl::LevelIndex(0), 0, RenderTargetTransience::Default);
+                                       gl::LevelIndex(0), 0, 1, RenderTargetTransience::Default);
     }
 
     return angle::Result::Continue;
@@ -506,9 +513,9 @@ WindowSurfaceVk::WindowSurfaceVk(const egl::SurfaceState &surfaceState, EGLNativ
     // Initialize the color render target with the multisampled targets.  If not multisampled, the
     // render target will be updated to refer to a swapchain image on every acquire.
     mColorRenderTarget.init(&mColorImageMS, &mColorImageMSViews, nullptr, nullptr,
-                            gl::LevelIndex(0), 0, RenderTargetTransience::Default);
+                            gl::LevelIndex(0), 0, 1, RenderTargetTransience::Default);
     mDepthStencilRenderTarget.init(&mDepthStencilImage, &mDepthStencilImageViews, nullptr, nullptr,
-                                   gl::LevelIndex(0), 0, RenderTargetTransience::Default);
+                                   gl::LevelIndex(0), 0, 1, RenderTargetTransience::Default);
     mDepthStencilImageBinding.bind(&mDepthStencilImage);
     mColorImageMSBinding.bind(&mColorImageMS);
 }
@@ -680,7 +687,7 @@ angle::Result WindowSurfaceVk::initializeImpl(DisplayVk *displayVk)
                                                       surfaceFormats.data()));
 
     const vk::Format &format = renderer->getFormat(mState.config->renderTargetFormat);
-    VkFormat nativeFormat    = format.vkImageFormat;
+    VkFormat nativeFormat    = format.actualImageVkFormat();
 
     if (surfaceFormatCount == 1u && surfaceFormats[0].format == VK_FORMAT_UNDEFINED)
     {
@@ -929,7 +936,7 @@ angle::Result WindowSurfaceVk::createSwapChain(vk::Context *context,
     VkDevice device      = renderer->getDevice();
 
     const vk::Format &format = renderer->getFormat(mState.config->renderTargetFormat);
-    VkFormat nativeFormat    = format.vkImageFormat;
+    VkFormat nativeFormat    = format.actualImageVkFormat();
 
     gl::Extents rotatedExtents = extents;
     if (Is90DegreeRotation(getPreTransform()))
@@ -947,15 +954,16 @@ angle::Result WindowSurfaceVk::createSwapChain(vk::Context *context,
     // We need transfer src for reading back from the backbuffer.
     VkImageUsageFlags imageUsageFlags = kSurfaceVkColorImageUsageFlags;
 
-#if ANGLE_ENABLE_OVERLAY
     // We need storage image for compute writes (debug overlay output).
-    VkFormatFeatureFlags featureBits =
-        renderer->getImageFormatFeatureBits(nativeFormat, VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT);
-    if ((featureBits & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) != 0)
+    if (kEnableOverlay)
     {
-        imageUsageFlags |= VK_IMAGE_USAGE_STORAGE_BIT;
+        VkFormatFeatureFlags featureBits = renderer->getImageFormatFeatureBits(
+            format.actualImageFormatID, VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT);
+        if ((featureBits & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) != 0)
+        {
+            imageUsageFlags |= VK_IMAGE_USAGE_STORAGE_BIT;
+        }
     }
-#endif
 
     VkSwapchainCreateInfoKHR swapchainInfo = {};
     swapchainInfo.sType                    = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
@@ -1024,7 +1032,7 @@ angle::Result WindowSurfaceVk::createSwapChain(vk::Context *context,
         // Initialize the color render target with the multisampled targets.  If not multisampled,
         // the render target will be updated to refer to a swapchain image on every acquire.
         mColorRenderTarget.init(&mColorImageMS, &mColorImageMSViews, nullptr, nullptr,
-                                gl::LevelIndex(0), 0, RenderTargetTransience::Default);
+                                gl::LevelIndex(0), 0, 1, RenderTargetTransience::Default);
     }
 
     ANGLE_TRY(resizeSwapchainImages(context, imageCount));
@@ -1051,7 +1059,7 @@ angle::Result WindowSurfaceVk::createSwapChain(vk::Context *context,
                                                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT));
 
         mDepthStencilRenderTarget.init(&mDepthStencilImage, &mDepthStencilImageViews, nullptr,
-                                       nullptr, gl::LevelIndex(0), 0,
+                                       nullptr, gl::LevelIndex(0), 0, 1,
                                        RenderTargetTransience::Default);
 
         // We will need to pass depth/stencil image views to the RenderTargetVk in the future.

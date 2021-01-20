@@ -227,10 +227,13 @@ if (angle_enable_gl_null) {
 
 config("angle_gl_backend_config") {
   defines = [ "ANGLE_ENABLE_OPENGL" ]
+  if (angle_enable_gl_desktop) {
+    defines += [ "ANGLE_ENABLE_OPENGL_DESKTOP" ]
+  }
   if (angle_enable_gl_null) {
     defines += [ "ANGLE_ENABLE_OPENGL_NULL" ]
   }
-  if (is_mac || is_ios) {
+  if (is_apple) {
     defines += [ "GL_SILENCE_DEPRECATION" ]
   }
   include_dirs = [ "../../../third_party/khronos" ]
@@ -259,7 +262,7 @@ angle_source_set("angle_gl_backend") {
       "Xext",
     ]
   }
-  if (is_mac || is_ios) {
+  if (is_apple) {
     frameworks = [
       "IOSurface.framework",
       "QuartzCore.framework",

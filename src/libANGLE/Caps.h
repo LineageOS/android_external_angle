@@ -79,7 +79,7 @@ class TextureCapsMap final : angle::NonCopyable
     TextureCaps &get(angle::FormatID formatID);
 
     // Indexed by angle::FormatID
-    std::array<TextureCaps, angle::kNumANGLEFormats> mFormatData;
+    angle::FormatMap<TextureCaps> mFormatData;
 };
 
 void InitMinimumTextureCapsMap(const Version &clientVersion,
@@ -345,7 +345,11 @@ struct Extensions
     bool blendMinMax = false;
 
     // GL_ANGLE_framebuffer_blit
-    bool framebufferBlit = false;
+    bool framebufferBlitANGLE = false;
+    // GL_NV_framebuffer_blit
+    bool framebufferBlitNV = false;
+    // Any version of the framebuffer_blit extension
+    bool framebufferBlitAny() const { return (framebufferBlitANGLE || framebufferBlitNV); }
 
     // GL_ANGLE_framebuffer_multisample
     bool framebufferMultisample = false;
@@ -371,6 +375,9 @@ struct Extensions
 
     // GL_EXT_shader_texture_lod
     bool shaderTextureLOD = false;
+
+    // GL_EXT_shader_framebuffer_fetch_non_coherent
+    bool shaderFramebufferFetchNonCoherentEXT = false;
 
     // GL_EXT_frag_depth
     bool fragDepth = false;
