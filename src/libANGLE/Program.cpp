@@ -395,6 +395,8 @@ const char *GetLinkMismatchErrorString(LinkMismatchError linkError)
     {
         case LinkMismatchError::TYPE_MISMATCH:
             return "Type";
+        case LinkMismatchError::ARRAYNESS_MISMATCH:
+            return "Array-ness";
         case LinkMismatchError::ARRAY_SIZE_MISMATCH:
             return "Array size";
         case LinkMismatchError::PRECISION_MISMATCH:
@@ -449,7 +451,7 @@ LinkMismatchError LinkValidateInterfaceBlockFields(const sh::ShaderVariable &blo
 
     // If webgl, validate precision of UBO fields, otherwise don't.  See Khronos bug 10287.
     LinkMismatchError linkError = LinkValidateProgramVariables(
-        blockField1, blockField2, webglCompatibility, true, mismatchedBlockFieldName);
+        blockField1, blockField2, webglCompatibility, false, false, mismatchedBlockFieldName);
     if (linkError != LinkMismatchError::NO_MISMATCH)
     {
         AddProgramVariableParentPrefix(blockField1.name, mismatchedBlockFieldName);
@@ -659,15 +661,15 @@ bool ValidateInterfaceBlocksMatch(
     return true;
 }
 
-void UpdateInterfaceVariable(std::vector<sh::ShaderVariable> &block, sh::ShaderVariable &var)
+void UpdateInterfaceVariable(std::vector<sh::ShaderVariable> *block, const sh::ShaderVariable &var)
 {
     if (!var.isStruct())
     {
-        var.resetEffectiveLocation();
-        block.emplace_back(var);
+        block->emplace_back(var);
+        block->back().resetEffectiveLocation();
     }
 
-    for (sh::ShaderVariable &field : var.fields)
+    for (const sh::ShaderVariable &field : var.fields)
     {
         ASSERT(!var.name.empty() || var.isShaderIOBlock);
 
@@ -683,21 +685,23 @@ void UpdateInterfaceVariable(std::vector<sh::ShaderVariable> &block, sh::ShaderV
         //         type field;  // produces "Block2.field"
         //     } block2;
         //
-        const std::string &baseName = var.isShaderIOBlock ? var.structName : var.name;
+        const std::string &baseName = var.isShaderIOBlock ? var.structOrBlockName : var.name;
         const std::string prefix    = var.name.empty() ? "" : baseName + ".";
 
         if (!field.isStruct())
         {
-            field.updateEffectiveLocation(var);
-            field.name = prefix + field.name;
-            block.emplace_back(field);
+            sh::ShaderVariable fieldCopy = field;
+            fieldCopy.updateEffectiveLocation(var);
+            fieldCopy.name = prefix + field.name;
+            block->emplace_back(fieldCopy);
         }
 
-        for (sh::ShaderVariable &nested : field.fields)
+        for (const sh::ShaderVariable &nested : field.fields)
         {
-            nested.updateEffectiveLocation(field);
-            nested.name = prefix + field.name + "." + nested.name;
-            block.emplace_back(nested);
+            sh::ShaderVariable nestedCopy = nested;
+            nestedCopy.updateEffectiveLocation(field);
+            nestedCopy.name = prefix + field.name + "." + nested.name;
+            block->emplace_back(nestedCopy);
         }
     }
 }
@@ -932,8 +936,8 @@ void WriteShaderVar(BinaryOutputStream *stream, const sh::ShaderVariable &var)
     stream->writeBool(var.staticUse);
     stream->writeBool(var.active);
     stream->writeInt(var.binding);
-    stream->writeString(var.structName);
-    stream->writeString(var.mappedStructName);
+    stream->writeString(var.structOrBlockName);
+    stream->writeString(var.mappedStructOrBlockName);
     stream->writeInt(var.hasParentArrayIndex() ? var.parentArrayIndex() : -1);
 
     stream->writeInt(var.imageUnitFormat);
@@ -952,11 +956,11 @@ void LoadShaderVar(BinaryInputStream *stream, sh::ShaderVariable *var)
     var->name       = stream->readString();
     var->mappedName = stream->readString();
     stream->readIntVector<unsigned int>(&var->arraySizes);
-    var->staticUse        = stream->readBool();
-    var->active           = stream->readBool();
-    var->binding          = stream->readInt<int>();
-    var->structName       = stream->readString();
-    var->mappedStructName = stream->readString();
+    var->staticUse               = stream->readBool();
+    var->active                  = stream->readBool();
+    var->binding                 = stream->readInt<int>();
+    var->structOrBlockName       = stream->readString();
+    var->mappedStructOrBlockName = stream->readString();
     var->setParentArrayIndex(stream->readInt<int>());
 
     var->imageUnitFormat     = stream->readInt<GLenum>();
@@ -1250,32 +1254,24 @@ bool ProgramState::hasAttachedShader() const
 
 ShaderType ProgramState::getFirstAttachedShaderStageType() const
 {
-    if (mExecutable->getLinkedShaderStages().none())
+    const ShaderBitSet linkedStages = mExecutable->getLinkedShaderStages();
+    if (linkedStages.none())
     {
         return ShaderType::InvalidEnum;
     }
 
-    return *mExecutable->getLinkedShaderStages().begin();
+    return linkedStages.first();
 }
 
 ShaderType ProgramState::getLastAttachedShaderStageType() const
 {
-    for (int i = gl::kAllGraphicsShaderTypes.size() - 1; i >= 0; --i)
+    const ShaderBitSet linkedStages = mExecutable->getLinkedShaderStages();
+    if (linkedStages.none())
     {
-        const gl::ShaderType shaderType = gl::kAllGraphicsShaderTypes[i];
-
-        if (mExecutable->hasLinkedShaderStage(shaderType))
-        {
-            return shaderType;
-        }
+        return ShaderType::InvalidEnum;
     }
 
-    if (mExecutable->hasLinkedShaderStage(ShaderType::Compute))
-    {
-        return ShaderType::Compute;
-    }
-
-    return ShaderType::InvalidEnum;
+    return linkedStages.last();
 }
 
 ShaderType ProgramState::getAttachedTransformFeedbackStage() const
@@ -1755,8 +1751,7 @@ void ProgramState::updateProgramInterfaceInputs()
     {
         for (const sh::ShaderVariable &varying : shader->getInputVaryings())
         {
-            sh::ShaderVariable var = sh::ShaderVariable(varying);
-            UpdateInterfaceVariable(mExecutable->mProgramInputs, var);
+            UpdateInterfaceVariable(&mExecutable->mProgramInputs, varying);
         }
     }
 }
@@ -1782,8 +1777,7 @@ void ProgramState::updateProgramInterfaceOutputs()
     // Copy over each output varying, since the Shader could go away
     for (const sh::ShaderVariable &varying : shader->getOutputVaryings())
     {
-        sh::ShaderVariable var = sh::ShaderVariable(varying);
-        UpdateInterfaceVariable(mExecutable->mOutputVariables, var);
+        UpdateInterfaceVariable(&mExecutable->mOutputVariables, varying);
     }
 }
 
@@ -1808,6 +1802,12 @@ void Program::unlink()
     mState.mActiveOutputVariables.reset();
     mState.mComputeShaderLocalSize.fill(1);
     mState.mNumViews                      = -1;
+    mState.mDrawIDLocation                = -1;
+    mState.mBaseVertexLocation            = -1;
+    mState.mBaseInstanceLocation          = -1;
+    mState.mCachedBaseVertex              = 0;
+    mState.mCachedBaseInstance            = 0;
+    mState.mEarlyFramentTestsOptimization = false;
     mState.mDrawIDLocation                = -1;
     mState.mBaseVertexLocation            = -1;
     mState.mBaseInstanceLocation          = -1;
@@ -2122,6 +2122,36 @@ GLint Program::getGeometryShaderMaxVertices() const
 {
     ASSERT(!mLinkingState && mState.mExecutable);
     return mState.mExecutable->getGeometryShaderMaxVertices();
+}
+
+GLint Program::getTessControlShaderVertices() const
+{
+    ASSERT(!mLinkingState && mState.mExecutable);
+    return mState.mExecutable->mTessControlShaderVertices;
+}
+
+GLenum Program::getTessGenMode() const
+{
+    ASSERT(!mLinkingState && mState.mExecutable);
+    return mState.mExecutable->mTessGenMode;
+}
+
+GLenum Program::getTessGenPointMode() const
+{
+    ASSERT(!mLinkingState && mState.mExecutable);
+    return mState.mExecutable->mTessGenPointMode;
+}
+
+GLenum Program::getTessGenSpacing() const
+{
+    ASSERT(!mLinkingState && mState.mExecutable);
+    return mState.mExecutable->mTessGenSpacing;
+}
+
+GLenum Program::getTessGenVertexOrder() const
+{
+    ASSERT(!mLinkingState && mState.mExecutable);
+    return mState.mExecutable->mTessGenVertexOrder;
 }
 
 const sh::ShaderVariable &Program::getInputResource(size_t index) const
@@ -3219,33 +3249,55 @@ GLenum Program::getTransformFeedbackBufferMode() const
 
 bool Program::linkValidateShaders(InfoLog &infoLog)
 {
-    Shader *vertexShader   = mState.mAttachedShaders[ShaderType::Vertex];
-    Shader *fragmentShader = mState.mAttachedShaders[ShaderType::Fragment];
-    Shader *computeShader  = mState.mAttachedShaders[ShaderType::Compute];
-    Shader *geometryShader = mState.mAttachedShaders[ShaderType::Geometry];
+    const ShaderMap<Shader *> &shaders = mState.mAttachedShaders;
 
-    bool isComputeShaderAttached = (computeShader != nullptr);
-    bool isGraphicsShaderAttached =
-        (vertexShader != nullptr || fragmentShader != nullptr || geometryShader != nullptr);
+    bool isComputeShaderAttached  = shaders[ShaderType::Compute] != nullptr;
+    bool isGraphicsShaderAttached = shaders[ShaderType::Vertex] ||
+                                    shaders[ShaderType::TessControl] ||
+                                    shaders[ShaderType::TessEvaluation] ||
+                                    shaders[ShaderType::Geometry] || shaders[ShaderType::Fragment];
     // Check whether we both have a compute and non-compute shaders attached.
     // If there are of both types attached, then linking should fail.
     // OpenGL ES 3.10, 7.3 Program Objects, under LinkProgram
-    if (isComputeShaderAttached == true && isGraphicsShaderAttached == true)
+    if (isComputeShaderAttached && isGraphicsShaderAttached)
     {
         infoLog << "Both compute and graphics shaders are attached to the same program.";
         return false;
     }
 
-    if (computeShader)
+    Optional<int> version;
+    for (ShaderType shaderType : kAllGraphicsShaderTypes)
     {
-        if (!computeShader->isCompiled())
+        Shader *shader = shaders[shaderType];
+        ASSERT(!shader || shader->getType() == shaderType);
+        if (!shader)
         {
-            infoLog << "Attached compute shader is not compiled.";
+            continue;
+        }
+
+        if (!shader->isCompiled())
+        {
+            infoLog << ShaderTypeToString(shaderType) << " shader is not compiled.";
             return false;
         }
-        ASSERT(computeShader->getType() == ShaderType::Compute);
 
-        mState.mComputeShaderLocalSize = computeShader->getWorkGroupSize();
+        if (!version.valid())
+        {
+            version = shader->getShaderVersion();
+        }
+        else if (version != shader->getShaderVersion())
+        {
+            infoLog << ShaderTypeToString(shaderType)
+                    << " shader version does not match other shader versions.";
+            return false;
+        }
+    }
+
+    if (isComputeShaderAttached)
+    {
+        ASSERT(shaders[ShaderType::Compute]->getType() == ShaderType::Compute);
+
+        mState.mComputeShaderLocalSize = shaders[ShaderType::Compute]->getWorkGroupSize();
 
         // GLSL ES 3.10, 4.4.1.1 Compute Shader Inputs
         // If the work group size is not specified, a link time error should occur.
@@ -3257,67 +3309,31 @@ bool Program::linkValidateShaders(InfoLog &infoLog)
     }
     else
     {
-        if (isSeparable())
+        if (!isGraphicsShaderAttached)
         {
-            if (!fragmentShader && !vertexShader && !geometryShader)
-            {
-                infoLog << "No compiled shaders.";
-                return false;
-            }
-
-            ASSERT(!fragmentShader || fragmentShader->getType() == ShaderType::Fragment);
-            if (fragmentShader && !fragmentShader->isCompiled())
-            {
-                infoLog << "Fragment shader is not compiled.";
-                return false;
-            }
-
-            ASSERT(!vertexShader || vertexShader->getType() == ShaderType::Vertex);
-            if (vertexShader && !vertexShader->isCompiled())
-            {
-                infoLog << "Vertex shader is not compiled.";
-                return false;
-            }
-
-            ASSERT(!geometryShader || geometryShader->getType() == ShaderType::Geometry);
-            if (geometryShader && !geometryShader->isCompiled())
-            {
-                infoLog << "Geometry shader is not compiled.";
-                return false;
-            }
-        }
-        else
-        {
-            if (!fragmentShader || !fragmentShader->isCompiled())
-            {
-                infoLog
-                    << "No compiled fragment shader when at least one graphics shader is attached.";
-                return false;
-            }
-            ASSERT(fragmentShader->getType() == ShaderType::Fragment);
-
-            if (!vertexShader || !vertexShader->isCompiled())
-            {
-                infoLog
-                    << "No compiled vertex shader when at least one graphics shader is attached.";
-                return false;
-            }
-            ASSERT(vertexShader->getType() == ShaderType::Vertex);
+            infoLog << "No compiled shaders.";
+            return false;
         }
 
-        if (vertexShader && fragmentShader)
+        bool hasVertex   = shaders[ShaderType::Vertex] != nullptr;
+        bool hasFragment = shaders[ShaderType::Fragment] != nullptr;
+        if (!isSeparable() && (!hasVertex || !hasFragment))
         {
-            int vertexShaderVersion   = vertexShader->getShaderVersion();
-            int fragmentShaderVersion = fragmentShader->getShaderVersion();
-
-            if (fragmentShaderVersion != vertexShaderVersion)
-            {
-                infoLog << "Fragment shader version does not match vertex shader version.";
-                return false;
-            }
+            infoLog
+                << "The program must contain objects to form both a vertex and fragment shader.";
+            return false;
         }
 
-        if (geometryShader)
+        bool hasTessControl    = shaders[ShaderType::TessControl] != nullptr;
+        bool hasTessEvaluation = shaders[ShaderType::TessEvaluation] != nullptr;
+        if (!isSeparable() && (hasTessControl != hasTessEvaluation))
+        {
+            infoLog << "Tessellation control and evaluation shaders must be specified together.";
+            return false;
+        }
+
+        Shader *geometryShader = shaders[ShaderType::Geometry];
+        if (shaders[ShaderType::Geometry])
         {
             // [GL_EXT_geometry_shader] Chapter 7
             // Linking can fail for a variety of reasons as specified in the OpenGL ES Shading
@@ -3329,18 +3345,6 @@ bool Program::linkValidateShaders(InfoLog &infoLog)
             //   - <program> is not separable and contains no objects to form a vertex shader; or
             //   - the input primitive type, output primitive type, or maximum output vertex count
             //     is not specified in the compiled geometry shader object.
-            if (!geometryShader->isCompiled())
-            {
-                infoLog << "The attached geometry shader isn't compiled.";
-                return false;
-            }
-
-            if (vertexShader &&
-                (geometryShader->getShaderVersion() != vertexShader->getShaderVersion()))
-            {
-                infoLog << "Geometry shader version does not match vertex shader version.";
-                return false;
-            }
             ASSERT(geometryShader->getType() == ShaderType::Geometry);
 
             Optional<PrimitiveMode> inputPrimitive =
@@ -3371,6 +3375,22 @@ bool Program::linkValidateShaders(InfoLog &infoLog)
             mState.mExecutable->mGeometryShaderMaxVertices         = maxVertices.value();
             mState.mExecutable->mGeometryShaderInvocations =
                 geometryShader->getGeometryShaderInvocations();
+        }
+
+        Shader *tessControlShader = shaders[ShaderType::TessControl];
+        if (tessControlShader)
+        {
+            mState.mExecutable->mTessControlShaderVertices =
+                tessControlShader->getTessControlShaderVertices();
+        }
+
+        Shader *tessEvaluationShader = shaders[ShaderType::TessEvaluation];
+        if (tessEvaluationShader)
+        {
+            mState.mExecutable->mTessGenMode        = tessEvaluationShader->getTessGenMode();
+            mState.mExecutable->mTessGenSpacing     = tessEvaluationShader->getTessGenSpacing();
+            mState.mExecutable->mTessGenVertexOrder = tessEvaluationShader->getTessGenVertexOrder();
+            mState.mExecutable->mTessGenPointMode   = tessEvaluationShader->getTessGenPointMode();
         }
     }
 
@@ -3477,12 +3497,17 @@ bool Program::linkVaryings(InfoLog &infoLog) const
         previousShaderType = currentShader->getType();
     }
 
+    // TODO: http://anglebug.com/3571 and http://anglebug.com/3572
+    // Need to move logic of validating builtin varyings inside the for-loop above.
+    // This is because the built-in symbols `gl_ClipDistance` and `gl_CullDistance`
+    // can be redeclared in Geometry or Tessellation shaders as well.
     Shader *vertexShader   = mState.mAttachedShaders[ShaderType::Vertex];
     Shader *fragmentShader = mState.mAttachedShaders[ShaderType::Fragment];
     if (vertexShader && fragmentShader &&
         !LinkValidateBuiltInVaryings(vertexShader->getOutputVaryings(),
-                                     fragmentShader->getInputVaryings(),
-                                     vertexShader->getShaderVersion(), infoLog))
+                                     fragmentShader->getInputVaryings(), vertexShader->getType(),
+                                     fragmentShader->getType(), vertexShader->getShaderVersion(),
+                                     fragmentShader->getShaderVersion(), infoLog))
     {
         return false;
     }
@@ -3565,9 +3590,6 @@ void Program::linkSamplerAndImageBindings(GLuint *combinedImageUniforms)
     std::vector<ImageBinding> &imageBindings = hasComputeShader
                                                    ? mState.mExecutable->mComputeImageBindings
                                                    : mState.mExecutable->mGraphicsImageBindings;
-    // The arrays of arrays are flattened to arrays, it needs to record the array offset for the
-    // correct binding image unit.
-    uint32_t arrayOffset = 0;
     // If uniform is a image type, insert it into the mImageBindings array.
     for (unsigned int imageIndex : mState.mExecutable->getImageUniformRange())
     {
@@ -3577,6 +3599,8 @@ void Program::linkSamplerAndImageBindings(GLuint *combinedImageUniforms)
         // unbound image array) shoud be bound to unit zero.
         auto &imageUniform      = mState.mExecutable->getUniforms()[imageIndex];
         TextureType textureType = ImageTypeToTextureType(imageUniform.type);
+        const GLuint arraySize  = imageUniform.isArray() ? imageUniform.arraySizes[0] : 1u;
+
         if (imageUniform.binding == -1)
         {
             imageBindings.emplace_back(
@@ -3584,21 +3608,14 @@ void Program::linkSamplerAndImageBindings(GLuint *combinedImageUniforms)
         }
         else
         {
-            imageBindings.emplace_back(ImageBinding(imageUniform.binding + arrayOffset,
-                                                    imageUniform.getBasicTypeElementCount(),
-                                                    textureType));
+            // The arrays of arrays are flattened to arrays, it needs to record the array offset for
+            // the correct binding image unit.
+            imageBindings.emplace_back(
+                ImageBinding(imageUniform.binding + imageUniform.parentArrayIndex() * arraySize,
+                             imageUniform.getBasicTypeElementCount(), textureType));
         }
 
-        GLuint arraySize = imageUniform.isArray() ? imageUniform.arraySizes[0] : 1u;
         *combinedImageUniforms += imageUniform.activeShaderCount() * arraySize;
-        if (imageUniform.hasParentArrayIndex() && imageUniform.isArray())
-        {
-            arrayOffset += arraySize;
-        }
-        else
-        {
-            arrayOffset = 0;
-        }
     }
 
     highIter = lowIter;
@@ -4736,7 +4753,7 @@ angle::Result Program::deserialize(const Context *context,
         0)
     {
         infoLog << "Invalid program binary version.";
-        return angle::Result::Incomplete;
+        return angle::Result::Stop;
     }
 
     int majorVersion = stream.readInt<int>();
@@ -4745,7 +4762,7 @@ angle::Result Program::deserialize(const Context *context,
         minorVersion != context->getClientMinorVersion())
     {
         infoLog << "Cannot load program binaries across different ES context versions.";
-        return angle::Result::Incomplete;
+        return angle::Result::Stop;
     }
 
     mState.mExecutable->load(&stream);
@@ -4857,7 +4874,7 @@ angle::Result Program::deserialize(const Context *context,
         context->getFrontendFeatures().disableProgramCachingForTransformFeedback.enabled)
     {
         infoLog << "Current driver does not support transform feedback in binary programs.";
-        return angle::Result::Incomplete;
+        return angle::Result::Stop;
     }
 
     ASSERT(mState.mExecutable->mLinkedTransformFeedbackVaryings.empty());
@@ -5002,5 +5019,19 @@ void Program::postResolveLink(const gl::Context *context)
         mState.mBaseVertexLocation   = getUniformLocation("gl_BaseVertex").value;
         mState.mBaseInstanceLocation = getUniformLocation("gl_BaseInstance").value;
     }
+}
+
+// HasAttachedShaders implementation.
+ShaderType HasAttachedShaders::getTransformFeedbackStage() const
+{
+    if (getAttachedShader(ShaderType::Geometry))
+    {
+        return ShaderType::Geometry;
+    }
+    if (getAttachedShader(ShaderType::TessEvaluation))
+    {
+        return ShaderType::TessEvaluation;
+    }
+    return ShaderType::Vertex;
 }
 }  // namespace gl

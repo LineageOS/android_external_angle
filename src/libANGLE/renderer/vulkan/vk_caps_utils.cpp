@@ -32,25 +32,6 @@ namespace vk
 {
 namespace
 {
-bool HasShaderImageAtomicsSupport(const RendererVk *rendererVk,
-                                  const gl::Extensions &supportedExtensions)
-{
-    // Only VK_FORMAT_R32_SFLOAT doesn't have mandatory support for the STORAGE_IMAGE_ATOMIC and
-    // STORAGE_TEXEL_BUFFER_ATOMIC features.
-    const Format &formatVk = rendererVk->getFormat(GL_R32F);
-
-    const bool hasImageAtomicSupport = rendererVk->hasImageFormatFeatureBits(
-        formatVk.actualImageFormatID, VK_FORMAT_FEATURE_STORAGE_IMAGE_ATOMIC_BIT);
-    bool hasBufferAtomicSupport = true;
-    if (supportedExtensions.textureBufferAny())
-    {
-        hasBufferAtomicSupport = rendererVk->hasBufferFormatFeatureBits(
-            formatVk.actualBufferFormatID, VK_FORMAT_FEATURE_STORAGE_TEXEL_BUFFER_ATOMIC_BIT);
-    }
-
-    return hasImageAtomicSupport && hasBufferAtomicSupport;
-}
-
 // Checks to see if each format can be reinterpreted to an equivalent format in a different
 // colorspace. If all supported formats can be reinterpreted, it returns true. Formats which are not
 // supported at all are ignored and not counted as failures.
@@ -909,18 +890,17 @@ void RendererVk::ensureCapsInitialized() const
     // GL_OES_shader_image_atomic requires that image atomic functions have support for r32i and
     // r32ui formats.  These formats have mandatory support for STORAGE_IMAGE_ATOMIC and
     // STORAGE_TEXEL_BUFFER_ATOMIC features in Vulkan.  Additionally, it requires that
-    // imageAtomicExchange supports r32f.  Exposing this extension is thus restricted to this format
-    // having support for the aforementioned features.
-    mNativeExtensions.shaderImageAtomicOES =
-        vk::HasShaderImageAtomicsSupport(this, mNativeExtensions) ||
-        getFeatures().exposeNonConformantExtensionsAndVersions.enabled;
+    // imageAtomicExchange supports r32f, which is emulated in ANGLE transforming the shader to
+    // expect r32ui instead.
+    mNativeExtensions.shaderImageAtomicOES = true;
 
     // Geometry shaders are required for ES 3.2.
-    // We can't support GS when we are emulating line raster due to the tricky position varying.
+    // We don't support GS when we are emulating line raster due to the tricky position varying.
     if (mPhysicalDeviceFeatures.geometryShader && !mFeatures.basicGLLineRasterization.enabled)
     {
         // TODO: geometry shader support is incomplete.  http://anglebug.com/3571
         mNativeExtensions.geometryShader =
+            mFeatures.supportsTransformFeedbackExtension.enabled &&
             mFeatures.exposeNonConformantExtensionsAndVersions.enabled;
         mNativeCaps.maxFramebufferLayers = LimitToInt(limitsVk.maxFramebufferLayers);
         mNativeCaps.layerProvokingVertex = GL_LAST_VERTEX_CONVENTION_EXT;
@@ -940,11 +920,68 @@ void RendererVk::ensureCapsInitialized() const
             LimitToInt(limitsVk.maxGeometryShaderInvocations);
     }
 
+    // We don't support TS when we are emulating line raster due to the tricky position varying.
+    if (mPhysicalDeviceFeatures.tessellationShader && !mFeatures.basicGLLineRasterization.enabled)
+    {
+        constexpr uint32_t kReservedTessellationDefaultUniformBindingCount = 2;
+
+        // TODO: tessellation shader support is incomplete.  http://anglebug.com/3572
+        mNativeExtensions.tessellationShaderEXT =
+            getFeatures().exposeNonConformantExtensionsAndVersions.enabled;
+        mNativeCaps.maxPatchVertices = LimitToInt(limitsVk.maxTessellationPatchSize);
+        mNativeCaps.maxTessPatchComponents =
+            LimitToInt(limitsVk.maxTessellationControlPerPatchOutputComponents);
+        mNativeCaps.maxTessGenLevel = LimitToInt(limitsVk.maxTessellationGenerationLevel);
+
+        mNativeCaps.maxTessControlInputComponents =
+            LimitToInt(limitsVk.maxTessellationControlPerVertexInputComponents);
+        mNativeCaps.maxTessControlOutputComponents =
+            LimitToInt(limitsVk.maxTessellationControlPerVertexOutputComponents);
+        mNativeCaps.maxTessControlTotalOutputComponents =
+            LimitToInt(limitsVk.maxTessellationControlTotalOutputComponents);
+        mNativeCaps.maxTessEvaluationInputComponents =
+            LimitToInt(limitsVk.maxTessellationEvaluationInputComponents);
+        mNativeCaps.maxTessEvaluationOutputComponents =
+            LimitToInt(limitsVk.maxTessellationEvaluationOutputComponents);
+
+        // There is 1 default uniform binding used per tessellation stages.
+        mNativeCaps.maxCombinedUniformBlocks = LimitToInt(
+            mNativeCaps.maxCombinedUniformBlocks + kReservedTessellationDefaultUniformBindingCount);
+        mNativeCaps.maxUniformBufferBindings = LimitToInt(
+            mNativeCaps.maxUniformBufferBindings + kReservedTessellationDefaultUniformBindingCount);
+    }
+
     // GL_APPLE_clip_distance/GL_EXT_clip_cull_distance
-    if (mPhysicalDeviceFeatures.shaderClipDistance && limitsVk.maxClipDistances >= 8)
+    // From the EXT_clip_cull_distance extension spec:
+    //
+    // > Modify Section 7.2, "Built-In Constants" (p. 126)
+    // >
+    // > const mediump int gl_MaxClipDistances = 8;
+    // > const mediump int gl_MaxCullDistances = 8;
+    // > const mediump int gl_MaxCombinedClipAndCullDistances = 8;
+    constexpr uint32_t kMaxClipDistancePerSpec                = 8;
+    constexpr uint32_t kMaxCullDistancePerSpec                = 8;
+    constexpr uint32_t kMaxCombinedClipAndCullDistancePerSpec = 8;
+
+    // TODO: http://anglebug.com/5466
+    // After implementing EXT_geometry_shader, EXT_clip_cull_distance should be additionally
+    // implemented to support the geometry shader. Until then, EXT_clip_cull_distance is enabled
+    // only in the experimental cases.
+    if (mPhysicalDeviceFeatures.shaderClipDistance &&
+        limitsVk.maxClipDistances >= kMaxClipDistancePerSpec)
     {
         mNativeExtensions.clipDistanceAPPLE = true;
-        mNativeCaps.maxClipDistances        = limitsVk.maxClipDistances;
+        mNativeCaps.maxClipDistances =
+            std::min<GLuint>(limitsVk.maxClipDistances, gl::IMPLEMENTATION_MAX_CLIP_DISTANCES);
+
+        if (mPhysicalDeviceFeatures.shaderCullDistance &&
+            limitsVk.maxCullDistances >= kMaxCullDistancePerSpec &&
+            limitsVk.maxCombinedClipAndCullDistances >= kMaxCombinedClipAndCullDistancePerSpec)
+        {
+            mNativeExtensions.clipCullDistanceEXT       = true;
+            mNativeCaps.maxCullDistances                = limitsVk.maxCullDistances;
+            mNativeCaps.maxCombinedClipAndCullDistances = limitsVk.maxCombinedClipAndCullDistances;
+        }
     }
 }
 
@@ -958,12 +995,8 @@ bool CanSupportGPUShader5EXT(const VkPhysicalDeviceFeatures &features)
     //   textureGatherOffsets family of functions.
     // - shaderSampledImageArrayDynamicIndexing and shaderUniformBufferArrayDynamicIndexing:
     //   dynamically uniform indices for samplers and uniform buffers.
-    // - shaderStorageBufferArrayDynamicIndexing: While EXT_gpu_shader5 doesn't require dynamically
-    //   uniform indices on storage buffers, we need it as we emulate atomic counter buffers with
-    //   storage buffers (and atomic counter buffers *can* be indexed in that way).
     return features.shaderImageGatherExtended && features.shaderSampledImageArrayDynamicIndexing &&
-           features.shaderUniformBufferArrayDynamicIndexing &&
-           features.shaderStorageBufferArrayDynamicIndexing;
+           features.shaderUniformBufferArrayDynamicIndexing;
 }
 
 }  // namespace vk
