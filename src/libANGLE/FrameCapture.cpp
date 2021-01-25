@@ -1110,7 +1110,7 @@ void WriteCppReplay(bool compression,
 
 void WriteCppReplayIndexFiles(bool compression,
                               const std::string &outDir,
-                              const gl::ContextID contextId,
+                              const gl::Context *context,
                               const std::string &captureLabel,
                               uint32_t frameCount,
                               const SurfaceDimensions &drawSurfaceDimensions,
@@ -1119,11 +1119,12 @@ void WriteCppReplayIndexFiles(bool compression,
                               const HasResourceTypeMap &hasResourceType,
                               bool serializeStateEnabled,
                               bool writeResetContextCall,
-                              const egl::Config *config,
                               std::vector<uint8_t> &binaryData)
 {
-
-    size_t maxClientArraySize = MaxClientArraySize(clientArraySizes);
+    const gl::ContextID contextId       = context->id();
+    const egl::Config *config           = context->getConfig();
+    size_t maxClientArraySize           = MaxClientArraySize(clientArraySizes);
+    const egl::AttributeMap &attributes = context->getDisplay()->getAttributeMap();
 
     std::stringstream header;
     std::stringstream source;
@@ -1169,6 +1170,14 @@ void WriteCppReplayIndexFiles(bool compression,
         header << "_" << captureLabelUpper;
     }
     header << " " << ANGLE_REVISION << "\n";
+    header << "constexpr uint32_t kReplayContextClientMajorVersion = "
+           << context->getClientMajorVersion() << ";\n";
+    header << "constexpr uint32_t kReplayContextClientMinorVersion = "
+           << context->getClientMinorVersion() << ";\n";
+    header << "constexpr EGLint kReplayPlatformType = "
+           << attributes.getAsInt(EGL_PLATFORM_ANGLE_TYPE_ANGLE) << ";\n";
+    header << "constexpr EGLint kReplayDeviceType = "
+           << attributes.getAsInt(EGL_PLATFORM_ANGLE_DEVICE_TYPE_ANGLE) << ";\n";
     header << "constexpr uint32_t kReplayFrameStart = 1;\n";
     header << "constexpr uint32_t kReplayFrameEnd = " << frameCount << ";\n";
     header << "constexpr EGLint kReplayDrawSurfaceWidth = "
@@ -1826,6 +1835,26 @@ void CaptureUpdateUniformValues(const gl::State &replayState,
         if (readLoc.value == -1)
             continue;
 
+        // Image uniforms are special and cannot be set this way
+        if (typeInfo->isImageType)
+            continue;
+
+        // Samplers should be populated with GL_INT, regardless of return type
+        if (typeInfo->isSampler)
+        {
+            std::vector<GLint> uniformBuffer(uniformSize);
+            for (int index = 0; index < uniformCount; index++, readLoc.value++)
+            {
+                program->getUniformiv(context, readLoc,
+                                      uniformBuffer.data() + index * componentCount);
+            }
+
+            Capture(callsOut, CaptureUniform1iv(replayState, true, uniformLoc, uniformCount,
+                                                uniformBuffer.data()));
+
+            continue;
+        }
+
         switch (typeInfo->componentType)
         {
             case GL_FLOAT:
@@ -2228,29 +2257,33 @@ void CaptureBufferBindingResetCalls(const gl::State &replayState,
     Capture(&bufferBindingCalls, CaptureBindBuffer(replayState, true, binding, id));
 }
 
-void CaptureBindIndexedBuffer(const gl::State &glState,
-                              gl::BufferBinding binding,
-                              const gl::BufferVector &indexedBuffers,
-                              const gl::BufferID bufferID,
-                              std::vector<CallCapture> *setupCalls)
+void CaptureIndexedBuffers(const gl::State &glState,
+                           const gl::BufferVector &indexedBuffers,
+                           gl::BufferBinding binding,
+                           std::vector<CallCapture> *setupCalls)
 {
     for (unsigned int index = 0; index < indexedBuffers.size(); ++index)
     {
-        if (bufferID.value == indexedBuffers[index].id().value)
-        {
-            GLintptr offset = indexedBuffers[index].getOffset();
-            GLsizeiptr size = indexedBuffers[index].getSize();
+        const gl::OffsetBindingPointer<gl::Buffer> &buffer = indexedBuffers[index];
 
-            // Context::bindBufferBase() calls Context::bindBufferRange() with size and offset = 0.
-            if ((offset == 0) && (size == 0))
-            {
-                Capture(setupCalls, CaptureBindBufferBase(glState, true, binding, index, bufferID));
-            }
-            else
-            {
-                Capture(setupCalls, CaptureBindBufferRange(glState, true, binding, index, bufferID,
-                                                           offset, size));
-            }
+        if (buffer.get() == nullptr)
+        {
+            continue;
+        }
+
+        GLintptr offset       = buffer.getOffset();
+        GLsizeiptr size       = buffer.getSize();
+        gl::BufferID bufferID = buffer.get()->id();
+
+        // Context::bindBufferBase() calls Context::bindBufferRange() with size and offset = 0.
+        if ((offset == 0) && (size == 0))
+        {
+            Capture(setupCalls, CaptureBindBufferBase(glState, true, binding, index, bufferID));
+        }
+        else
+        {
+            Capture(setupCalls,
+                    CaptureBindBufferRange(glState, true, binding, index, bufferID, offset, size));
         }
     }
 }
@@ -2398,13 +2431,21 @@ void CaptureMidExecutionSetup(const gl::Context *context,
         cap(CaptureBindVertexArray(replayState, true, currentVertexArray->id()));
     }
 
-    // Capture Buffer bindings.
+    // Capture indexed buffer bindings.
     const gl::BufferVector &uniformIndexedBuffers =
         apiState.getOffsetBindingPointerUniformBuffers();
     const gl::BufferVector &atomicCounterIndexedBuffers =
         apiState.getOffsetBindingPointerAtomicCounterBuffers();
     const gl::BufferVector &shaderStorageIndexedBuffers =
         apiState.getOffsetBindingPointerShaderStorageBuffers();
+    CaptureIndexedBuffers(replayState, uniformIndexedBuffers, gl::BufferBinding::Uniform,
+                          setupCalls);
+    CaptureIndexedBuffers(replayState, atomicCounterIndexedBuffers,
+                          gl::BufferBinding::AtomicCounter, setupCalls);
+    CaptureIndexedBuffers(replayState, shaderStorageIndexedBuffers,
+                          gl::BufferBinding::ShaderStorage, setupCalls);
+
+    // Capture Buffer bindings.
     const gl::BoundBufferMap &boundBuffers = apiState.getBoundBuffersForCapture();
     for (gl::BufferBinding binding : angle::AllEnums<gl::BufferBinding>())
     {
@@ -2419,32 +2460,6 @@ void CaptureMidExecutionSetup(const gl::Context *context,
             (!isArray && bufferID.value != 0))
         {
             cap(CaptureBindBuffer(replayState, true, binding, bufferID));
-
-            // Only the following buffer targets can be indexed:
-            // - GL_TRANSFORM_FEEDBACK_BUFFER
-            //   - Transform feedback is handled separately, since transform feedback buffers are
-            //   owned by the transform feedback object.
-            // - GL_UNIFORM_BUFFER
-            // - GL_ATOMIC_COUNTER_BUFFER
-            // - GL_SHADER_STORAGE_BUFFER
-            // Ignore all other binding types.
-            switch (binding)
-            {
-                case gl::BufferBinding::Uniform:
-                    CaptureBindIndexedBuffer(replayState, binding, uniformIndexedBuffers, bufferID,
-                                             setupCalls);
-                    break;
-                case gl::BufferBinding::AtomicCounter:
-                    CaptureBindIndexedBuffer(replayState, binding, atomicCounterIndexedBuffers,
-                                             bufferID, setupCalls);
-                    break;
-                case gl::BufferBinding::ShaderStorage:
-                    CaptureBindIndexedBuffer(replayState, binding, shaderStorageIndexedBuffers,
-                                             bufferID, setupCalls);
-                    break;
-                default:
-                    break;
-            }
         }
 
         // Restore all buffer bindings for Reset
@@ -2825,15 +2840,15 @@ void CaptureMidExecutionSetup(const gl::Context *context,
         gl::ShaderProgramID id     = {programIter.first};
         const gl::Program *program = programIter.second;
 
-        // Get last compiled shader source.
-        const ProgramSources &linkedSources =
-            context->getShareGroup()->getFrameCaptureShared()->getProgramSources(id);
-
         // Unlinked programs don't have an executable. Thus they don't need to be linked.
         if (!program->isLinked())
         {
             continue;
         }
+
+        // Get last linked shader source.
+        const ProgramSources &linkedSources =
+            context->getShareGroup()->getFrameCaptureShared()->getProgramSources(id);
 
         cap(CaptureCreateProgram(replayState, true, id.value));
 
@@ -2892,6 +2907,14 @@ void CaptureMidExecutionSetup(const gl::Context *context,
         cap(CaptureLinkProgram(replayState, true, id));
         CaptureUpdateUniformLocations(program, setupCalls);
         CaptureUpdateUniformValues(replayState, context, program, setupCalls);
+
+        // Capture uniform block bindings for each program
+        for (unsigned int uniformBlockIndex = 0;
+             uniformBlockIndex < program->getActiveUniformBlockCount(); uniformBlockIndex++)
+        {
+            GLuint blockBinding = program->getUniformBlockBinding(uniformBlockIndex);
+            cap(CaptureUniformBlockBinding(replayState, true, id, uniformBlockIndex, blockBinding));
+        }
 
         resourceTracker->onShaderProgramAccess(id);
     }
@@ -3802,8 +3825,8 @@ void FrameCapture::captureCompressedTextureData(const gl::Context *context, cons
     // Record the data, indexed by textureID and level
     GLint level = call.params.getParam("level", ParamType::TGLint, 1).value.GLintVal;
     std::vector<uint8_t> &levelData =
-        context->getShareGroup()->getFrameCaptureShared()->getTextureLevelCacheLocation(
-            texture, targetPacked, level);
+        context->getShareGroup()->getFrameCaptureShared()->getCachedTextureLevelData(
+            texture, targetPacked, level, call.entryPoint);
 
     // Unpack the various pixel rectangle parameters.
     ASSERT(widthParamOffset != -1);
@@ -3848,20 +3871,30 @@ void FrameCapture::captureCompressedTextureData(const gl::Context *context, cons
     const gl::Extents &levelExtents = texture->getExtents(targetPacked, level);
 
     // Scale down the width/height pixel offsets to reflect block size
-    int widthScale  = static_cast<int>(format.compressedBlockWidth);
-    int heightScale = static_cast<int>(format.compressedBlockHeight);
+    int blockWidth  = static_cast<int>(format.compressedBlockWidth);
+    int blockHeight = static_cast<int>(format.compressedBlockHeight);
     ASSERT(format.compressedBlockDepth == 1);
-    pixelWidth /= widthScale;
-    pixelHeight /= heightScale;
-    xoffset /= widthScale;
-    yoffset /= heightScale;
+
+    // Round the incoming width and height up to align with block size
+    pixelWidth  = rx::roundUp(pixelWidth, blockWidth);
+    pixelHeight = rx::roundUp(pixelHeight, blockHeight);
+
+    // Scale the width, height, and offsets
+    pixelWidth /= blockWidth;
+    pixelHeight /= blockHeight;
+    xoffset /= blockWidth;
+    yoffset /= blockHeight;
 
     GLint pixelBytes = static_cast<GLint>(format.pixelBytes);
 
+    // Also round the texture's width and height up to reflect block size
+    int levelWidth  = rx::roundUp(levelExtents.width, blockWidth);
+    int levelHeight = rx::roundUp(levelExtents.height, blockHeight);
+
     GLint pixelRowPitch   = pixelWidth * pixelBytes;
     GLint pixelDepthPitch = pixelRowPitch * pixelHeight;
-    GLint levelRowPitch   = (levelExtents.width / widthScale) * pixelBytes;
-    GLint levelDepthPitch = levelRowPitch * (levelExtents.height / heightScale);
+    GLint levelRowPitch   = (levelWidth / blockWidth) * pixelBytes;
+    GLint levelDepthPitch = (levelHeight / blockHeight) * levelRowPitch;
 
     for (GLint zindex = 0; zindex < pixelDepth; ++zindex)
     {
@@ -3871,6 +3904,7 @@ void FrameCapture::captureCompressedTextureData(const gl::Context *context, cons
             GLint y           = yindex + yoffset;
             GLint pixelOffset = zindex * pixelDepthPitch + yindex * pixelRowPitch;
             GLint levelOffset = z * levelDepthPitch + y * levelRowPitch + xoffset * pixelBytes;
+            ASSERT(static_cast<size_t>(levelOffset + pixelRowPitch) <= levelData.size());
             memcpy(&levelData[levelOffset], &pixelData[pixelOffset], pixelRowPitch);
         }
     }
@@ -4407,10 +4441,10 @@ void FrameCapture::onEndFrame(const gl::Context *context)
         if (mFrameIndex == mCaptureEndFrame)
         {
             // Save the index files after the last frame.
-            WriteCppReplayIndexFiles(mCompression, mOutDirectory, context->id(), mCaptureLabel,
+            WriteCppReplayIndexFiles(mCompression, mOutDirectory, context, mCaptureLabel,
                                      getFrameCount(), mDrawSurfaceDimensions, mReadBufferSize,
                                      mClientArraySizes, mHasResourceType, mSerializeStateEnabled,
-                                     false, context->getConfig(), mBinaryData);
+                                     false, mBinaryData);
             if (!mBinaryData.empty())
             {
                 SaveBinaryData(mCompression, mOutDirectory, context->id(), mCaptureLabel,
@@ -4458,10 +4492,10 @@ void FrameCapture::onDestroyContext(const gl::Context *context)
         // It doesnt make sense to write the index files when no frame has been recorded
         mFrameIndex -= 1;
         mCaptureEndFrame = mFrameIndex;
-        WriteCppReplayIndexFiles(mCompression, mOutDirectory, context->id(), mCaptureLabel,
+        WriteCppReplayIndexFiles(mCompression, mOutDirectory, context, mCaptureLabel,
                                  getFrameCount(), mDrawSurfaceDimensions, mReadBufferSize,
                                  mClientArraySizes, mHasResourceType, mSerializeStateEnabled, true,
-                                 context->getConfig(), mBinaryData);
+                                 mBinaryData);
         if (!mBinaryData.empty())
         {
             SaveBinaryData(mCompression, mOutDirectory, context->id(), mCaptureLabel, mBinaryData);
@@ -4691,17 +4725,28 @@ const std::vector<uint8_t> &FrameCaptureShared::retrieveCachedTextureLevel(gl::T
     return capturedTextureLevel;
 }
 
-std::vector<uint8_t> &FrameCaptureShared::getTextureLevelCacheLocation(gl::Texture *texture,
-                                                                       gl::TextureTarget target,
-                                                                       GLint level)
+std::vector<uint8_t> &FrameCaptureShared::getCachedTextureLevelData(gl::Texture *texture,
+                                                                    gl::TextureTarget target,
+                                                                    GLint level,
+                                                                    EntryPoint entryPoint)
 {
     auto foundTextureLevels = mCachedTextureLevelData.find(texture->id());
-    if (foundTextureLevels == mCachedTextureLevelData.end())
+    if (foundTextureLevels == mCachedTextureLevelData.end() ||
+        entryPoint == EntryPoint::GLCompressedTexImage2D ||
+        entryPoint == EntryPoint::GLCompressedTexImage3D)
     {
-        // If we haven't cached this texture, initialize the texture ID data.
+        // Delete the cached entry (if it exists) in case the caller is respecifying the texture.
+        mCachedTextureLevelData.erase(texture->id());
+
+        // Initialize the texture ID data.
         auto emplaceResult = mCachedTextureLevelData.emplace(texture->id(), TextureLevels());
         ASSERT(emplaceResult.second);
         foundTextureLevels = emplaceResult.first;
+    }
+    else
+    {
+        ASSERT(entryPoint == EntryPoint::GLCompressedTexSubImage2D ||
+               entryPoint == EntryPoint::GLCompressedTexSubImage3D);
     }
 
     TextureLevels &foundLevels         = foundTextureLevels->second;

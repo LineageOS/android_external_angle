@@ -289,6 +289,10 @@ template("angle_shared_library") {
     }
     if (is_ios) {
       info_plist = "$angle_root/util/ios/Info.plist"
+
+      # shared libraries are hidden inside ios_framework_bundle, but we include headers from them
+      # Specifically, libGLESv1_CM includes headers from libGLESv2
+      check_includes = false
     }
   }
   if (is_ios) {
@@ -356,6 +360,11 @@ if (angle_standalone || build_with_chromium) {
       configs += invoker.configs
       configs -= invoker.suppressed_configs
 
+      if (is_ios) {
+        # shared libraries are hidden inside ios_framework_bundle, but we include headers from them
+        check_includes = false
+      }
+
       public_deps = invoker.public_deps + [
                       "$angle_root:angle_common",
                       "$angle_root:includes",
@@ -391,7 +400,7 @@ if (angle_standalone || build_with_chromium) {
       if (is_mac && angle_enable_metal) {
         # On macOS, compiling Metal shader sometimes takes very long time due to internal caching
         # mechanism. This hooking library is a way to bypass this caching mechanism.
-        deps += [ "$angle_root/src/libANGLE/renderer/metal/file_hooking:metal_shader_cache_file_hooking" ]
+        data_deps += [ "$angle_root/src/libANGLE/renderer/metal/file_hooking:metal_shader_cache_file_hooking" ]
       }
 
       if ((is_linux && !is_chromeos) ||

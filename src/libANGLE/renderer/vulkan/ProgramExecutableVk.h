@@ -67,6 +67,7 @@ class ProgramInfo final : angle::NonCopyable
 
     angle::Result initProgram(ContextVk *contextVk,
                               const gl::ShaderType shaderType,
+                              bool isLastPreFragmentStage,
                               const ShaderInfo &shaderInfo,
                               ProgramTransformOptions optionBits,
                               const ShaderInterfaceVariableInfoMap &variableInfoMap);
@@ -199,10 +200,8 @@ class ProgramExecutableVk
         const gl::ShaderType shaderType,
         vk::DescriptorSetLayoutDesc *descOut);
     void addImageDescriptorSetDesc(const gl::ProgramExecutable &executable,
-                                   bool useOldRewriteStructSamplers,
                                    vk::DescriptorSetLayoutDesc *descOut);
     void addTextureDescriptorSetDesc(const gl::ProgramState &programState,
-                                     bool useOldRewriteStructSamplers,
                                      const gl::ActiveTextureArray<vk::TextureUnit> *activeTextures,
                                      vk::DescriptorSetLayoutDesc *descOut);
 
