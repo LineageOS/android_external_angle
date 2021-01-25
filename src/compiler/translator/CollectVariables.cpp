@@ -101,7 +101,7 @@ ShaderVariable *FindShaderIOBlockVariable(const ImmutableString &blockName,
 {
     for (size_t index = 0; index < infoList->size(); ++index)
     {
-        if (blockName == (*infoList)[index].structName)
+        if (blockName == (*infoList)[index].structOrBlockName)
             return &(*infoList)[index];
     }
 
@@ -124,7 +124,9 @@ class CollectVariablesTraverser : public TIntermTraverser
                               ShHashFunction64 hashFunction,
                               TSymbolTable *symbolTable,
                               GLenum shaderType,
-                              const TExtensionBehavior &extensionBehavior);
+                              const TExtensionBehavior &extensionBehavior,
+                              const ShBuiltInResources &resources,
+                              int tessControlShaderOutputVertices);
 
     bool visitGlobalQualifierDeclaration(Visit visit,
                                          TIntermGlobalQualifierDeclaration *node) override;
@@ -138,11 +140,13 @@ class CollectVariablesTraverser : public TIntermTraverser
     void setFieldOrVariableProperties(const TType &type,
                                       bool staticUse,
                                       bool isShaderIOBlock,
+                                      bool isPatch,
                                       ShaderVariable *variableOut) const;
     void setFieldProperties(const TType &type,
                             const ImmutableString &name,
                             bool staticUse,
                             bool isShaderIOBlock,
+                            bool isPatch,
                             ShaderVariable *variableOut) const;
     void setCommonVariableProperties(const TType &type,
                                      const TVariable &variable,
@@ -198,6 +202,7 @@ class CollectVariablesTraverser : public TIntermTraverser
     // Vertex Shader and Geometry Shader builtins
     bool mPositionAdded;
     bool mClipDistanceAdded;
+    bool mCullDistanceAdded;
 
     // Fragment Shader builtins
     bool mPointCoordAdded;
@@ -216,8 +221,11 @@ class CollectVariablesTraverser : public TIntermTraverser
     bool mSampleMaskAdded;
     bool mSampleMaskInAdded;
 
-    // Geometry Shader builtins
+    // Geometry and Tessellation Shader builtins
     bool mPerVertexInAdded;
+    bool mPerVertexOutAdded;
+
+    // Geometry Shader builtins
     bool mPrimitiveIDInAdded;
     bool mInvocationIDAdded;
 
@@ -228,10 +236,18 @@ class CollectVariablesTraverser : public TIntermTraverser
     // Shared memory variables
     bool mSharedVariableAdded;
 
+    // Tessellation Shader builtins
+    bool mPatchVerticesInAdded;
+    bool mTessLevelOuterAdded;
+    bool mTessLevelInnerAdded;
+    bool mTessCoordAdded;
+    const int mTessControlShaderOutputVertices;
+
     ShHashFunction64 mHashFunction;
 
     GLenum mShaderType;
     const TExtensionBehavior &mExtensionBehavior;
+    const ShBuiltInResources &mResources;
 };
 
 CollectVariablesTraverser::CollectVariablesTraverser(
@@ -246,7 +262,9 @@ CollectVariablesTraverser::CollectVariablesTraverser(
     ShHashFunction64 hashFunction,
     TSymbolTable *symbolTable,
     GLenum shaderType,
-    const TExtensionBehavior &extensionBehavior)
+    const TExtensionBehavior &extensionBehavior,
+    const ShBuiltInResources &resources,
+    int tessControlShaderOutputVertices)
     : TIntermTraverser(true, false, false, symbolTable),
       mAttribs(attribs),
       mOutputVariables(outputVariables),
@@ -271,6 +289,7 @@ CollectVariablesTraverser::CollectVariablesTraverser(
       mBaseInstanceAdded(false),
       mPositionAdded(false),
       mClipDistanceAdded(false),
+      mCullDistanceAdded(false),
       mPointCoordAdded(false),
       mFrontFacingAdded(false),
       mHelperInvocationAdded(false),
@@ -287,14 +306,21 @@ CollectVariablesTraverser::CollectVariablesTraverser(
       mSampleMaskAdded(false),
       mSampleMaskInAdded(false),
       mPerVertexInAdded(false),
+      mPerVertexOutAdded(false),
       mPrimitiveIDInAdded(false),
       mInvocationIDAdded(false),
       mPrimitiveIDAdded(false),
       mLayerAdded(false),
       mSharedVariableAdded(false),
+      mPatchVerticesInAdded(false),
+      mTessLevelOuterAdded(false),
+      mTessLevelInnerAdded(false),
+      mTessCoordAdded(false),
+      mTessControlShaderOutputVertices(tessControlShaderOutputVertices),
       mHashFunction(hashFunction),
       mShaderType(shaderType),
-      mExtensionBehavior(extensionBehavior)
+      mExtensionBehavior(extensionBehavior),
+      mResources(resources)
 {}
 
 std::string CollectVariablesTraverser::getMappedName(const TSymbol *symbol) const
@@ -312,8 +338,10 @@ void CollectVariablesTraverser::setBuiltInInfoFromSymbol(const TVariable &variab
 
     bool isShaderIOBlock =
         IsShaderIoBlock(type.getQualifier()) && type.getInterfaceBlock() != nullptr;
+    bool isPatch =
+        type.getQualifier() == EvqTessLevelInner || type.getQualifier() == EvqTessLevelOuter;
 
-    setFieldOrVariableProperties(type, true, isShaderIOBlock, info);
+    setFieldOrVariableProperties(type, true, isShaderIOBlock, isPatch, info);
 }
 
 void CollectVariablesTraverser::recordBuiltInVaryingUsed(const TVariable &variable,
@@ -616,7 +644,9 @@ void CollectVariablesTraverser::visitSymbol(TIntermSymbol *symbol)
                 }
                 else
                 {
-                    ASSERT(mShaderType == GL_FRAGMENT_SHADER);
+                    ASSERT(mShaderType == GL_FRAGMENT_SHADER ||
+                           mShaderType == GL_TESS_CONTROL_SHADER ||
+                           mShaderType == GL_TESS_EVALUATION_SHADER);
                     recordBuiltInVaryingUsed(symbol->variable(), &mPrimitiveIDAdded,
                                              mInputVaryings);
                 }
@@ -659,6 +689,42 @@ void CollectVariablesTraverser::visitSymbol(TIntermSymbol *symbol)
             case EvqSampleMask:
                 recordBuiltInFragmentOutputUsed(symbol->variable(), &mSampleMaskAdded);
                 return;
+            case EvqCullDistance:
+                recordBuiltInVaryingUsed(symbol->variable(), &mCullDistanceAdded, mOutputVaryings);
+                return;
+            case EvqPatchVerticesIn:
+                recordBuiltInVaryingUsed(symbol->variable(), &mPatchVerticesInAdded,
+                                         mInputVaryings);
+                break;
+            case EvqTessCoord:
+                recordBuiltInVaryingUsed(symbol->variable(), &mTessCoordAdded, mInputVaryings);
+                break;
+            case EvqTessLevelOuter:
+                if (mShaderType == GL_TESS_CONTROL_SHADER)
+                {
+                    recordBuiltInVaryingUsed(symbol->variable(), &mTessLevelOuterAdded,
+                                             mOutputVaryings);
+                }
+                else
+                {
+                    ASSERT(mShaderType == GL_TESS_EVALUATION_SHADER);
+                    recordBuiltInVaryingUsed(symbol->variable(), &mTessLevelOuterAdded,
+                                             mInputVaryings);
+                }
+                break;
+            case EvqTessLevelInner:
+                if (mShaderType == GL_TESS_CONTROL_SHADER)
+                {
+                    recordBuiltInVaryingUsed(symbol->variable(), &mTessLevelInnerAdded,
+                                             mOutputVaryings);
+                }
+                else
+                {
+                    ASSERT(mShaderType == GL_TESS_EVALUATION_SHADER);
+                    recordBuiltInVaryingUsed(symbol->variable(), &mTessLevelInnerAdded,
+                                             mInputVaryings);
+                }
+                break;
             default:
                 break;
         }
@@ -672,12 +738,14 @@ void CollectVariablesTraverser::visitSymbol(TIntermSymbol *symbol)
 void CollectVariablesTraverser::setFieldOrVariableProperties(const TType &type,
                                                              bool staticUse,
                                                              bool isShaderIOBlock,
+                                                             bool isPatch,
                                                              ShaderVariable *variableOut) const
 {
     ASSERT(variableOut);
 
     variableOut->staticUse       = staticUse;
     variableOut->isShaderIOBlock = isShaderIOBlock;
+    variableOut->isPatch         = isPatch;
 
     const TStructure *structure           = type.getStruct();
     const TInterfaceBlock *interfaceBlock = type.getInterfaceBlock();
@@ -687,7 +755,7 @@ void CollectVariablesTraverser::setFieldOrVariableProperties(const TType &type,
         variableOut->type = GL_NONE;
         if (structure->symbolType() != SymbolType::Empty)
         {
-            variableOut->structName = structure->name().data();
+            variableOut->structOrBlockName = structure->name().data();
         }
 
         const TFieldList &fields = structure->fields();
@@ -697,7 +765,7 @@ void CollectVariablesTraverser::setFieldOrVariableProperties(const TType &type,
             // Regardless of the variable type (uniform, in/out etc.) its fields are always plain
             // ShaderVariable objects.
             ShaderVariable fieldVariable;
-            setFieldProperties(*field->type(), field->name(), staticUse, isShaderIOBlock,
+            setFieldProperties(*field->type(), field->name(), staticUse, isShaderIOBlock, isPatch,
                                &fieldVariable);
             variableOut->fields.push_back(fieldVariable);
         }
@@ -707,15 +775,16 @@ void CollectVariablesTraverser::setFieldOrVariableProperties(const TType &type,
         variableOut->type = GL_NONE;
         if (interfaceBlock->symbolType() != SymbolType::Empty)
         {
-            variableOut->structName = interfaceBlock->name().data();
-            variableOut->mappedStructName =
+            variableOut->structOrBlockName = interfaceBlock->name().data();
+            variableOut->mappedStructOrBlockName =
                 HashName(interfaceBlock->name(), mHashFunction, nullptr).data();
         }
         const TFieldList &fields = interfaceBlock->fields();
         for (const TField *field : fields)
         {
             ShaderVariable fieldVariable;
-            setFieldProperties(*field->type(), field->name(), staticUse, true, &fieldVariable);
+            setFieldProperties(*field->type(), field->name(), staticUse, true, isPatch,
+                               &fieldVariable);
             fieldVariable.isShaderIOBlock = true;
             variableOut->fields.push_back(fieldVariable);
         }
@@ -730,6 +799,27 @@ void CollectVariablesTraverser::setFieldOrVariableProperties(const TType &type,
     if (!arraySizes.empty())
     {
         variableOut->arraySizes.assign(arraySizes.begin(), arraySizes.end());
+
+        if (arraySizes[0] == 0)
+        {
+            // Tessellation Control & Evaluation shader inputs:
+            // Declaring an array size is optional. If no size is specified, it will be taken from
+            // the implementation-dependent maximum patch size (gl_MaxPatchVertices).
+            if (type.getQualifier() == EvqTessControlIn ||
+                type.getQualifier() == EvqTessEvaluationIn)
+            {
+                variableOut->arraySizes[0] = mResources.MaxPatchVertices;
+            }
+
+            // Tessellation Control shader outputs:
+            // Declaring an array size is optional. If no size is specified, it will be taken from
+            // output patch size declared in the shader.
+            if (type.getQualifier() == EvqTessControlOut)
+            {
+                ASSERT(mTessControlShaderOutputVertices > 0);
+                variableOut->arraySizes[0] = mTessControlShaderOutputVertices;
+            }
+        }
     }
 }
 
@@ -737,10 +827,11 @@ void CollectVariablesTraverser::setFieldProperties(const TType &type,
                                                    const ImmutableString &name,
                                                    bool staticUse,
                                                    bool isShaderIOBlock,
+                                                   bool isPatch,
                                                    ShaderVariable *variableOut) const
 {
     ASSERT(variableOut);
-    setFieldOrVariableProperties(type, staticUse, isShaderIOBlock, variableOut);
+    setFieldOrVariableProperties(type, staticUse, isShaderIOBlock, isPatch, variableOut);
     variableOut->name.assign(name.data(), name.length());
     variableOut->mappedName = HashName(name, mHashFunction, nullptr).data();
 }
@@ -750,12 +841,14 @@ void CollectVariablesTraverser::setCommonVariableProperties(const TType &type,
                                                             ShaderVariable *variableOut) const
 {
     ASSERT(variableOut);
+    ASSERT(type.getInterfaceBlock() == nullptr || IsShaderIoBlock(type.getQualifier()) ||
+           type.getQualifier() == EvqPatchIn || type.getQualifier() == EvqPatchOut);
 
-    const bool staticUse = mSymbolTable->isStaticallyUsed(variable);
-    const bool isShaderIOBlock =
-        IsShaderIoBlock(type.getQualifier()) && type.getInterfaceBlock() != nullptr;
+    const bool staticUse       = mSymbolTable->isStaticallyUsed(variable);
+    const bool isShaderIOBlock = type.getInterfaceBlock() != nullptr;
+    const bool isPatch = type.getQualifier() == EvqPatchIn || type.getQualifier() == EvqPatchOut;
 
-    setFieldOrVariableProperties(type, staticUse, isShaderIOBlock, variableOut);
+    setFieldOrVariableProperties(type, staticUse, isShaderIOBlock, isPatch, variableOut);
 
     const bool isNamed = variable.symbolType() != SymbolType::Empty;
 
@@ -766,16 +859,16 @@ void CollectVariablesTraverser::setCommonVariableProperties(const TType &type,
         variableOut->mappedName = getMappedName(&variable);
     }
 
-    // For I/O blocks, additionally store the name of the block as structName.  If the variable is
+    // For I/O blocks, additionally store the name of the block as blockName.  If the variable is
     // unnamed, this name will be used instead for the purpose of interface matching.
     if (isShaderIOBlock)
     {
         const TInterfaceBlock *interfaceBlock = type.getInterfaceBlock();
         ASSERT(interfaceBlock);
 
-        variableOut->structName.assign(interfaceBlock->name().data(),
-                                       interfaceBlock->name().length());
-        variableOut->mappedStructName =
+        variableOut->structOrBlockName.assign(interfaceBlock->name().data(),
+                                              interfaceBlock->name().length());
+        variableOut->mappedStructOrBlockName =
             HashName(interfaceBlock->name(), mHashFunction, nullptr).data();
         variableOut->isShaderIOBlock = true;
     }
@@ -831,6 +924,10 @@ ShaderVariable CollectVariablesTraverser::recordVarying(const TIntermSymbol &var
                 varying.isInvariant = true;
             }
             break;
+        case EvqPatchIn:
+        case EvqPatchOut:
+            varying.isPatch = true;
+            break;
         default:
             break;
     }
@@ -860,6 +957,7 @@ ShaderVariable CollectVariablesTraverser::recordVarying(const TIntermSymbol &var
             const TType &fieldType        = *blockField->type();
 
             fieldVariable.hasImplicitLocation = isBlockImplicitLocation;
+            fieldVariable.isPatch             = varying.isPatch;
 
             int fieldLocation = fieldType.getLayoutQualifier().location;
             if (fieldLocation >= 0)
@@ -952,7 +1050,7 @@ void CollectVariablesTraverser::recordInterfaceBlock(const char *instanceName,
         }
 
         ShaderVariable fieldVariable;
-        setFieldProperties(fieldType, field->name(), staticUse, false, &fieldVariable);
+        setFieldProperties(fieldType, field->name(), staticUse, false, false, &fieldVariable);
         fieldVariable.isRowMajorLayout =
             (fieldType.getLayoutQualifier().matrixPacking == EmpRowMajor);
         interfaceBlock->fields.push_back(fieldVariable);
@@ -1011,7 +1109,8 @@ bool CollectVariablesTraverser::visitDeclaration(Visit, TIntermDeclaration *node
         // (named or unnamed) structure as ShaderVariable. at link between two shaders, validation
         // between of named and unnamed, needs the same structure, its members, and members order
         // except instance name.
-        if (typedNode.getBasicType() == EbtInterfaceBlock && !IsShaderIoBlock(qualifier))
+        if (typedNode.getBasicType() == EbtInterfaceBlock && !IsShaderIoBlock(qualifier) &&
+            qualifier != EvqPatchIn && qualifier != EvqPatchOut)
         {
             InterfaceBlock interfaceBlock;
             bool isUnnamed    = variable.variable().symbolType() == SymbolType::Empty;
@@ -1036,7 +1135,8 @@ bool CollectVariablesTraverser::visitDeclaration(Visit, TIntermDeclaration *node
         else
         {
             ASSERT(variable.variable().symbolType() != SymbolType::Empty ||
-                   IsShaderIoBlock(qualifier));
+                   IsShaderIoBlock(qualifier) || qualifier == EvqPatchIn ||
+                   qualifier == EvqPatchOut);
             switch (qualifier)
             {
                 case EvqAttribute:
@@ -1120,6 +1220,13 @@ bool CollectVariablesTraverser::visitBinary(Visit, TIntermBinary *binaryNode)
         {
             ioBlockVar = FindShaderIOBlockVariable(interfaceBlock->name(), mInputVaryings);
         }
+        else if (qualifier == EvqPerVertexOut)
+        {
+            TIntermSymbol *symbolNode = blockNode->getAsSymbolNode();
+            ASSERT(symbolNode);
+            recordBuiltInVaryingUsed(symbolNode->variable(), &mPerVertexOutAdded, mOutputVaryings);
+            ioBlockVar = FindShaderIOBlockVariable(interfaceBlock->name(), mOutputVaryings);
+        }
         else if (IsVaryingOut(qualifier))
         {
             ioBlockVar = FindShaderIOBlockVariable(interfaceBlock->name(), mOutputVaryings);
@@ -1172,12 +1279,14 @@ void CollectVariables(TIntermBlock *root,
                       ShHashFunction64 hashFunction,
                       TSymbolTable *symbolTable,
                       GLenum shaderType,
-                      const TExtensionBehavior &extensionBehavior)
+                      const TExtensionBehavior &extensionBehavior,
+                      const ShBuiltInResources &resources,
+                      int tessControlShaderOutputVertices)
 {
-    CollectVariablesTraverser collect(attributes, outputVariables, uniforms, inputVaryings,
-                                      outputVaryings, sharedVariables, uniformBlocks,
-                                      shaderStorageBlocks, hashFunction, symbolTable, shaderType,
-                                      extensionBehavior);
+    CollectVariablesTraverser collect(
+        attributes, outputVariables, uniforms, inputVaryings, outputVaryings, sharedVariables,
+        uniformBlocks, shaderStorageBlocks, hashFunction, symbolTable, shaderType,
+        extensionBehavior, resources, tessControlShaderOutputVertices);
     root->traverse(&collect);
 }
 

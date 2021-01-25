@@ -358,6 +358,7 @@ State::State(const State *shareContextState,
       mProgramBinaryCacheEnabled(programBinaryCacheEnabled),
       mTextureRectangleEnabled(true),
       mMaxShaderCompilerThreads(std::numeric_limits<GLuint>::max()),
+      mPatchVertices(3),
       mOverlay(overlay),
       mNoSimultaneousConstantColorAndAlphaBlendFunc(false)
 {}
@@ -1688,6 +1689,11 @@ Framebuffer *State::getTargetFramebuffer(GLenum target) const
     }
 }
 
+Framebuffer *State::getDefaultFramebuffer() const
+{
+    return mFramebufferManager->getDefaultFramebuffer();
+}
+
 bool State::removeReadFramebufferBinding(FramebufferID framebuffer)
 {
     if (mReadFramebuffer != nullptr && mReadFramebuffer->id() == framebuffer)
@@ -2203,6 +2209,15 @@ void State::setMaxShaderCompilerThreads(GLuint count)
     mMaxShaderCompilerThreads = count;
 }
 
+void State::setPatchVertices(GLuint value)
+{
+    if (mPatchVertices != value)
+    {
+        mPatchVertices = value;
+        mDirtyBits.set(DIRTY_BIT_PATCH_VERTICES);
+    }
+}
+
 void State::getBooleanv(GLenum pname, GLboolean *params) const
 {
     switch (pname)
@@ -2302,6 +2317,9 @@ void State::getBooleanv(GLenum pname, GLboolean *params) const
             break;
         case GL_SAMPLE_SHADING:
             *params = mIsSampleShadingEnabled;
+            break;
+        case GL_PRIMITIVE_RESTART_FOR_PATCHES_SUPPORTED:
+            *params = isPrimitiveRestartEnabled() && getExtensions().tessellationShaderEXT;
             break;
         default:
             UNREACHABLE();
@@ -2881,6 +2899,9 @@ angle::Result State::getIntegerv(const Context *context, GLenum pname, GLint *pa
             }
             break;
         }
+        case GL_PATCH_VERTICES:
+            *params = mPatchVertices;
+            break;
 
         default:
             UNREACHABLE();

@@ -259,20 +259,28 @@ class ProgramLinkedResourcesLinker final : angle::NonCopyable
 bool LinkValidateProgramGlobalNames(InfoLog &infoLog, const HasAttachedShaders &programOrPipeline);
 bool LinkValidateShaderInterfaceMatching(const std::vector<sh::ShaderVariable> &outputVaryings,
                                          const std::vector<sh::ShaderVariable> &inputVaryings,
-                                         ShaderType outputShaderType,
-                                         ShaderType inputShaderType,
-                                         int outputShaderVersion,
-                                         int inputShaderVersion,
+                                         ShaderType frontShaderType,
+                                         ShaderType backShaderType,
+                                         int frontShaderVersion,
+                                         int backShaderVersion,
                                          bool isSeparable,
                                          InfoLog &infoLog);
-bool LinkValidateBuiltInVaryings(const std::vector<sh::ShaderVariable> &vertexVaryings,
-                                 const std::vector<sh::ShaderVariable> &fragmentVaryings,
-                                 int vertexShaderVersion,
+bool LinkValidateBuiltInVaryingsInvariant(const std::vector<sh::ShaderVariable> &vertexVaryings,
+                                          const std::vector<sh::ShaderVariable> &fragmentVaryings,
+                                          int vertexShaderVersion,
+                                          InfoLog &infoLog);
+bool LinkValidateBuiltInVaryings(const std::vector<sh::ShaderVariable> &inputVaryings,
+                                 const std::vector<sh::ShaderVariable> &outputVaryings,
+                                 ShaderType inputShaderType,
+                                 ShaderType outputShaderType,
+                                 int inputShaderVersion,
+                                 int outputShaderVersion,
                                  InfoLog &infoLog);
 LinkMismatchError LinkValidateProgramVariables(const sh::ShaderVariable &variable1,
                                                const sh::ShaderVariable &variable2,
                                                bool validatePrecision,
-                                               bool validateArraySize,
+                                               bool treatVariable1AsNonArray,
+                                               bool treatVariable2AsNonArray,
                                                std::string *mismatchedStructOrBlockMemberName);
 void AddProgramVariableParentPrefix(const std::string &parentName,
                                     std::string *mismatchedFieldName);
