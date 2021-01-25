@@ -66,6 +66,14 @@ VendorID GetVendorID(const FunctionsGL *functions)
     {
         return VENDOR_ID_INTEL;
     }
+    else if (nativeVendorString.find("Imagination") != std::string::npos)
+    {
+        return VENDOR_ID_POWERVR;
+    }
+    else if (nativeVendorString.find("Vivante") != std::string::npos)
+    {
+        return VENDOR_ID_VIVANTE;
+    }
     else
     {
         return VENDOR_ID_UNKNOWN;
@@ -1620,7 +1628,7 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
 
     angle::SystemInfo systemInfo;
     bool isGetSystemInfoSuccess = angle::GetSystemInfo(&systemInfo);
-    if (isGetSystemInfoSuccess)
+    if (isGetSystemInfoSuccess && !systemInfo.gpus.empty())
     {
         vendor = systemInfo.gpus[systemInfo.activeGPUIndex].vendorId;
         device = systemInfo.gpus[systemInfo.activeGPUIndex].deviceId;
@@ -1815,9 +1823,6 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
                             // IsApple() && functions->standard == STANDARD_GL_DESKTOP);
                             // TODO(anglebug.com/2273): diagnose crashes with this workaround.
                             false);
-
-    // Workaround for incorrect sampling from DXT1 sRGB textures in Intel OpenGL on Windows.
-    ANGLE_FEATURE_CONDITION(features, avoidDXT1sRGBTextureFormat, IsWindows() && isIntel);
 
     ANGLE_FEATURE_CONDITION(features, disableDrawBuffersIndexed, IsWindows() && isAMD);
 

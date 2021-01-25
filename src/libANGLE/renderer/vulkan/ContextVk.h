@@ -421,8 +421,6 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
 
     bool emulateSeamfulCubeMapSampling() const { return mEmulateSeamfulCubeMapSampling; }
 
-    bool useOldRewriteStructSamplers() const { return mUseOldRewriteStructSamplers; }
-
     const gl::Debug &getDebug() const { return mState.getDebug(); }
     const gl::OverlayType *getOverlay() const { return mState.getOverlay(); }
 
@@ -570,7 +568,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     const vk::PerfCounters &getPerfCounters() const { return mPerfCounters; }
     vk::PerfCounters &getPerfCounters() { return mPerfCounters; }
 
-    void onSyncHelperInitialize() { mSyncObjectPendingFlush = true; }
+    void onSyncHelperInitialize() { getShareGroupVk()->setSyncObjectPendingFlush(); }
     void onEGLSyncHelperInitialize() { mEGLSyncObjectPendingFlush = true; }
 
     // Implementation of MultisampleTextureInitializer
@@ -832,7 +830,6 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     void flushGpuEvents(double nextSyncGpuTimestampS, double nextSyncCpuTimestampS);
     void handleDeviceLost();
     bool shouldEmulateSeamfulCubeMapSampling() const;
-    bool shouldUseOldRewriteStructSamplers() const;
     void clearAllGarbage();
     bool hasRecordedCommands();
     void dumpCommandStreamDiagnostics();
@@ -952,10 +949,6 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     // Whether this context should do seamful cube map sampling emulation.
     bool mEmulateSeamfulCubeMapSampling;
 
-    // Whether this context should use the old version of the
-    // RewriteStructSamplers pass.
-    bool mUseOldRewriteStructSamplers;
-
     angle::PackedEnumMap<PipelineType, DriverUniformsDescriptorSet> mDriverUniforms;
 
     // This cache should also probably include the texture index (shader location) and array
@@ -998,7 +991,6 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
 
     // Track SyncHelper object been added into secondary command buffer that has not been flushed to
     // vulkan.
-    bool mSyncObjectPendingFlush;
     bool mEGLSyncObjectPendingFlush;
     bool mHasDeferredFlush;
 

@@ -1240,23 +1240,6 @@ bool ValidationState_t::ContainsLimitedUseIntOrFloatType(uint32_t id) const {
 
 bool ValidationState_t::IsValidStorageClass(
     SpvStorageClass storage_class) const {
-  if (spvIsWebGPUEnv(context()->target_env)) {
-    switch (storage_class) {
-      case SpvStorageClassUniformConstant:
-      case SpvStorageClassUniform:
-      case SpvStorageClassStorageBuffer:
-      case SpvStorageClassInput:
-      case SpvStorageClassOutput:
-      case SpvStorageClassImage:
-      case SpvStorageClassWorkgroup:
-      case SpvStorageClassPrivate:
-      case SpvStorageClassFunction:
-        return true;
-      default:
-        return false;
-    }
-  }
-
   if (spvIsVulkanEnv(context()->target_env)) {
     switch (storage_class) {
       case SpvStorageClassUniformConstant:
@@ -1357,12 +1340,36 @@ std::string ValidationState_t::VkErrorID(uint32_t id,
       return VUID_WRAP(VUID-FragDepth-FragDepth-04215);
     case 4216:
       return VUID_WRAP(VUID-FragDepth-FragDepth-04216);
+    case 4217:
+      return VUID_WRAP(VUID-FragInvocationCountEXT-FragInvocationCountEXT-04217);
+    case 4218:
+      return VUID_WRAP(VUID-FragInvocationCountEXT-FragInvocationCountEXT-04218);
+    case 4219:
+      return VUID_WRAP(VUID-FragInvocationCountEXT-FragInvocationCountEXT-04219);
+    case 4220:
+      return VUID_WRAP(VUID-FragSizeEXT-FragSizeEXT-04220);
+    case 4221:
+      return VUID_WRAP(VUID-FragSizeEXT-FragSizeEXT-04221);
+    case 4222:
+      return VUID_WRAP(VUID-FragSizeEXT-FragSizeEXT-04222);
+    case 4223:
+      return VUID_WRAP(VUID-FragStencilRefEXT-FragStencilRefEXT-04223);
+    case 4224:
+      return VUID_WRAP(VUID-FragStencilRefEXT-FragStencilRefEXT-04224);
+    case 4225:
+      return VUID_WRAP(VUID-FragStencilRefEXT-FragStencilRefEXT-04225);
     case 4229:
       return VUID_WRAP(VUID-FrontFacing-FrontFacing-04229);
     case 4230:
       return VUID_WRAP(VUID-FrontFacing-FrontFacing-04230);
     case 4231:
       return VUID_WRAP(VUID-FrontFacing-FrontFacing-04231);
+    case 4232:
+      return VUID_WRAP(VUID-FullyCoveredEXT-FullyCoveredEXT-04232);
+    case 4233:
+      return VUID_WRAP(VUID-FullyCoveredEXT-FullyCoveredEXT-04233);
+    case 4234:
+      return VUID_WRAP(VUID-FullyCoveredEXT-FullyCoveredEXT-04234);
     case 4236:
       return VUID_WRAP(VUID-GlobalInvocationId-GlobalInvocationId-04236);
     case 4237:
@@ -1667,6 +1674,14 @@ std::string ValidationState_t::VkErrorID(uint32_t id,
       return VUID_WRAP(VUID-ShadingRateKHR-ShadingRateKHR-04492);
     case 4633:
       return VUID_WRAP(VUID-StandaloneSpirv-None-04633);
+    case 4635:
+      return VUID_WRAP(VUID-StandaloneSpirv-None-04635);
+    case 4638:
+      return VUID_WRAP(VUID-StandaloneSpirv-None-04638);
+    case 4639:
+      return VUID_WRAP(VUID-StandaloneSpirv-None-04639);
+    case 4640:
+      return VUID_WRAP(VUID-StandaloneSpirv-None-04640);
     case 4642:
       return VUID_WRAP(VUID-StandaloneSpirv-None-04642);
     case 4649:
@@ -1691,6 +1706,8 @@ std::string ValidationState_t::VkErrorID(uint32_t id,
       return VUID_WRAP(VUID-StandaloneSpirv-FPRoundingMode-04675);
     case 4685:
       return VUID_WRAP(VUID-StandaloneSpirv-OpGroupNonUniformBallotBitCount-04685);
+    case 4686:
+      return VUID_WRAP(VUID-StandaloneSpirv-None-04686);
     case 4711:
       return VUID_WRAP(VUID-StandaloneSpirv-OpTypeForwardPointer-04711);
     default:

@@ -711,8 +711,8 @@ bool ValidCap(const Context *context, GLenum cap, bool queryOnly)
         case GL_CLIP_DISTANCE5_EXT:
         case GL_CLIP_DISTANCE6_EXT:
         case GL_CLIP_DISTANCE7_EXT:
-            if (context->getClientVersion() >= Version(2, 0) &&
-                context->getExtensions().clipDistanceAPPLE)
+            if (context->getExtensions().clipDistanceAPPLE ||
+                context->getExtensions().clipCullDistanceEXT)
             {
                 return true;
             }
@@ -3755,6 +3755,23 @@ bool ValidateCreateShader(const Context *context, ShaderType type)
                 return false;
             }
             break;
+
+        case ShaderType::TessControl:
+            if (!context->getExtensions().tessellationShaderEXT)
+            {
+                context->validationError(GL_INVALID_ENUM, kInvalidShaderType);
+                return false;
+            }
+            break;
+
+        case ShaderType::TessEvaluation:
+            if (!context->getExtensions().tessellationShaderEXT)
+            {
+                context->validationError(GL_INVALID_ENUM, kInvalidShaderType);
+                return false;
+            }
+            break;
+
         default:
             context->validationError(GL_INVALID_ENUM, kInvalidShaderType);
             return false;
@@ -6296,6 +6313,11 @@ bool ValidateFramebufferTexture2DMultisampleEXT(const Context *context,
         return false;
     }
 
+    if (!ValidateFramebufferTextureBase(context, target, attachment, texture, level))
+    {
+        return false;
+    }
+
     // EXT_multisampled_render_to_texture returns INVALID_OPERATION when a sample number higher than
     // the maximum sample number supported by this format is passed.
     // The TextureCaps::getMaxSamples method is only guarenteed to be valid when the context is ES3.
@@ -6309,11 +6331,6 @@ bool ValidateFramebufferTexture2DMultisampleEXT(const Context *context,
             context->validationError(GL_INVALID_OPERATION, kSamplesOutOfRange);
             return false;
         }
-    }
-
-    if (!ValidateFramebufferTextureBase(context, target, attachment, texture, level))
-    {
-        return false;
     }
 
     // Unless EXT_multisampled_render_to_texture2 is enabled, only color attachment 0 can be used.
