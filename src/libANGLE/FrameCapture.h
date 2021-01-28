@@ -349,6 +349,12 @@ class FrameCapture final : angle::NonCopyable
     void maybeOverrideEntryPoint(const gl::Context *context, CallCapture &call);
     void maybeCapturePreCallUpdates(const gl::Context *context, CallCapture &call);
     void maybeCapturePostCallUpdates(const gl::Context *context);
+    void maybeCaptureDrawArraysClientData(const gl::Context *context,
+                                          CallCapture &call,
+                                          size_t instanceCount);
+    void maybeCaptureDrawElementsClientData(const gl::Context *context,
+                                            CallCapture &call,
+                                            size_t instanceCount);
 
     static void ReplayCall(gl::Context *context,
                            ReplayContext *replayContext,
@@ -476,7 +482,7 @@ void CaptureGetParameter(const gl::State &glState,
 
 void CaptureGetActiveUniformBlockivParameters(const gl::State &glState,
                                               gl::ShaderProgramID handle,
-                                              GLuint uniformBlockIndex,
+                                              gl::UniformBlockIndex uniformBlockIndex,
                                               GLenum pname,
                                               ParamCapture *paramCapture);
 
@@ -588,6 +594,11 @@ template <>
 void WriteParamValueReplay<ParamType::TUniformLocation>(std::ostream &os,
                                                         const CallCapture &call,
                                                         gl::UniformLocation value);
+
+template <>
+void WriteParamValueReplay<ParamType::TUniformBlockIndex>(std::ostream &os,
+                                                          const CallCapture &call,
+                                                          gl::UniformBlockIndex value);
 
 template <>
 void WriteParamValueReplay<ParamType::TGLsync>(std::ostream &os,

@@ -292,6 +292,8 @@ class RendererVk : angle::NonCopyable
         }
     }
 
+    egl::Display *getDisplay() const { return mDisplay; }
+
     VkResult getLastPresentResult(VkSwapchainKHR swapchain)
     {
         return mCommandProcessor.getLastPresentResult(swapchain);
@@ -368,7 +370,6 @@ class RendererVk : angle::NonCopyable
     void queryDeviceExtensionFeatures(const vk::ExtensionNameList &deviceExtensionNames);
 
     void initFeatures(DisplayVk *display, const vk::ExtensionNameList &extensions);
-    void initPipelineCacheVkKey();
     angle::Result initPipelineCache(DisplayVk *display,
                                     vk::PipelineCache *pipelineCache,
                                     bool *success);
@@ -436,7 +437,6 @@ class RendererVk : angle::NonCopyable
     // a lock.
     std::mutex mPipelineCacheMutex;
     vk::PipelineCache mPipelineCache;
-    egl::BlobCache::Key mPipelineCacheVkBlobKey;
     uint32_t mPipelineCacheVkUpdateTimeout;
     bool mPipelineCacheDirty;
     bool mPipelineCacheInitialized;

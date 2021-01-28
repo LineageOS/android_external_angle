@@ -285,6 +285,7 @@ spv_result_t ValidateImageOperands(ValidationState_t& _,
           mask & (SpvImageOperandsOffsetMask | SpvImageOperandsConstOffsetMask |
                   SpvImageOperandsConstOffsetsMask)) > 1) {
     return _.diag(SPV_ERROR_INVALID_DATA, inst)
+           << _.VkErrorID(4662)
            << "Image Operands Offset, ConstOffset, ConstOffsets cannot be used "
            << "together";
   }
@@ -439,6 +440,17 @@ spv_result_t ValidateImageOperands(ValidationState_t& _,
       return _.diag(SPV_ERROR_INVALID_DATA, inst)
              << "Expected Image Operand Offset to have " << plane_size
              << " components, but given " << offset_size;
+    }
+
+    if (spvIsVulkanEnv(_.context()->target_env)) {
+      if (opcode != SpvOpImageGather && opcode != SpvOpImageDrefGather &&
+          opcode != SpvOpImageSparseGather &&
+          opcode != SpvOpImageSparseDrefGather) {
+        return _.diag(SPV_ERROR_INVALID_DATA, inst)
+               << _.VkErrorID(4663)
+               << "Image Operand Offset can only be used with "
+                  "OpImage*Gather operations";
+      }
     }
   }
 
