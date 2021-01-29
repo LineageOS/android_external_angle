@@ -174,7 +174,8 @@ void CaptureDrawElementsInstancedANGLE_indices(const State &glState,
                                                GLsizei primcount,
                                                ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    CaptureDrawElements_indices(glState, isCallValid, modePacked, count, typePacked, indices,
+                                paramCapture);
 }
 
 void CaptureDrawElementsBaseVertexEXT_indices(const State &glState,
@@ -1219,7 +1220,7 @@ void CaptureGetUniformuivRobustANGLE_params(const State &glState,
 void CaptureGetActiveUniformBlockivRobustANGLE_length(const State &glState,
                                                       bool isCallValid,
                                                       ShaderProgramID program,
-                                                      GLuint uniformBlockIndex,
+                                                      UniformBlockIndex uniformBlockIndex,
                                                       GLenum pname,
                                                       GLsizei bufSize,
                                                       GLsizei *length,
@@ -1232,7 +1233,7 @@ void CaptureGetActiveUniformBlockivRobustANGLE_length(const State &glState,
 void CaptureGetActiveUniformBlockivRobustANGLE_params(const State &glState,
                                                       bool isCallValid,
                                                       ShaderProgramID program,
-                                                      GLuint uniformBlockIndex,
+                                                      UniformBlockIndex uniformBlockIndex,
                                                       GLenum pname,
                                                       GLsizei bufSize,
                                                       GLsizei *length,
@@ -2396,7 +2397,8 @@ void CaptureDrawElementsInstancedEXT_indices(const State &glState,
                                              GLsizei primcount,
                                              ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    CaptureDrawElements_indices(glState, isCallValid, modePacked, count, typePacked, indices,
+                                paramCapture);
 }
 
 void CaptureCreateMemoryObjectsEXT_memoryObjectsPacked(const State &glState,
