@@ -483,6 +483,12 @@ void RendererVk::ensureCapsInitialized() const
     mNativeExtensions.sampleVariablesOES =
         supportSampleRateShading && vk_gl::GetMaxSampleCount(kNotSupportedSampleCounts) == 0;
 
+    // Enable EXT_unpack_subimage
+    mNativeExtensions.unpackSubimage = true;
+
+    // Enable NV_pack_subimage
+    mNativeExtensions.packSubimage = true;
+
     mNativeCaps.minInterpolationOffset          = limitsVk.minInterpolationOffset;
     mNativeCaps.maxInterpolationOffset          = limitsVk.maxInterpolationOffset;
     mNativeCaps.subPixelInterpolationOffsetBits = limitsVk.subPixelInterpolationOffsetBits;
@@ -754,13 +760,15 @@ void RendererVk::ensureCapsInitialized() const
     // GL Images correspond to Vulkan Storage Images.
     const int32_t maxPerStageImages = LimitToInt(limitsVk.maxPerStageDescriptorStorageImages);
     const int32_t maxCombinedImages = LimitToInt(limitsVk.maxDescriptorSetStorageImages);
-
-    mNativeCaps.maxShaderImageUniforms[gl::ShaderType::Vertex] =
+    const int32_t maxVertexPipelineImages =
         mPhysicalDeviceFeatures.vertexPipelineStoresAndAtomics ? maxPerStageImages : 0;
+
+    mNativeCaps.maxShaderImageUniforms[gl::ShaderType::Vertex]         = maxVertexPipelineImages;
+    mNativeCaps.maxShaderImageUniforms[gl::ShaderType::TessControl]    = maxVertexPipelineImages;
+    mNativeCaps.maxShaderImageUniforms[gl::ShaderType::TessEvaluation] = maxVertexPipelineImages;
+    mNativeCaps.maxShaderImageUniforms[gl::ShaderType::Geometry]       = maxVertexPipelineImages;
     mNativeCaps.maxShaderImageUniforms[gl::ShaderType::Fragment] =
         mPhysicalDeviceFeatures.fragmentStoresAndAtomics ? maxPerStageImages : 0;
-    mNativeCaps.maxShaderImageUniforms[gl::ShaderType::Geometry] =
-        mPhysicalDeviceFeatures.vertexPipelineStoresAndAtomics ? maxPerStageImages : 0;
     mNativeCaps.maxShaderImageUniforms[gl::ShaderType::Compute] = maxPerStageImages;
 
     mNativeCaps.maxCombinedImageUniforms = maxCombinedImages;
@@ -866,6 +874,9 @@ void RendererVk::ensureCapsInitialized() const
     // Enable GL_EXT_copy_image
     mNativeExtensions.copyImageEXT = true;
 
+    // GL_EXT_clip_control
+    mNativeExtensions.clipControlEXT = true;
+
     // Enable GL_EXT_texture_buffer and OES variant.  Nearly all formats required for this extension
     // are also required to have the UNIFORM_TEXEL_BUFFER feature bit in Vulkan, except for
     // R32G32B32_SFLOAT/UINT/SINT which are optional.  For many formats, the STORAGE_TEXEL_BUFFER
@@ -925,7 +936,8 @@ void RendererVk::ensureCapsInitialized() const
 
         // TODO: tessellation shader support is incomplete.  http://anglebug.com/3572
         mNativeExtensions.tessellationShaderEXT =
-            getFeatures().exposeNonConformantExtensionsAndVersions.enabled;
+            mFeatures.supportsTransformFeedbackExtension.enabled &&
+            mFeatures.exposeNonConformantExtensionsAndVersions.enabled;
         mNativeCaps.maxPatchVertices = LimitToInt(limitsVk.maxTessellationPatchSize);
         mNativeCaps.maxTessPatchComponents =
             LimitToInt(limitsVk.maxTessellationControlPerPatchOutputComponents);
@@ -947,6 +959,16 @@ void RendererVk::ensureCapsInitialized() const
             mNativeCaps.maxCombinedUniformBlocks + kReservedTessellationDefaultUniformBindingCount);
         mNativeCaps.maxUniformBufferBindings = LimitToInt(
             mNativeCaps.maxUniformBufferBindings + kReservedTessellationDefaultUniformBindingCount);
+
+        mNativeCaps.maxShaderStorageBlocks[gl::ShaderType::TessControl] =
+            mNativeCaps.maxCombinedShaderOutputResources;
+        mNativeCaps.maxShaderAtomicCounterBuffers[gl::ShaderType::TessControl] =
+            maxCombinedAtomicCounterBuffers;
+
+        mNativeCaps.maxShaderStorageBlocks[gl::ShaderType::TessEvaluation] =
+            mNativeCaps.maxCombinedShaderOutputResources;
+        mNativeCaps.maxShaderAtomicCounterBuffers[gl::ShaderType::TessEvaluation] =
+            maxCombinedAtomicCounterBuffers;
     }
 
     // GL_APPLE_clip_distance/GL_EXT_clip_cull_distance
@@ -981,6 +1003,10 @@ void RendererVk::ensureCapsInitialized() const
             mNativeCaps.maxCombinedClipAndCullDistances = limitsVk.maxCombinedClipAndCullDistances;
         }
     }
+
+    // GL_EXT_blend_func_extended
+    mNativeExtensions.blendFuncExtended        = (mPhysicalDeviceFeatures.dualSrcBlend == VK_TRUE);
+    mNativeExtensions.maxDualSourceDrawBuffers = LimitToInt(limitsVk.maxFragmentDualSrcAttachments);
 }
 
 namespace vk
