@@ -173,6 +173,15 @@ class State : angle::NonCopyable
     float getNearPlane() const { return mNearZ; }
     float getFarPlane() const { return mFarZ; }
 
+    // Clip control extension
+    void setClipControl(GLenum origin, GLenum depth);
+    bool isClipControlDepthZeroToOne() const { return mClipControlDepth == GL_ZERO_TO_ONE_EXT; }
+    gl::ClipSpaceOrigin getClipSpaceOrigin() const
+    {
+        return mClipControlOrigin == GL_UPPER_LEFT_EXT ? ClipSpaceOrigin::UpperLeft
+                                                       : ClipSpaceOrigin::LowerLeft;
+    }
+
     // Blend state manipulation
     bool isBlendEnabled() const { return mBlendStateExt.mEnabledMask.test(0); }
     bool isBlendEnabledIndexed(GLuint index) const
@@ -651,12 +660,22 @@ class State : angle::NonCopyable
         DIRTY_BIT_PROVOKING_VERTEX,
         DIRTY_BIT_SAMPLE_SHADING,
         DIRTY_BIT_PATCH_VERTICES,
-        DIRTY_BIT_EXTENDED,  // clip distances, mipmap generation hint, derivative hint.
+        DIRTY_BIT_EXTENDED,  // clip distances, mipmap generation hint, derivative hint,
+                             // EXT_clip_control
         DIRTY_BIT_INVALID,
         DIRTY_BIT_MAX = DIRTY_BIT_INVALID,
     };
 
     static_assert(DIRTY_BIT_MAX <= 64, "State dirty bits must be capped at 64");
+
+    enum ExtendedDirtyBitType
+    {
+        EXTENDED_DIRTY_BIT_CLIP_CONTROL,  // EXT_clip_control
+        EXTENDED_DIRTY_BIT_INVALID,
+        EXTENDED_DIRTY_BIT_MAX = EXTENDED_DIRTY_BIT_INVALID,
+    };
+
+    static_assert(EXTENDED_DIRTY_BIT_MAX <= 8, "State extended dirty bits must be capped at 8");
 
     // TODO(jmadill): Consider storing dirty objects in a list instead of by binding.
     enum DirtyObjectType
@@ -686,6 +705,10 @@ class State : angle::NonCopyable
         mDirtyBits.set();
         mDirtyCurrentValues.set();
     }
+
+    using ExtendedDirtyBits = angle::BitSet8<EXTENDED_DIRTY_BIT_MAX>;
+    const ExtendedDirtyBits &getExtendedDirtyBits() const { return mExtendedDirtyBits; }
+    void clearExtendedDirtyBits() { mExtendedDirtyBits.reset(); }
 
     using DirtyObjects = angle::BitSet<DIRTY_OBJECT_MAX>;
     void clearDirtyObjects() { mDirtyObjects.reset(); }
@@ -989,6 +1012,9 @@ class State : angle::NonCopyable
     float mNearZ;
     float mFarZ;
 
+    GLenum mClipControlOrigin;
+    GLenum mClipControlDepth;
+
     Framebuffer *mReadFramebuffer;
     Framebuffer *mDrawFramebuffer;
     BindingPointer<Renderbuffer> mRenderbuffer;
@@ -1079,6 +1105,7 @@ class State : angle::NonCopyable
     GLES1State mGLES1State;
 
     DirtyBits mDirtyBits;
+    ExtendedDirtyBits mExtendedDirtyBits;
     DirtyObjects mDirtyObjects;
     mutable AttributesMask mDirtyCurrentValues;
     ActiveTextureMask mDirtyActiveTextures;

@@ -121,14 +121,18 @@ GLenum DefaultGLErrorCode(VkResult result)
 
 constexpr gl::ShaderMap<vk::ImageLayout> kShaderReadOnlyImageLayouts = {
     {gl::ShaderType::Vertex, vk::ImageLayout::VertexShaderReadOnly},
+    {gl::ShaderType::TessControl, vk::ImageLayout::PreFragmentShadersReadOnly},
+    {gl::ShaderType::TessEvaluation, vk::ImageLayout::PreFragmentShadersReadOnly},
+    {gl::ShaderType::Geometry, vk::ImageLayout::PreFragmentShadersReadOnly},
     {gl::ShaderType::Fragment, vk::ImageLayout::FragmentShaderReadOnly},
-    {gl::ShaderType::Geometry, vk::ImageLayout::GeometryShaderReadOnly},
     {gl::ShaderType::Compute, vk::ImageLayout::ComputeShaderReadOnly}};
 
 constexpr gl::ShaderMap<vk::ImageLayout> kShaderWriteImageLayouts = {
     {gl::ShaderType::Vertex, vk::ImageLayout::VertexShaderWrite},
+    {gl::ShaderType::TessControl, vk::ImageLayout::PreFragmentShadersWrite},
+    {gl::ShaderType::TessEvaluation, vk::ImageLayout::PreFragmentShadersWrite},
+    {gl::ShaderType::Geometry, vk::ImageLayout::PreFragmentShadersWrite},
     {gl::ShaderType::Fragment, vk::ImageLayout::FragmentShaderWrite},
-    {gl::ShaderType::Geometry, vk::ImageLayout::GeometryShaderWrite},
     {gl::ShaderType::Compute, vk::ImageLayout::ComputeShaderWrite}};
 
 constexpr VkBufferUsageFlags kVertexBufferUsage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
@@ -366,8 +370,12 @@ ContextVk::ContextVk(const gl::State &state, gl::ErrorSet *errorSet, RendererVk 
       mCurrentDrawElementsType(gl::DrawElementsType::InvalidEnum),
       mXfbBaseVertex(0),
       mXfbVertexCountPerInstance(0),
+      mClearColorValue{},
+      mClearDepthStencilValue{},
       mClearColorMasks(0),
       mFlipYForCurrentSurface(false),
+      mFlipViewportForDrawFramebuffer(false),
+      mFlipViewportForReadFramebuffer(false),
       mIsAnyHostVisibleBufferWritten(false),
       mEmulateSeamfulCubeMapSampling(false),
       mOutsideRenderPassCommands(nullptr),
@@ -565,9 +573,10 @@ void ContextVk::onDestroy(const gl::Context *context)
 
 angle::Result ContextVk::getIncompleteTexture(const gl::Context *context,
                                               gl::TextureType type,
+                                              gl::SamplerFormat format,
                                               gl::Texture **textureOut)
 {
-    return mIncompleteTextures.getIncompleteTexture(context, type, this, textureOut);
+    return mIncompleteTextures.getIncompleteTexture(context, type, format, this, textureOut);
 }
 
 angle::Result ContextVk::initialize()
@@ -1265,12 +1274,18 @@ ANGLE_INLINE angle::Result ContextVk::handleDirtyTexturesImpl(
                 executable->getSamplerShaderBitsForTextureUnitIndex(textureUnit);
             ASSERT(remainingShaderBits.any());
             gl::ShaderType firstShader = remainingShaderBits.first();
+            gl::ShaderType lastShader  = remainingShaderBits.last();
             remainingShaderBits.reset(firstShader);
-            // If we have multiple shader accessing it, we barrier against all shader stage read
-            // given that we only support vertex/frag shaders
-            if (remainingShaderBits.any())
+            remainingShaderBits.reset(lastShader);
+            // We barrier against either:
+            // - Vertex only
+            // - Fragment only
+            // - Pre-fragment only (vertex, geometry and tessellation together)
+            if (remainingShaderBits.any() || firstShader != lastShader)
             {
-                textureLayout = vk::ImageLayout::AllGraphicsShadersReadOnly;
+                textureLayout = lastShader == gl::ShaderType::Fragment
+                                    ? vk::ImageLayout::AllGraphicsShadersReadOnly
+                                    : vk::ImageLayout::PreFragmentShadersReadOnly;
             }
             else
             {
@@ -1278,8 +1293,7 @@ ANGLE_INLINE angle::Result ContextVk::handleDirtyTexturesImpl(
             }
         }
         // Ensure the image is in read-only layout
-        commandBufferHelper->imageRead(&mResourceUseList, image.getAspectFlags(), textureLayout,
-                                       &image);
+        commandBufferHelper->imageRead(this, image.getAspectFlags(), textureLayout, &image);
 
         textureVk->retainImageViews(&mResourceUseList);
     }
@@ -2442,12 +2456,6 @@ gl::GraphicsResetStatus ContextVk::getResetStatus()
     return gl::GraphicsResetStatus::NoError;
 }
 
-std::string ContextVk::getVendorString() const
-{
-    UNIMPLEMENTED();
-    return std::string();
-}
-
 std::string ContextVk::getRendererDescription() const
 {
     return mRenderer->getRendererDescription();
@@ -2642,11 +2650,15 @@ void ContextVk::updateViewport(FramebufferVk *framebufferVk,
                     correctedRect, &rotatedRect);
 
     VkViewport vkViewport;
-    gl_vk::GetViewport(rotatedRect, nearPlane, farPlane, invertViewport,
-                       // If the surface is rotated 90/270 degrees, use the framebuffer's width
-                       // instead of the height for calculating the final viewport.
-                       isRotatedAspectRatioForDrawFBO() ? fbDimensions.width : fbDimensions.height,
-                       &vkViewport);
+    gl_vk::GetViewport(
+        rotatedRect, nearPlane, farPlane, invertViewport,
+        // If clip space origin is upper left, viewport origin's y value will be offset by the
+        // height of the viewport when clip space is mapped into screen space.
+        mState.getClipSpaceOrigin() == gl::ClipSpaceOrigin::UpperLeft,
+        // If the surface is rotated 90/270 degrees, use the framebuffer's width instead of the
+        // height for calculating the final viewport.
+        isRotatedAspectRatioForDrawFBO() ? fbDimensions.width : fbDimensions.height, &vkViewport);
+
     mGraphicsPipelineDesc->updateViewport(&mGraphicsPipelineTransition, vkViewport);
     invalidateGraphicsDriverUniforms();
 }
@@ -2904,7 +2916,7 @@ angle::Result ContextVk::syncState(const gl::Context *context,
             case gl::State::DIRTY_BIT_FRONT_FACE:
                 mGraphicsPipelineDesc->updateFrontFace(&mGraphicsPipelineTransition,
                                                        glState.getRasterizerState(),
-                                                       isViewportFlipEnabledForDrawFBO());
+                                                       isYFlipEnabledForDrawFBO());
                 break;
             case gl::State::DIRTY_BIT_POLYGON_OFFSET_FILL_ENABLED:
                 mGraphicsPipelineDesc->updatePolygonOffsetFillEnabled(
@@ -2980,9 +2992,10 @@ angle::Result ContextVk::syncState(const gl::Context *context,
                                glState.getFarPlane(), isViewportFlipEnabledForDrawFBO());
                 updateColorMasks(glState.getBlendStateExt());
                 updateRasterizationSamples(mDrawFramebuffer->getSamples());
+
                 mGraphicsPipelineDesc->updateFrontFace(&mGraphicsPipelineTransition,
                                                        glState.getRasterizerState(),
-                                                       isViewportFlipEnabledForDrawFBO());
+                                                       isYFlipEnabledForDrawFBO());
                 updateScissor(glState);
                 const gl::DepthStencilState depthStencilState = glState.getDepthStencilState();
                 mGraphicsPipelineDesc->updateDepthTestEnabled(&mGraphicsPipelineTransition,
@@ -3079,10 +3092,30 @@ angle::Result ContextVk::syncState(const gl::Context *context,
             case gl::State::DIRTY_BIT_PROVOKING_VERTEX:
                 break;
             case gl::State::DIRTY_BIT_EXTENDED:
+            {
                 // Handling clip distance enabled flags, mipmap generation hint & shader derivative
                 // hint.
                 invalidateGraphicsDriverUniforms();
+
+                // Handling clip space origin for EXT_clip_control.
+                if (glState.getExtendedDirtyBits().test(
+                        gl::State::ExtendedDirtyBitType::EXTENDED_DIRTY_BIT_CLIP_CONTROL))
+                {
+                    updateViewport(vk::GetImpl(glState.getDrawFramebuffer()), glState.getViewport(),
+                                   glState.getNearPlane(), glState.getFarPlane(),
+                                   isViewportFlipEnabledForDrawFBO());
+                    // Since we are flipping the y coordinate, update front face state
+                    mGraphicsPipelineDesc->updateFrontFace(&mGraphicsPipelineTransition,
+                                                           glState.getRasterizerState(),
+                                                           isYFlipEnabledForDrawFBO());
+                    updateScissor(glState);
+
+                    // Nothing is needed for depth correction for EXT_clip_control.
+                    // glState will be used to toggle control path of depth correction code in
+                    // SPIR-V tranform options.
+                }
                 break;
+            }
             case gl::State::DIRTY_BIT_PATCH_VERTICES:
                 mGraphicsPipelineDesc->updatePatchVertices(&mGraphicsPipelineTransition,
                                                            glState.getPatchVertices());
@@ -4095,7 +4128,9 @@ angle::Result ContextVk::updateActiveTextures(const gl::Context *context)
         // Null textures represent incomplete textures.
         if (isIncompleteTexture)
         {
-            ANGLE_TRY(getIncompleteTexture(context, textureType, &texture));
+            ANGLE_TRY(getIncompleteTexture(
+                context, textureType, executable->getSamplerFormatForTextureUnitIndex(textureUnit),
+                &texture));
         }
 
         TextureVk *textureVk = vk::GetImpl(texture);
@@ -4218,23 +4253,7 @@ angle::Result ContextVk::updateActiveImages(const gl::Context *context,
         // lingering staged updates in its staging buffer for unused texture mip levels or
         // layers. Therefore we can't verify it has no staged updates right here.
         gl::ShaderBitSet shaderStages = activeImageShaderBits[imageUnitIndex];
-
-        // TODO: PPOs don't initialize mActiveImageShaderBits.  http://anglebug.com/5358
-        // Once that is fixed, the following if should be replaced with an assertion:
-        //
-        //     ASSERT(shaderStages.any());
-        if (shaderStages.none())
-        {
-            if (executable->isCompute())
-            {
-                shaderStages.set(gl::ShaderType::Compute);
-            }
-            else
-            {
-                shaderStages.set();
-                shaderStages.reset(gl::ShaderType::Compute);
-            }
-        }
+        ASSERT(shaderStages.any());
 
         // Special handling of texture buffers.  They have a buffer attached instead of an image.
         if (texture->getType() == gl::TextureType::Buffer)
@@ -4264,16 +4283,23 @@ angle::Result ContextVk::updateActiveImages(const gl::Context *context,
         alreadyProcessed.insert(image);
 
         vk::ImageLayout imageLayout;
-        gl::ShaderType shader = static_cast<gl::ShaderType>(gl::ScanForward(shaderStages.bits()));
-        shaderStages.reset(shader);
-        // This is accessed by multiple shaders
-        if (shaderStages.any())
+        gl::ShaderType firstShader = shaderStages.first();
+        gl::ShaderType lastShader  = shaderStages.last();
+        shaderStages.reset(firstShader);
+        shaderStages.reset(lastShader);
+        // We barrier against either:
+        // - Vertex only
+        // - Fragment only
+        // - Pre-fragment only (vertex, geometry and tessellation together)
+        if (shaderStages.any() || firstShader != lastShader)
         {
-            imageLayout = vk::ImageLayout::AllGraphicsShadersWrite;
+            imageLayout = lastShader == gl::ShaderType::Fragment
+                              ? vk::ImageLayout::AllGraphicsShadersWrite
+                              : vk::ImageLayout::PreFragmentShadersWrite;
         }
         else
         {
-            imageLayout = kShaderWriteImageLayouts[shader];
+            imageLayout = kShaderWriteImageLayouts[firstShader];
         }
 
         VkImageAspectFlags aspectFlags = image->getAspectFlags();
@@ -4287,8 +4313,8 @@ angle::Result ContextVk::updateActiveImages(const gl::Context *context,
         }
 
         commandBufferHelper->imageWrite(
-            &mResourceUseList, gl::LevelIndex(static_cast<uint32_t>(imageUnit.level)), layerStart,
-            layerCount, aspectFlags, imageLayout, vk::AliasingMode::Allowed, image);
+            this, gl::LevelIndex(static_cast<uint32_t>(imageUnit.level)), layerStart, layerCount,
+            aspectFlags, imageLayout, vk::AliasingMode::Allowed, image);
     }
 
     return angle::Result::Continue;
@@ -5053,7 +5079,7 @@ angle::Result ContextVk::onResourceAccess(const vk::CommandBufferAccess &access)
     {
         ASSERT(!IsRenderPassStartedAndUsesImage(*mRenderPassCommands, *imageAccess.image));
 
-        imageAccess.image->recordReadBarrier(imageAccess.aspectFlags, imageAccess.imageLayout,
+        imageAccess.image->recordReadBarrier(this, imageAccess.aspectFlags, imageAccess.imageLayout,
                                              &mOutsideRenderPassCommands->getCommandBuffer());
         imageAccess.image->retain(&mResourceUseList);
     }
@@ -5063,7 +5089,7 @@ angle::Result ContextVk::onResourceAccess(const vk::CommandBufferAccess &access)
         ASSERT(!IsRenderPassStartedAndUsesImage(*mRenderPassCommands, *imageWrite.access.image));
 
         imageWrite.access.image->recordWriteBarrier(
-            imageWrite.access.aspectFlags, imageWrite.access.imageLayout,
+            this, imageWrite.access.aspectFlags, imageWrite.access.imageLayout,
             &mOutsideRenderPassCommands->getCommandBuffer());
         imageWrite.access.image->retain(&mResourceUseList);
         imageWrite.access.image->onWrite(imageWrite.levelStart, imageWrite.levelCount,

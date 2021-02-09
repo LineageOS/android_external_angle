@@ -323,6 +323,45 @@ TracePerfTest::TracePerfTest()
         addExtensionPrerequisite("GL_KHR_texture_compression_astc_ldr");
     }
 
+    if (param.testID == RestrictedTraceID::efootball_pes_2021)
+    {
+        // TODO(https://anglebug.com/5517) Linux+Intel and Pixel 2 generate "Framebuffer is
+        // incomplete" errors with the Vulkan backend.
+        if (param.getRenderer() == EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE &&
+            ((IsLinux() && IsIntel()) || IsPixel2()))
+        {
+            mSkipTest = true;
+        }
+    }
+
+    if (param.testID == RestrictedTraceID::manhattan_31)
+    {
+        // TODO: http://anglebug.com/5591 Trace crashes on Pixel 2 in vulkan driver
+        if (IsPixel2() && param.getRenderer() == EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE)
+        {
+            mSkipTest = true;
+        }
+    }
+
+    if (param.testID == RestrictedTraceID::shadow_fight_2)
+    {
+        addExtensionPrerequisite("GL_OES_EGL_image_external");
+        addExtensionPrerequisite("GL_KHR_texture_compression_astc_ldr");
+    }
+
+    if (param.testID == RestrictedTraceID::rise_of_kingdoms)
+    {
+        addExtensionPrerequisite("GL_OES_EGL_image_external");
+    }
+
+    if (param.testID == RestrictedTraceID::happy_color)
+    {
+        if (IsWindows() && IsAMD() && param.getRenderer() == EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE)
+        {
+            mSkipTest = true;
+        }
+    }
+
     // We already swap in TracePerfTest::drawBenchmark, no need to swap again in the harness.
     disableTestHarnessSwap();
 

@@ -179,7 +179,6 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     gl::GraphicsResetStatus getResetStatus() override;
 
     // Vendor and description strings.
-    std::string getVendorString() const override;
     std::string getRendererDescription() const override;
 
     // EXT_debug_marker
@@ -207,6 +206,19 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     bool isRotatedAspectRatioForReadFBO() const;
     SurfaceRotation getRotationDrawFramebuffer() const;
     SurfaceRotation getRotationReadFramebuffer() const;
+
+    // View port (x, y, w, h) will be determined by a combination of -
+    // 1. clip space origin
+    // 2. isViewportFlipEnabledForDrawFBO
+    // For userdefined FBOs it will be based on the value of isViewportFlipEnabledForDrawFBO.
+    // For default FBOs it will be XOR of ClipOrigin and isViewportFlipEnabledForDrawFBO.
+    // isYFlipEnabledForDrawFBO indicates the rendered image is upside-down.
+    ANGLE_INLINE bool isYFlipEnabledForDrawFBO() const
+    {
+        return mState.getClipSpaceOrigin() == gl::ClipSpaceOrigin::UpperLeft
+                   ? !isViewportFlipEnabledForDrawFBO()
+                   : isViewportFlipEnabledForDrawFBO();
+    }
 
     void invalidateProgramBindingHelper(const gl::State &glState);
     angle::Result invalidateProgramExecutableHelper(const gl::Context *context);
@@ -338,6 +350,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     gl::BlendStateExt::ColorMaskStorage::Type getClearColorMasks() const;
     angle::Result getIncompleteTexture(const gl::Context *context,
                                        gl::TextureType type,
+                                       gl::SamplerFormat format,
                                        gl::Texture **textureOut);
     void updateColorMasks(const gl::BlendStateExt &blendStateExt);
     void updateSampleMaskWithRasterizationSamples(const uint32_t rasterizationSamples);
@@ -433,7 +446,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
                                vk::ImageHelper *image)
     {
         ASSERT(mRenderPassCommands->started());
-        mRenderPassCommands->imageRead(&mResourceUseList, aspectFlags, imageLayout, image);
+        mRenderPassCommands->imageRead(this, aspectFlags, imageLayout, image);
     }
 
     void onImageRenderPassWrite(gl::LevelIndex level,
@@ -444,8 +457,8 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
                                 vk::ImageHelper *image)
     {
         ASSERT(mRenderPassCommands->started());
-        mRenderPassCommands->imageWrite(&mResourceUseList, level, layerStart, layerCount,
-                                        aspectFlags, imageLayout, vk::AliasingMode::Allowed, image);
+        mRenderPassCommands->imageWrite(this, level, layerStart, layerCount, aspectFlags,
+                                        imageLayout, vk::AliasingMode::Allowed, image);
     }
 
     void onDepthStencilDraw(gl::LevelIndex level,
@@ -463,7 +476,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     {
         if (mRenderPassCommands->started())
         {
-            mRenderPassCommands->onImageHelperRelease(image);
+            mRenderPassCommands->onImageHelperRelease(this, image);
         }
     }
 
