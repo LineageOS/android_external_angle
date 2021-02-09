@@ -1023,9 +1023,14 @@ angle::Result WindowSurfaceVk::createSwapChain(vk::Context *context,
     {
         const VkImageUsageFlags usage = kSurfaceVkColorImageUsageFlags;
 
-        ANGLE_TRY(mColorImageMS.init(context, gl::TextureType::_2D, vkExtents, format, samples,
-                                     usage, gl::LevelIndex(0), gl::LevelIndex(0), 1, 1,
-                                     robustInit));
+        // Create a multisampled image that will be rendered to, and then resolved to a swapchain
+        // image.  The actual VkImage is created with rotated coordinates to make it easier to do
+        // the resolve.  The ImageHelper::mExtents will have non-rotated extents in order to fit
+        // with the rest of ANGLE, (e.g. which calculates the Vulkan scissor with non-rotated
+        // values and then rotates the final rectangle).
+        ANGLE_TRY(mColorImageMS.initMSAASwapchain(
+            context, gl::TextureType::_2D, vkExtents, Is90DegreeRotation(getPreTransform()), format,
+            samples, usage, gl::LevelIndex(0), gl::LevelIndex(0), 1, 1, robustInit));
         ANGLE_TRY(mColorImageMS.initMemory(context, renderer->getMemoryProperties(),
                                            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT));
 
@@ -1325,6 +1330,12 @@ angle::Result WindowSurfaceVk::present(ContextVk *contextVk,
         resolveRegion.dstSubresource                = resolveRegion.srcSubresource;
         resolveRegion.dstOffset                     = {};
         resolveRegion.extent                        = image.image.getExtents();
+        // ImageHelper extents are non-rotated.  If the window is 90 or 270 degrees, swap the width
+        // and height.
+        if (Is90DegreeRotation(getPreTransform()))
+        {
+            std::swap(resolveRegion.extent.width, resolveRegion.extent.height);
+        }
 
         mColorImageMS.resolve(&image.image, resolveRegion, commandBuffer);
     }
@@ -1336,7 +1347,7 @@ angle::Result WindowSurfaceVk::present(ContextVk *contextVk,
     }
 
     // This does nothing if it's already in the requested layout
-    image.image.recordReadBarrier(VK_IMAGE_ASPECT_COLOR_BIT, vk::ImageLayout::Present,
+    image.image.recordReadBarrier(contextVk, VK_IMAGE_ASPECT_COLOR_BIT, vk::ImageLayout::Present,
                                   commandBuffer);
 
     // Knowing that the kSwapHistorySize'th submission ago has finished, we can know that the
