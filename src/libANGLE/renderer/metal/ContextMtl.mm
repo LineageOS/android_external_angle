@@ -237,7 +237,8 @@ angle::Result ContextMtl::ensureIncompleteTexturesCreated(const gl::Context *con
     for (gl::TextureType texType : supportedTextureTypes)
     {
         gl::Texture *texture;
-        ANGLE_TRY(mIncompleteTextures.getIncompleteTexture(context, texType, nullptr, &texture));
+        ANGLE_TRY(mIncompleteTextures.getIncompleteTexture(
+            context, texType, gl::SamplerFormat::Float, nullptr, &texture));
 
         TextureMtl *textureMtl                      = mtl::GetImpl(texture);
         textureMtl->getNativeTexture()->get().label = @"IncompleteTexture";
@@ -789,11 +790,7 @@ gl::GraphicsResetStatus ContextMtl::getResetStatus()
     return gl::GraphicsResetStatus::NoError;
 }
 
-// Vendor and description strings.
-std::string ContextMtl::getVendorString() const
-{
-    return getDisplay()->getVendorString();
-}
+// Renderer description
 std::string ContextMtl::getRendererDescription() const
 {
     return getDisplay()->getRendererDescription();
@@ -1044,6 +1041,7 @@ angle::Result ContextMtl::syncState(const gl::Context *context,
                 break;
             case gl::State::DIRTY_BIT_EXTENDED:
                 updateExtendedState(glState);
+                // Nothing to do until EXT_clip_control is implemented.
                 break;
             case gl::State::DIRTY_BIT_SAMPLE_SHADING:
                 // Nothing to do until OES_sample_shading is implemented.
@@ -1350,7 +1348,8 @@ angle::Result ContextMtl::getIncompleteTexture(const gl::Context *context,
                                                gl::TextureType type,
                                                gl::Texture **textureOut)
 {
-    return mIncompleteTextures.getIncompleteTexture(context, type, nullptr, textureOut);
+    return mIncompleteTextures.getIncompleteTexture(context, type, gl::SamplerFormat::Float,
+                                                    nullptr, textureOut);
 }
 
 void ContextMtl::endRenderEncoding(mtl::RenderCommandEncoder *encoder)

@@ -510,7 +510,7 @@ struct Extensions
     // GL_EXT_texture_sRGB_decode
     bool textureSRGBDecode = false;
 
-    // GL_EXT_texture_sRGB_override
+    // GL_EXT_texture_format_sRGB_override
     bool textureSRGBOverride = false;
 
     // GL_EXT_sRGB_write_control
@@ -654,6 +654,9 @@ struct Extensions
 
     // GL_APPLE_clip_distance
     bool clipDistanceAPPLE = false;
+
+    // GL_EXT_clip_control
+    bool clipControlEXT = false;
 
     // GL_OES_texture_cube_map_array
     bool textureCubeMapArrayOES = false;

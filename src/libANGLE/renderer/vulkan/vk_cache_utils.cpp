@@ -90,6 +90,14 @@ uint8_t PackGLBlendFactor(GLenum blendFactor)
             return static_cast<uint8_t>(VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR);
         case GL_ONE_MINUS_CONSTANT_ALPHA:
             return static_cast<uint8_t>(VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA);
+        case GL_SRC1_COLOR_EXT:
+            return static_cast<uint8_t>(VK_BLEND_FACTOR_SRC1_COLOR);
+        case GL_SRC1_ALPHA_EXT:
+            return static_cast<uint8_t>(VK_BLEND_FACTOR_SRC1_ALPHA);
+        case GL_ONE_MINUS_SRC1_COLOR_EXT:
+            return static_cast<uint8_t>(VK_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR);
+        case GL_ONE_MINUS_SRC1_ALPHA_EXT:
+            return static_cast<uint8_t>(VK_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA);
         default:
             UNREACHABLE();
             return 0;
@@ -153,8 +161,7 @@ void UnpackAttachmentDesc(VkAttachmentDescription *desc,
                           uint8_t samples,
                           const PackedAttachmentOpsDesc &ops)
 {
-    // We would only need this flag for duplicated attachments. Apply it conservatively.
-    desc->flags   = VK_ATTACHMENT_DESCRIPTION_MAY_ALIAS_BIT;
+    desc->flags   = 0;
     desc->format  = format.actualImageVkFormat();
     desc->samples = gl_vk::GetSamples(samples);
     desc->loadOp  = static_cast<VkAttachmentLoadOp>(ops.loadOp);
@@ -174,11 +181,7 @@ void UnpackColorResolveAttachmentDesc(VkAttachmentDescription *desc,
                                       bool usedAsInputAttachment,
                                       bool isInvalidated)
 {
-    // We would only need this flag for duplicated attachments. Apply it conservatively.  In
-    // practice it's unlikely any application would use the same image as multiple resolve
-    // attachments simultaneously, so this flag can likely be removed without any issue if it incurs
-    // a performance penalty.
-    desc->flags  = VK_ATTACHMENT_DESCRIPTION_MAY_ALIAS_BIT;
+    desc->flags  = 0;
     desc->format = format.actualImageVkFormat();
 
     // This function is for color resolve attachments.

@@ -293,6 +293,7 @@ void ProgramPipeline::updateImageBindings()
 {
     mState.mExecutable->mComputeImageBindings.clear();
     mState.mExecutable->mGraphicsImageBindings.clear();
+    mState.mExecutable->mActiveImageShaderBits.fill({});
 
     // Only copy the storage blocks from each Program in the PPO once, since each Program could
     // contain multiple shader stages.
@@ -310,6 +311,8 @@ void ProgramPipeline::updateImageBindings()
             {
                 mState.mExecutable->mGraphicsImageBindings.emplace_back(imageBinding);
             }
+
+            mState.mExecutable->updateActiveImages(shaderProgram->getExecutable());
         }
     }
 
@@ -320,6 +323,50 @@ void ProgramPipeline::updateImageBindings()
         {
             mState.mExecutable->mComputeImageBindings.emplace_back(imageBinding);
         }
+
+        mState.mExecutable->setIsCompute(true);
+        mState.mExecutable->updateActiveImages(computeProgram->getExecutable());
+        mState.mExecutable->setIsCompute(false);
+    }
+}
+
+void ProgramPipeline::updateExecutableGeometryProperties()
+{
+    Program *geometryProgram = getShaderProgram(gl::ShaderType::Geometry);
+
+    if (!geometryProgram)
+    {
+        return;
+    }
+
+    const ProgramExecutable &geometryExecutable = geometryProgram->getExecutable();
+    mState.mExecutable->mGeometryShaderInputPrimitiveType =
+        geometryExecutable.mGeometryShaderInputPrimitiveType;
+    mState.mExecutable->mGeometryShaderOutputPrimitiveType =
+        geometryExecutable.mGeometryShaderOutputPrimitiveType;
+    mState.mExecutable->mGeometryShaderInvocations = geometryExecutable.mGeometryShaderInvocations;
+    mState.mExecutable->mGeometryShaderMaxVertices = geometryExecutable.mGeometryShaderMaxVertices;
+}
+
+void ProgramPipeline::updateExecutableTessellationProperties()
+{
+    Program *tessControlProgram = getShaderProgram(gl::ShaderType::TessControl);
+    Program *tessEvalProgram    = getShaderProgram(gl::ShaderType::TessEvaluation);
+
+    if (tessControlProgram)
+    {
+        const ProgramExecutable &tessControlExecutable = tessControlProgram->getExecutable();
+        mState.mExecutable->mTessControlShaderVertices =
+            tessControlExecutable.mTessControlShaderVertices;
+    }
+
+    if (tessEvalProgram)
+    {
+        const ProgramExecutable &tessEvalExecutable = tessEvalProgram->getExecutable();
+        mState.mExecutable->mTessGenMode            = tessEvalExecutable.mTessGenMode;
+        mState.mExecutable->mTessGenSpacing         = tessEvalExecutable.mTessGenSpacing;
+        mState.mExecutable->mTessGenVertexOrder     = tessEvalExecutable.mTessGenVertexOrder;
+        mState.mExecutable->mTessGenPointMode       = tessEvalExecutable.mTessGenPointMode;
     }
 }
 
@@ -401,6 +448,12 @@ void ProgramPipeline::updateExecutable()
     updateTransformFeedbackMembers();
     updateShaderStorageBlocks();
     updateImageBindings();
+
+    // Geometry Shader ProgramExecutable properties
+    updateExecutableGeometryProperties();
+
+    // Tessellation Shaders ProgramExecutable properties
+    updateExecutableTessellationProperties();
 
     // All Shader ProgramExecutable properties
     mState.updateExecutableTextures();
