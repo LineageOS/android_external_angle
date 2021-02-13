@@ -133,16 +133,6 @@ EGLSyncImpl *DisplayEGL::createSync(const egl::AttributeMap &attribs)
     return new SyncEGL(attribs, mEGL);
 }
 
-std::string DisplayEGL::getVendorString() const
-{
-    return GetVendorString(mRenderer->getFunctions());
-}
-
-std::string DisplayEGL::getVersionString() const
-{
-    return GetVersionString(mRenderer->getFunctions());
-}
-
 egl::Error DisplayEGL::initializeContext(EGLContext shareContext,
                                          const egl::AttributeMap &eglAttributes,
                                          EGLContext *outContext,
@@ -511,12 +501,12 @@ egl::ConfigSet DisplayEGL::generateConfigs()
             {
                 ERR() << "RGBA(" << config.redSize << "," << config.greenSize << ","
                       << config.blueSize << "," << config.alphaSize << ") not handled";
-                UNREACHABLE();
+                continue;
             }
         }
         else
         {
-            UNREACHABLE();
+            continue;
         }
 
         if (config.depthSize == 0 && config.stencilSize == 0)
@@ -541,7 +531,7 @@ egl::ConfigSet DisplayEGL::generateConfigs()
         }
         else
         {
-            UNREACHABLE();
+            continue;
         }
 
         config.matchNativePixmap  = EGL_NONE;
@@ -780,6 +770,11 @@ void DisplayEGL::initializeFrontendFeatures(angle::FrontendFeatures *features) c
 void DisplayEGL::populateFeatureList(angle::FeatureList *features)
 {
     mRenderer->getFeatures().populateFeatureList(features);
+}
+
+RendererGL *DisplayEGL::getRenderer() const
+{
+    return reinterpret_cast<RendererGL *>(mRenderer.get());
 }
 
 egl::Error DisplayEGL::validateImageClientBuffer(const gl::Context *context,

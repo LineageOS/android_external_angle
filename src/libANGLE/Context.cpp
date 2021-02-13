@@ -24,7 +24,6 @@
 #include "libANGLE/Compiler.h"
 #include "libANGLE/Display.h"
 #include "libANGLE/Fence.h"
-#include "libANGLE/FrameCapture.h"
 #include "libANGLE/Framebuffer.h"
 #include "libANGLE/FramebufferAttachment.h"
 #include "libANGLE/MemoryObject.h"
@@ -39,6 +38,7 @@
 #include "libANGLE/Texture.h"
 #include "libANGLE/TransformFeedback.h"
 #include "libANGLE/VertexArray.h"
+#include "libANGLE/capture/FrameCapture.h"
 #include "libANGLE/formatutils.h"
 #include "libANGLE/queryconversions.h"
 #include "libANGLE/queryutils.h"
@@ -377,7 +377,14 @@ Context::Context(egl::Display *display,
     ASSERT(mDisplay);
 }
 
-void Context::initialize()
+egl::Error Context::initialize()
+{
+    if (!mImplementation)
+        return egl::Error(EGL_NOT_INITIALIZED, "native context creation failed");
+    return egl::NoError();
+}
+
+void Context::initializeDefaultResources()
 {
     mImplementation->setMemoryProgramCache(mMemoryProgramCache);
 
@@ -691,7 +698,7 @@ egl::Error Context::makeCurrent(egl::Display *display,
     {
         ASSERT(!mIsCurrent);
 
-        initialize();
+        initializeDefaultResources();
         initRendererString();
         initVersionStrings();
         initExtensionStrings();
@@ -3080,9 +3087,9 @@ void Context::programParameteri(ShaderProgramID program, GLenum pname, GLint val
 void Context::initRendererString()
 {
     std::ostringstream frontendRendererString;
-    std::string vendorString(mDisplay->getImplementation()->getVendorString());
-    std::string rendererString(mImplementation->getRendererDescription());
-    std::string versionString(mDisplay->getImplementation()->getVersionString());
+    std::string vendorString(mDisplay->getBackendVendorString());
+    std::string rendererString(mDisplay->getBackendRendererDescription());
+    std::string versionString(mDisplay->getBackendVersionString());
     // Commas are used as a separator in ANGLE's renderer string, so remove commas from each
     // element.
     vendorString.erase(std::remove(vendorString.begin(), vendorString.end(), ','),
