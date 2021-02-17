@@ -37,9 +37,6 @@ include $(CLEAR_VARS)
 LOCAL_CPP_EXTENSION := .cc .cpp .cxx
 LOCAL_SRC_FILES:=test.cpp
 LOCAL_MODULE:=glslang_ndk_test
-LOCAL_LICENSE_KINDS:=SPDX-license-identifier-Apache-2.0
-LOCAL_LICENSE_CONDITIONS:=notice
-LOCAL_NOTICE_FILE:=$(LOCAL_PATH)/../LICENSE.txt
 LOCAL_LDLIBS:=-landroid
 LOCAL_CXXFLAGS:=-std=c++11 -fno-exceptions -fno-rtti -Werror
 LOCAL_STATIC_LIBRARIES:=glslang SPIRV HLSL
