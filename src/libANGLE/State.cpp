@@ -347,7 +347,6 @@ State::State(const State *shareContextState,
       mProvokingVertex(gl::ProvokingVertexConvention::LastVertexConvention),
       mVertexArray(nullptr),
       mActiveSampler(0),
-      mTexturesIncompatibleWithSamplers(0),
       mValidAtomicCounterBufferCount(0),
       mPrimitiveRestart(false),
       mDebug(debug),
@@ -589,7 +588,7 @@ void State::reset(const Context *context)
     setAllDirtyBits();
 }
 
-ANGLE_INLINE void State::unsetActiveTextures(ActiveTextureMask textureMask)
+ANGLE_INLINE void State::unsetActiveTextures(const ActiveTextureMask &textureMask)
 {
     // Unset any relevant bound textures.
     for (size_t textureIndex : textureMask)
@@ -1176,6 +1175,7 @@ void State::setClipDistanceEnable(int idx, bool enable)
     }
 
     mDirtyBits.set(DIRTY_BIT_EXTENDED);
+    mExtendedDirtyBits.set(EXTENDED_DIRTY_BIT_CLIP_DISTANCES);
 }
 
 void State::setEnableFeature(GLenum feature, bool enabled)
@@ -1485,6 +1485,7 @@ void State::setGenerateMipmapHint(GLenum hint)
 {
     mGenerateMipmapHint = hint;
     mDirtyBits.set(DIRTY_BIT_EXTENDED);
+    mExtendedDirtyBits.set(EXTENDED_DIRTY_BIT_MIPMAP_GENERATION_HINT);
 }
 
 GLenum State::getGenerateMipmapHint() const
@@ -1508,6 +1509,7 @@ void State::setFragmentShaderDerivativeHint(GLenum hint)
 {
     mFragmentShaderDerivativeHint = hint;
     mDirtyBits.set(DIRTY_BIT_EXTENDED);
+    mExtendedDirtyBits.set(EXTENDED_DIRTY_BIT_SHADER_DERIVATIVE_HINT);
     // TODO: Propagate the hint to shader translator so we can write
     // ddx, ddx_coarse, or ddx_fine depending on the hint.
     // Ignore for now. It is valid for implementations to ignore hint.
@@ -3623,6 +3625,13 @@ AttributesMask State::getAndResetDirtyCurrentValues() const
 {
     AttributesMask retVal = mDirtyCurrentValues;
     mDirtyCurrentValues.reset();
+    return retVal;
+}
+
+State::ExtendedDirtyBits State::getAndResetExtendedDirtyBits() const
+{
+    ExtendedDirtyBits retVal = mExtendedDirtyBits;
+    mExtendedDirtyBits.reset();
     return retVal;
 }
 
