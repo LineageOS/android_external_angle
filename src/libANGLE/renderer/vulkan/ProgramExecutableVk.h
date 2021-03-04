@@ -69,6 +69,7 @@ class ProgramInfo final : angle::NonCopyable
     angle::Result initProgram(ContextVk *contextVk,
                               const gl::ShaderType shaderType,
                               bool isLastPreFragmentStage,
+                              bool isTransformFeedbackProgram,
                               const ShaderInfo &shaderInfo,
                               ProgramTransformOptions optionBits,
                               const ShaderInterfaceVariableInfoMap &variableInfoMap);
@@ -146,7 +147,7 @@ class ProgramExecutableVk
 
     angle::Result updateTexturesDescriptorSet(ContextVk *contextVk);
     angle::Result updateShaderResourcesDescriptorSet(ContextVk *contextVk,
-                                                     vk::ResourceUseList *resourceUseList,
+                                                     FramebufferVk *framebufferVk,
                                                      vk::CommandBufferHelper *commandBufferHelper);
     angle::Result updateTransformFeedbackDescriptorSet(
         const gl::ProgramState &programState,
@@ -154,6 +155,10 @@ class ProgramExecutableVk
         vk::BufferHelper *defaultUniformBuffer,
         ContextVk *contextVk,
         const vk::UniformsAndXfbDesc &xfbBufferDesc);
+    angle::Result updateInputAttachmentDescriptorSet(const gl::ProgramExecutable &executable,
+                                                     const gl::ShaderType shaderType,
+                                                     ContextVk *contextVk,
+                                                     FramebufferVk *framebufferVk);
 
     angle::Result updateDescriptorSets(ContextVk *contextVk, vk::CommandBuffer *commandBuffer);
 
@@ -202,6 +207,9 @@ class ProgramExecutableVk
         vk::DescriptorSetLayoutDesc *descOut);
     void addImageDescriptorSetDesc(const gl::ProgramExecutable &executable,
                                    vk::DescriptorSetLayoutDesc *descOut);
+    void addInputAttachmentDescriptorSetDesc(const gl::ProgramExecutable &executable,
+                                             const gl::ShaderType shaderType,
+                                             vk::DescriptorSetLayoutDesc *descOut);
     void addTextureDescriptorSetDesc(const gl::ProgramState &programState,
                                      const gl::ActiveTextureArray<vk::TextureUnit> *activeTextures,
                                      vk::DescriptorSetLayoutDesc *descOut);
@@ -215,7 +223,6 @@ class ProgramExecutableVk
                                                   ContextVk *contextVk);
     angle::Result updateBuffersDescriptorSet(ContextVk *contextVk,
                                              const gl::ShaderType shaderType,
-                                             vk::ResourceUseList *resourceUseList,
                                              vk::CommandBufferHelper *commandBufferHelper,
                                              const std::vector<gl::InterfaceBlock> &blocks,
                                              VkDescriptorType descriptorType);
@@ -223,7 +230,6 @@ class ProgramExecutableVk
         const gl::ProgramState &programState,
         const gl::ShaderType shaderType,
         ContextVk *contextVk,
-        vk::ResourceUseList *resourceUseList,
         vk::CommandBufferHelper *commandBufferHelper);
     angle::Result updateImagesDescriptorSet(ContextVk *contextVk,
                                             const gl::ProgramExecutable &executable,

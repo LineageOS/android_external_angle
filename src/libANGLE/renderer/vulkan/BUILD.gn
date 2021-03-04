@@ -195,7 +195,7 @@ config("angle_vulkan_backend_config") {
 angle_source_set("angle_vk_mem_alloc_wrapper") {
   deps = [
     "$angle_root/src/common/vulkan:angle_vulkan_headers",
-    "$angle_vulkan_memory_allocator_dir:vulkan_memory_allocator_with_usage",
+    "$angle_vulkan_memory_allocator_dir",
   ]
   configs += [ "$angle_root:angle_no_cfi_unrelated_cast" ]
   sources = [
@@ -222,10 +222,6 @@ angle_source_set("angle_vulkan_backend") {
     "$angle_root:angle_gpu_info_util",
     "$angle_root:angle_image_util",
   ]
-
-  if (dcheck_always_on || is_debug) {
-    deps += [ "$angle_spirv_tools_dir:spvtools_val" ]
-  }
 
   public_deps = [
     "$angle_root:angle_glslang_wrapper",

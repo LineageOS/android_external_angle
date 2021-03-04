@@ -54,12 +54,15 @@ namespace angle
 {
 enum class RestrictedTraceID
 {
+    aliexpress,
+    among_us,
     angry_birds_2_1500,
     arena_of_valor,
     asphalt_8,
     brawl_stars,
     bus_simulator_indonesia,
     candy_crush_500,
+    car_parking_multiplayer,
     clash_of_clans,
     clash_royale,
     cod_mobile,
@@ -84,6 +87,7 @@ enum class RestrictedTraceID
     manhattan_10,
     manhattan_31,
     marvel_contest_of_champions,
+    messenger_lite,
     minecraft,
     mobile_legends,
     nba2k20_800,
@@ -94,10 +98,13 @@ enum class RestrictedTraceID
     real_gangster_crime,
     rise_of_kingdoms,
     romancing_saga,
+    rope_hero_vice_town,
     saint_seiya_awakening,
     shadow_fight_2,
     sniper_3d,
+    standoff_2,
     subway_surfers,
+    talking_tom_hero_dash,
     temple_run_2,
     temple_run_300,
     trex_200,
@@ -117,8 +124,13 @@ using SetBinaryDataDirFunc = void (*)(const char *);
 
 static constexpr size_t kTraceInfoMaxNameLen = 32;
 
+static constexpr uint32_t kDefaultReplayContextClientMajorVersion = 3;
+static constexpr uint32_t kDefaultReplayContextClientMinorVersion = 1;
+
 struct TraceInfo
 {
+    uint32_t contextClientMajorVersion;
+    uint32_t contextClientMinorVersion;
     uint32_t startFrame;
     uint32_t endFrame;
     uint32_t drawSurfaceWidth;

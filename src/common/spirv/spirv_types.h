@@ -14,6 +14,8 @@
 
 #include "common/FastVector.h"
 
+#include <vector>
+
 namespace angle
 {
 namespace spirv
@@ -50,6 +52,14 @@ struct LiteralIntegerHelper
 };
 
 using IdRef = BoxedUint32<IdRefHelper>;
+
+template <>
+inline BoxedUint32<IdRefHelper>::operator uint32_t() const
+{
+    ASSERT(valid());
+    return mValue.value;
+}
+
 // IdResult, IdResultType, IdMemorySemantics and IdScope are all translated as IdRef.  This makes
 // the type verification weaker, but stops the API from becoming tediously verbose.
 using IdResult          = IdRef;
@@ -95,6 +105,13 @@ using LiteralIntegerList          = FastVectorHelper<LiteralInteger>;
 using PairLiteralIntegerIdRefList = FastVectorHelper<PairLiteralIntegerIdRef>;
 using PairIdRefLiteralIntegerList = FastVectorHelper<PairIdRefLiteralInteger>;
 using PairIdRefIdRefList          = FastVectorHelper<PairIdRefIdRef>;
+
+// Id 0 is invalid in SPIR-V.
+constexpr uint32_t kMinValidId = 1;
+
+// Returns whether SPIR-V is valid.  Useful for ASSERTs.  Automatically generates a warning if
+// SPIR-V is not valid.
+bool Validate(const std::vector<uint32_t> &blob);
 
 }  // namespace spirv
 }  // namespace angle

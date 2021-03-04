@@ -164,6 +164,8 @@ constexpr const char *kSkippedMessages[] = {
     // http://anglebug.com/5331
     "VUID-VkSubpassDescriptionDepthStencilResolve-depthResolveMode-parameter",
     "VUID-VkSubpassDescriptionDepthStencilResolve-stencilResolveMode-parameter",
+    // https://crbug.com/1183542
+    "VUID-vkCmdBindDescriptorSets-pDescriptorSets-01979",
 };
 
 // Suppress validation errors that are known
@@ -1552,9 +1554,6 @@ angle::Result RendererVk::initializeDevice(DisplayVk *displayVk, uint32_t queueF
     {
         enabledFeatures.features.inheritedQueries = mPhysicalDeviceFeatures.inheritedQueries;
     }
-
-    // Used to support OES_sample_variables
-    enabledFeatures.features.sampleRateShading = mPhysicalDeviceFeatures.sampleRateShading;
 
     // Setup device initialization struct
     VkDeviceCreateInfo createInfo = {};
