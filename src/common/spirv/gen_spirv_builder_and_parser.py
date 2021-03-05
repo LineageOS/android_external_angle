@@ -41,8 +41,6 @@ HEADER_TEMPLATE = """// GENERATED FILE - DO NOT EDIT.
 #ifndef COMMON_SPIRV_{file_name_capitalized}AUTOGEN_H_
 #define COMMON_SPIRV_{file_name_capitalized}AUTOGEN_H_
 
-#include <vector>
-
 #include "spirv_types.h"
 
 namespace angle
@@ -301,7 +299,7 @@ class Writer:
             type_in = 'const ' + cpp_type + 'List &'
             type_out = cpp_type + 'List *'
         elif is_optional:
-            type_in = cpp_type + ' *'
+            type_in = 'const ' + cpp_type + ' *'
             type_out = cpp_type + ' *'
         else:
             type_in = cpp_type

@@ -227,10 +227,10 @@ enum ComputeDerivativeMode {
 
 class TIdMaps {
 public:
-    TMap<TString, int>& operator[](int i) { return maps[i]; }
-    const TMap<TString, int>& operator[](int i) const { return maps[i]; }
+    TMap<TString, long long>& operator[](long long i) { return maps[i]; }
+    const TMap<TString, long long>& operator[](long long i) const { return maps[i]; }
 private:
-    TMap<TString, int> maps[EsiCount];
+    TMap<TString, long long> maps[EsiCount];
 };
 
 class TNumericFeatures {
@@ -292,7 +292,8 @@ public:
         invertY(false),
         useStorageBuffer(false),
         nanMinMaxClamp(false),
-        depthReplacing(false)
+        depthReplacing(false),
+        uniqueId(0)
 #ifndef GLSLANG_WEB
         ,
         implicitThisName("@this"), implicitCounterName("@count"),
@@ -549,6 +550,11 @@ public:
         return true;
     }
     unsigned int getLocalSize(int dim) const { return localSize[dim]; }
+    bool isLocalSizeSet() const
+    {
+        // Return true if any component has been set (i.e. any component is not default).
+        return localSizeNotDefault[0] || localSizeNotDefault[1] || localSizeNotDefault[2];
+    }
     bool setLocalSizeSpecId(int dim, int id)
     {
         if (localSizeSpecId[dim] != TQualifier::layoutNotSet)
@@ -557,6 +563,13 @@ public:
         return true;
     }
     int getLocalSizeSpecId(int dim) const { return localSizeSpecId[dim]; }
+    bool isLocalSizeSpecialized() const
+    {
+        // Return true if any component has been specialized.
+        return localSizeSpecId[0] != TQualifier::layoutNotSet ||
+               localSizeSpecId[1] != TQualifier::layoutNotSet ||
+               localSizeSpecId[2] != TQualifier::layoutNotSet;
+    }
 #ifdef GLSLANG_WEB
     void output(TInfoSink&, bool tree) { }
 
@@ -911,6 +924,8 @@ public:
     void addProcess(const std::string& process) { processes.addProcess(process); }
     void addProcessArgument(const std::string& arg) { processes.addArgument(arg); }
     const std::vector<std::string>& getProcesses() const { return processes.getProcesses(); }
+    unsigned long long getUniqueId() const { return uniqueId; }
+    void setUniqueId(unsigned long long id) { uniqueId = id; }
 
     // Certain explicit conversions are allowed conditionally
 #ifdef GLSLANG_WEB
@@ -939,14 +954,14 @@ public:
 #endif
 
 protected:
-    TIntermSymbol* addSymbol(int Id, const TString&, const TType&, const TConstUnionArray&, TIntermTyped* subtree, const TSourceLoc&);
+    TIntermSymbol* addSymbol(long long Id, const TString&, const TType&, const TConstUnionArray&, TIntermTyped* subtree, const TSourceLoc&);
     void error(TInfoSink& infoSink, const char*);
     void warn(TInfoSink& infoSink, const char*);
     void mergeCallGraphs(TInfoSink&, TIntermediate&);
     void mergeModes(TInfoSink&, TIntermediate&);
     void mergeTrees(TInfoSink&, TIntermediate&);
-    void seedIdMap(TIdMaps& idMaps, int& maxId);
-    void remapIds(const TIdMaps& idMaps, int idShift, TIntermediate&);
+    void seedIdMap(TIdMaps& idMaps, long long& IdShift);
+    void remapIds(const TIdMaps& idMaps, long long idShift, TIntermediate&);
     void mergeBodies(TInfoSink&, TIntermSequence& globals, const TIntermSequence& unitGlobals);
     void mergeLinkerObjects(TInfoSink&, TIntermSequence& linkerObjects, const TIntermSequence& unitLinkerObjects);
     void mergeImplicitArraySizes(TType&, const TType&);
@@ -999,6 +1014,7 @@ protected:
     int localSize[3];
     bool localSizeNotDefault[3];
     int localSizeSpecId[3];
+    unsigned long long uniqueId;
 #ifndef GLSLANG_WEB
 public:
     const char* const implicitThisName;

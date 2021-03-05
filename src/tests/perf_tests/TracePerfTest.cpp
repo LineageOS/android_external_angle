@@ -34,9 +34,6 @@ struct TracePerfParams final : public RenderTestParams
     // Common default options
     TracePerfParams()
     {
-        majorVersion = 3;
-        minorVersion = 1;
-
         // Display the frame after every drawBenchmark invocation
         iterationsPerStep = 1;
     }
@@ -364,8 +361,43 @@ TracePerfTest::TracePerfTest()
 
     if (param.testID == RestrictedTraceID::bus_simulator_indonesia)
     {
-        // TODO(https://anglebug.com/5629) Linux+Intel native GLES generates GL_INVALID_OPERATION
-        if (IsLinux() && IsIntel() && param.getRenderer() != EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE)
+        // TODO(https://anglebug.com/5629) Linux+(Intel|AMD) native GLES generates
+        // GL_INVALID_OPERATION
+        if (IsLinux() && (IsIntel() || IsAMD()) &&
+            param.getRenderer() != EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE)
+        {
+            mSkipTest = true;
+        }
+    }
+
+    if (param.testID == RestrictedTraceID::messenger_lite)
+    {
+        // TODO: https://anglebug.com/5663 Incorrect pixels on Nvidia Windows for first frame
+        if (IsWindows() && IsNVIDIA() &&
+            param.getRenderer() == EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE)
+        {
+            mSkipTest = true;
+        }
+    }
+
+    if (param.testID == RestrictedTraceID::among_us)
+    {
+        addExtensionPrerequisite("GL_KHR_texture_compression_astc_ldr");
+    }
+
+    if (param.testID == RestrictedTraceID::car_parking_multiplayer)
+    {
+        // TODO: https://anglebug.com/5613 Nvidia native driver spews undefined behavior warnings
+        if (IsNVIDIA() && param.getRenderer() != EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE)
+        {
+            mSkipTest = true;
+        }
+    }
+
+    if (param.testID == RestrictedTraceID::rope_hero_vice_town)
+    {
+        // TODO: http://anglebug.com/5716 Trace crashes on Pixel 2 in vulkan driver
+        if (IsPixel2() && param.getRenderer() == EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE)
         {
             mSkipTest = true;
         }
@@ -937,6 +969,8 @@ TracePerfParams CombineTestID(const TracePerfParams &in, RestrictedTraceID id)
 
     TracePerfParams out = in;
     out.testID          = id;
+    out.majorVersion    = traceInfo.contextClientMajorVersion;
+    out.minorVersion    = traceInfo.contextClientMinorVersion;
     out.windowWidth     = traceInfo.drawSurfaceWidth;
     out.windowHeight    = traceInfo.drawSurfaceHeight;
     return out;

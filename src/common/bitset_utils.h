@@ -12,7 +12,7 @@
 
 #include <stdint.h>
 
-#include <bitset>
+#include <array>
 
 #include "common/angleutils.h"
 #include "common/debug.h"
@@ -76,6 +76,12 @@ class BitSetT final
         {
             ASSERT(index > mCurrentBit);
             mBitsCopy.set(index);
+        }
+
+        void setLaterBits(const BitSetT &bits)
+        {
+            ASSERT((BitSetT(bits) &= Mask(mCurrentBit + 1)).none());
+            mBitsCopy |= bits;
         }
 
       private:
@@ -152,106 +158,6 @@ class BitSetT final
   private:
     BitsT mBits;
 };
-
-template <size_t N>
-class IterableBitSet : public std::bitset<N>
-{
-  public:
-    constexpr IterableBitSet() {}
-    constexpr IterableBitSet(const std::bitset<N> &implicitBitSet) : std::bitset<N>(implicitBitSet)
-    {}
-
-    class Iterator final
-    {
-      public:
-        Iterator(const std::bitset<N> &bits);
-        Iterator &operator++();
-
-        bool operator==(const Iterator &other) const;
-        bool operator!=(const Iterator &other) const;
-        unsigned long operator*() const { return mCurrentBit; }
-
-        // These helper functions allow mutating an iterator in-flight.
-        // They only operate on later bits to ensure we don't iterate the same bit twice.
-        void resetLaterBit(std::size_t index)
-        {
-            ASSERT(index > mCurrentBit);
-            mBits.reset(index - mOffset);
-        }
-
-        void setLaterBit(std::size_t index)
-        {
-            ASSERT(index > mCurrentBit);
-            mBits.set(index - mOffset);
-        }
-
-      private:
-        unsigned long getNextBit();
-
-        static constexpr size_t BitsPerWord = sizeof(uint32_t) * 8;
-        std::bitset<N> mBits;
-        unsigned long mCurrentBit;
-        unsigned long mOffset;
-    };
-
-    Iterator begin() const { return Iterator(*this); }
-    Iterator end() const { return Iterator(std::bitset<N>(0)); }
-};
-
-template <size_t N>
-IterableBitSet<N>::Iterator::Iterator(const std::bitset<N> &bitset)
-    : mBits(bitset), mCurrentBit(0), mOffset(0)
-{
-    if (mBits.any())
-    {
-        mCurrentBit = getNextBit();
-    }
-    else
-    {
-        mOffset = static_cast<unsigned long>(rx::roundUpPow2(N, BitsPerWord));
-    }
-}
-
-template <size_t N>
-ANGLE_INLINE typename IterableBitSet<N>::Iterator &IterableBitSet<N>::Iterator::operator++()
-{
-    ASSERT(mBits.any());
-    mBits.set(mCurrentBit - mOffset, 0);
-    mCurrentBit = getNextBit();
-    return *this;
-}
-
-template <size_t N>
-bool IterableBitSet<N>::Iterator::operator==(const Iterator &other) const
-{
-    return mOffset == other.mOffset && mBits == other.mBits;
-}
-
-template <size_t N>
-bool IterableBitSet<N>::Iterator::operator!=(const Iterator &other) const
-{
-    return !(*this == other);
-}
-
-template <size_t N>
-unsigned long IterableBitSet<N>::Iterator::getNextBit()
-{
-    // TODO(jmadill): Use 64-bit scan when possible.
-    static constexpr std::bitset<N> wordMask(std::numeric_limits<uint32_t>::max());
-
-    while (mOffset < N)
-    {
-        uint32_t wordBits = static_cast<uint32_t>((mBits & wordMask).to_ulong());
-        if (wordBits != 0)
-        {
-            return gl::ScanForward(wordBits) + mOffset;
-        }
-
-        mBits >>= BitsPerWord;
-        mOffset += BitsPerWord;
-    }
-    return 0;
-}
 
 template <size_t N, typename BitsT, typename ParamT>
 constexpr BitSetT<N, BitsT, ParamT>::BitSetT() : mBits(0)
@@ -538,6 +444,9 @@ using BitSet32 = BitSetT<N, uint32_t>;
 template <size_t N>
 using BitSet64 = BitSetT<N, uint64_t>;
 
+template <std::size_t N>
+class BitSetArray;
+
 namespace priv
 {
 
@@ -547,7 +456,7 @@ using EnableIfBitsFit = typename std::enable_if<N <= sizeof(T) * 8>::type;
 template <size_t N, typename Enable = void>
 struct GetBitSet
 {
-    using Type = IterableBitSet<N>;
+    using Type = BitSetArray<N>;
 };
 
 // Prefer 64-bit bitsets on 64-bit CPUs. They seem faster than 32-bit.
@@ -622,9 +531,94 @@ class BitSetArray final
         bool operator!=(const Iterator &other) const;
         size_t operator*() const;
 
+        // These helper functions allow mutating an iterator in-flight.
+        // They only operate on later bits to ensure we don't iterate the same bit twice.
+        void resetLaterBit(std::size_t pos)
+        {
+            ASSERT(pos > (mIndex * priv::kDefaultBitSetSize) + *mCurrentIterator);
+            prepareCopy();
+            mParentCopy.reset(pos);
+            updateIteratorBit(pos, false);
+        }
+
+        void setLaterBit(std::size_t pos)
+        {
+            ASSERT(pos > (mIndex * priv::kDefaultBitSetSize) + *mCurrentIterator);
+            prepareCopy();
+            mParentCopy.set(pos);
+            updateIteratorBit(pos, true);
+        }
+
+        void setLaterBits(const BitSetArray &bits)
+        {
+            prepareCopy();
+            mParentCopy |= bits;
+            updateIteratorBits(bits);
+        }
+
       private:
-        const BitSetArray &mParent;
+        ANGLE_INLINE void prepareCopy()
+        {
+            ASSERT(mParent.mBaseBitSetArray[mIndex].end() ==
+                   mParentCopy.mBaseBitSetArray[mIndex].end());
+            if (mParentCopy.none())
+            {
+                mParentCopy    = mParent;
+                mCurrentParent = &mParentCopy;
+            }
+        }
+
+        ANGLE_INLINE void updateIteratorBit(std::size_t pos, bool setBit)
+        {
+            // Get the index and offset, update current interator if within range
+            size_t index  = pos >> kShiftForDivision;
+            size_t offset = pos & kDefaultBitSetSizeMinusOne;
+            if (index == mIndex)
+            {
+                if (setBit)
+                {
+                    mCurrentIterator.setLaterBit(offset);
+                }
+                else
+                {
+                    mCurrentIterator.resetLaterBit(offset);
+                }
+            }
+        }
+
+        ANGLE_INLINE void updateIteratorBits(const BitSetArray &bits)
+        {
+            mCurrentIterator.setLaterBits(bits.mBaseBitSetArray[mIndex]);
+        }
+
+        // Problem -
+        // We want to provide the fastest path possible for usecases that iterate though the bitset.
+        //
+        // Options -
+        // 1) For non-mutating iterations the const ref <mParent> is set as mCurrentParent and only
+        //    for usecases that need to mutate the bitset while iterating we perform a copy of
+        //    <mParent> into <mParentCopy> and modify its bits accordingly.
+        // 2) The alternate approach was to perform a copy all the time in the constructor
+        //    irrespective of whether it was a mutating usecase or not.
+        //
+        // Experiment -
+        // BitSetIteratorPerfTest was run on a Windows machine with Intel CPU and these were the
+        // results -
+        // 1) Copy only when necessary -
+        //      RESULT BitSetIteratorPerf.wall_time:    run = 116.1067374961 ns
+        //      RESULT BitSetIteratorPerf.trial_steps : run = 8416124 count
+        //      RESULT BitSetIteratorPerf.total_steps : run = 16832251 count
+        // 2) Copy always -
+        //      RESULT BitSetIteratorPerf.wall_time:    run = 242.7446459439 ns
+        //      RESULT BitSetIteratorPerf.trial_steps : run = 4171416 count
+        //      RESULT BitSetIteratorPerf.total_steps : run = 8342834 count
+        //
+        // Resolution -
+        // We settled on the copy only when necessary path.
         size_t mIndex;
+        const BitSetArray &mParent;
+        BitSetArray mParentCopy;
+        const BitSetArray *mCurrentParent;
         typename BaseBitSet::Iterator mCurrentIterator;
     };
 
@@ -641,7 +635,23 @@ class BitSetArray final
         return static_cast<unsigned long>(mBaseBitSetArray[0].to_ulong());
     }
 
+    // Assignment operators
     BitSetArray &operator=(const BitSetArray &other);
+    BitSetArray &operator&=(const BitSetArray &other);
+    BitSetArray &operator|=(const BitSetArray &other);
+    BitSetArray &operator^=(const BitSetArray &other);
+
+    // Bitwise operators
+    BitSetArray<N> operator&(const angle::BitSetArray<N> &other) const;
+    BitSetArray<N> operator|(const angle::BitSetArray<N> &other) const;
+    BitSetArray<N> operator^(const angle::BitSetArray<N> &other) const;
+
+    // Relational Operators
+    bool operator==(const angle::BitSetArray<N> &other) const;
+    bool operator!=(const angle::BitSetArray<N> &other) const;
+
+    // Unary operators
+    BitSetArray operator~() const;
     bool operator[](std::size_t pos) const;
     Reference operator[](std::size_t pos)
     {
@@ -649,6 +659,8 @@ class BitSetArray final
         return Reference(*this, pos);
     }
 
+    // Setter, getters and other helper methods
+    BitSetArray &set();
     BitSetArray &set(std::size_t pos, bool value = true);
     BitSetArray &reset();
     BitSetArray &reset(std::size_t pos);
@@ -679,24 +691,27 @@ BitSetArray<N>::BitSetArray(const BitSetArray<N> &other)
 
 template <size_t N>
 BitSetArray<N>::Iterator::Iterator(const BitSetArray<N> &bitSetArray, std::size_t index)
-    : mParent(bitSetArray), mIndex(index), mCurrentIterator(mParent.mBaseBitSetArray[0].begin())
+    : mIndex(index),
+      mParent(bitSetArray),
+      mCurrentParent(&mParent),
+      mCurrentIterator(mParent.mBaseBitSetArray[0].begin())
 {
-    while (mIndex < mParent.kArraySize)
+    while (mIndex < mCurrentParent->kArraySize)
     {
-        if (mParent.mBaseBitSetArray[mIndex].any())
+        if (mCurrentParent->mBaseBitSetArray[mIndex].any())
         {
             break;
         }
         mIndex++;
     }
 
-    if (mIndex < mParent.kArraySize)
+    if (mIndex < mCurrentParent->kArraySize)
     {
-        mCurrentIterator = mParent.mBaseBitSetArray[mIndex].begin();
+        mCurrentIterator = mCurrentParent->mBaseBitSetArray[mIndex].begin();
     }
     else
     {
-        mCurrentIterator = mParent.mBaseBitSetArray[mParent.kArraySize - 1].end();
+        mCurrentIterator = mCurrentParent->mBaseBitSetArray[mCurrentParent->kArraySize - 1].end();
     }
 }
 
@@ -704,12 +719,12 @@ template <std::size_t N>
 typename BitSetArray<N>::Iterator &BitSetArray<N>::Iterator::operator++()
 {
     ++mCurrentIterator;
-    if (mCurrentIterator == mParent.mBaseBitSetArray[mIndex].end())
+    if (mCurrentIterator == mCurrentParent->mBaseBitSetArray[mIndex].end())
     {
         mIndex++;
-        if (mIndex < mParent.kArraySize)
+        if (mIndex < mCurrentParent->kArraySize)
         {
-            mCurrentIterator = mParent.mBaseBitSetArray[mIndex].begin();
+            mCurrentIterator = mCurrentParent->mBaseBitSetArray[mIndex].begin();
         }
     }
     return *this;
@@ -744,10 +759,110 @@ BitSetArray<N> &BitSetArray<N>::operator=(const BitSetArray<N> &other)
 }
 
 template <std::size_t N>
+BitSetArray<N> &BitSetArray<N>::operator&=(const BitSetArray<N> &other)
+{
+    for (std::size_t index = 0; index < kArraySize; index++)
+    {
+        mBaseBitSetArray[index] &= other.mBaseBitSetArray[index];
+    }
+    return *this;
+}
+
+template <std::size_t N>
+BitSetArray<N> &BitSetArray<N>::operator|=(const BitSetArray<N> &other)
+{
+    for (std::size_t index = 0; index < kArraySize; index++)
+    {
+        mBaseBitSetArray[index] |= other.mBaseBitSetArray[index];
+    }
+    return *this;
+}
+
+template <std::size_t N>
+BitSetArray<N> &BitSetArray<N>::operator^=(const BitSetArray<N> &other)
+{
+    for (std::size_t index = 0; index < kArraySize; index++)
+    {
+        mBaseBitSetArray[index] ^= other.mBaseBitSetArray[index];
+    }
+    return *this;
+}
+
+template <std::size_t N>
+BitSetArray<N> BitSetArray<N>::operator&(const angle::BitSetArray<N> &other) const
+{
+    angle::BitSetArray<N> result(other);
+    result &= *this;
+    return result;
+}
+
+template <std::size_t N>
+BitSetArray<N> BitSetArray<N>::operator|(const angle::BitSetArray<N> &other) const
+{
+    angle::BitSetArray<N> result(other);
+    result |= *this;
+    return result;
+}
+
+template <std::size_t N>
+BitSetArray<N> BitSetArray<N>::operator^(const angle::BitSetArray<N> &other) const
+{
+    angle::BitSetArray<N> result(other);
+    result ^= *this;
+    return result;
+}
+
+template <std::size_t N>
+bool BitSetArray<N>::operator==(const angle::BitSetArray<N> &other) const
+{
+    for (std::size_t index = 0; index < kArraySize; index++)
+    {
+        if (mBaseBitSetArray[index] != other.mBaseBitSetArray[index])
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+template <std::size_t N>
+bool BitSetArray<N>::operator!=(const angle::BitSetArray<N> &other) const
+{
+    return !(*this == other);
+}
+
+template <std::size_t N>
+BitSetArray<N> BitSetArray<N>::operator~() const
+{
+    angle::BitSetArray<N> result;
+    for (std::size_t index = 0; index < kArraySize; index++)
+    {
+        result.mBaseBitSetArray[index] |= ~mBaseBitSetArray[index];
+    }
+    // The last element in result may need special handling
+    result.mBaseBitSetArray[kArraySize - 1] &= kLastElementMask;
+
+    return result;
+}
+
+template <std::size_t N>
 bool BitSetArray<N>::operator[](std::size_t pos) const
 {
     ASSERT(pos < size());
     return test(pos);
+}
+
+template <std::size_t N>
+BitSetArray<N> &BitSetArray<N>::set()
+{
+    for (BaseBitSet &baseBitSet : mBaseBitSetArray)
+    {
+        baseBitSet.set();
+    }
+    // The last element in mBaseBitSetArray may need special handling
+    mBaseBitSetArray[kArraySize - 1] &= kLastElementMask;
+
+    return *this;
 }
 
 template <std::size_t N>
@@ -897,6 +1012,18 @@ inline constexpr angle::BitSetT<N, BitsT, ParamT> operator^(
     angle::BitSetT<N, BitsT, ParamT> result(lhs);
     result ^= rhs.bits();
     return result;
+}
+
+template <size_t N, typename BitsT, typename ParamT>
+inline bool operator==(angle::BitSetT<N, BitsT, ParamT> &lhs, angle::BitSetT<N, BitsT, ParamT> &rhs)
+{
+    return lhs.bits() == rhs.bits();
+}
+
+template <size_t N, typename BitsT, typename ParamT>
+inline bool operator!=(angle::BitSetT<N, BitsT, ParamT> &lhs, angle::BitSetT<N, BitsT, ParamT> &rhs)
+{
+    return !(lhs == rhs);
 }
 
 #endif  // COMMON_BITSETITERATOR_H_

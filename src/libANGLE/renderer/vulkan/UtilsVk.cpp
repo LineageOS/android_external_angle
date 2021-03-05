@@ -1492,9 +1492,7 @@ angle::Result UtilsVk::clearFramebuffer(ContextVk *contextVk,
     }
     else
     {
-        bool renderPassDescChanged = false;
-        ANGLE_TRY(contextVk->startRenderPass(scissoredRenderArea, &commandBuffer,
-                                             &renderPassDescChanged));
+        ANGLE_TRY(contextVk->startRenderPass(scissoredRenderArea, &commandBuffer, nullptr));
     }
 
     if (params.clearStencil || params.clearDepth)
@@ -1606,7 +1604,9 @@ angle::Result UtilsVk::clearFramebuffer(ContextVk *contextVk,
                            sizeof(shaderParams), commandBuffer));
 
     // Make sure transform feedback is paused
-    contextVk->pauseTransformFeedbackIfStartedAndRebindBuffersOnResume();
+    bool isTransformFeedbackActiveUnpaused =
+        contextVk->getStartedRenderPassCommands().isTransformFeedbackActiveUnpaused();
+    contextVk->pauseTransformFeedbackIfActiveUnpaused();
 
     // Make sure this draw call doesn't count towards occlusion query results.
     contextVk->pauseRenderPassQueriesIfActive();
@@ -1617,7 +1617,7 @@ angle::Result UtilsVk::clearFramebuffer(ContextVk *contextVk,
     // If transform feedback was active, we can't pause and resume it in the same render pass
     // because we can't insert a memory barrier for the counter buffers.  In that case, break the
     // render pass.
-    if (contextVk->getStartedRenderPassCommands().isTransformFeedbackStarted())
+    if (isTransformFeedbackActiveUnpaused)
     {
         ANGLE_TRY(contextVk->flushCommandsAndEndRenderPass());
     }
@@ -2842,6 +2842,7 @@ angle::Result UtilsVk::cullOverlayWidgets(ContextVk *contextVk,
     ANGLE_TRY(setupProgram(contextVk, Function::OverlayCull, shader, nullptr,
                            &mOverlayCullPrograms[flags], nullptr, descriptorSet, nullptr, 0,
                            commandBuffer));
+
     commandBuffer->dispatch(dest->getExtents().width, dest->getExtents().height, 1);
     descriptorPoolBinding.reset();
 
@@ -2864,6 +2865,7 @@ angle::Result UtilsVk::drawOverlay(ContextVk *contextVk,
     OverlayDrawShaderParams shaderParams;
     shaderParams.outputSize[0] = dest->getExtents().width;
     shaderParams.outputSize[1] = dest->getExtents().height;
+    shaderParams.rotateXY      = params.rotateXY;
 
     ASSERT(params.subgroupSize[0] == 8 &&
            (params.subgroupSize[1] == 8 || params.subgroupSize[1] == 4));

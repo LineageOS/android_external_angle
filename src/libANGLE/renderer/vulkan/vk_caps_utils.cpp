@@ -861,6 +861,11 @@ void RendererVk::ensureCapsInitialized() const
 
     mNativeCaps.subPixelBits = limitsVk.subPixelPrecisionBits;
 
+    // Enable GL_EXT_shader_framebuffer_fetch_non_coherent
+    // For supporting this extension, gl::IMPLEMENTATION_MAX_DRAW_BUFFERS is used.
+    mNativeExtensions.shaderFramebufferFetchNonCoherentEXT =
+        mNativeCaps.maxDrawBuffers >= gl::IMPLEMENTATION_MAX_DRAW_BUFFERS;
+
     // Enable Program Binary extension.
     mNativeExtensions.getProgramBinaryOES = true;
     mNativeCaps.programBinaryFormats.push_back(GL_PROGRAM_BINARY_ANGLE);

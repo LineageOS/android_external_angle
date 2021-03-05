@@ -34,6 +34,8 @@ TextureCaps::TextureCaps() = default;
 
 TextureCaps::TextureCaps(const TextureCaps &other) = default;
 
+TextureCaps &TextureCaps::operator=(const TextureCaps &other) = default;
+
 TextureCaps::~TextureCaps() = default;
 
 GLuint TextureCaps::getMaxSamples() const
@@ -1123,6 +1125,7 @@ void TypePrecision::get(GLint *returnRange, GLint *returnPrecision) const
 Caps::Caps()                  = default;
 Caps::Caps(const Caps &other) = default;
 Caps::~Caps()                 = default;
+Caps &Caps::operator=(const Caps &other) = default;
 
 Caps GenerateMinimumCaps(const Version &clientVersion, const Extensions &extensions)
 {
@@ -1471,6 +1474,7 @@ std::vector<std::string> DisplayExtensions::getStrings() const
     InsertExtensionString("EGL_NV_robustness_video_memory_purge",                robustnessVideoMemoryPurgeNV,       &extensionStrings);
     InsertExtensionString("EGL_KHR_reusable_sync",                               reusableSyncKHR,                    &extensionStrings);
     InsertExtensionString("EGL_ANGLE_external_context_and_surface",              externalContextAndSurface,          &extensionStrings);
+    InsertExtensionString("EGL_EXT_buffer_age",                                  bufferAgeEXT,                       &extensionStrings);
     // clang-format on
 
     return extensionStrings;

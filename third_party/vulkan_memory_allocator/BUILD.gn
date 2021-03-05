@@ -27,18 +27,17 @@ config("vulkan_memory_allocator_config") {
   ]
 }
 
-# TODO: remove this target when chrome and ANGLE are updated to use
-# vulkan_memory_allocator_with_usage
 source_set("vulkan_memory_allocator") {
-  sources = [ "src/vk_mem_alloc.h" ]
-  public_configs = [ ":vulkan_memory_allocator_config" ]
-}
-
-source_set("vulkan_memory_allocator_with_usage") {
   sources = [
     "src/vk_mem_alloc.h",
     "vma.cpp",
   ]
   deps = [ "//third_party/vulkan-deps/vulkan-headers/src:vulkan_headers" ]
   public_configs = [ ":vulkan_memory_allocator_config" ]
+}
+
+# TODO: remove this target when chrome and ANGLE are updated to use
+# vulkan_memory_allocator
+source_set("vulkan_memory_allocator_with_usage") {
+  public_deps = [ ":vulkan_memory_allocator" ]
 }
