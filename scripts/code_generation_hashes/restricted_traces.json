@@ -1,6 +1,10 @@
 {
   "src/tests/restricted_traces/.gitignore":
-    "9f8c06acdef42593c7e64fc16c73ebd8",
+    "97d094f939508ea18d5b2c8f45e01785",
+  "src/tests/restricted_traces/aliexpress.tar.gz.sha1":
+    "12f48ff0c4ca7980ea879c81b0c9518b",
+  "src/tests/restricted_traces/among_us.tar.gz.sha1":
+    "6fcc4409e6f23a59680c99bcdeb75889",
   "src/tests/restricted_traces/angry_birds_2_1500.tar.gz.sha1":
     "2b5d6505d6a8b6f3bbfbad2c8405a89d",
   "src/tests/restricted_traces/arena_of_valor.tar.gz.sha1":
@@ -13,6 +17,8 @@
     "0d9c9de640f997cec3aee06f6a38de89",
   "src/tests/restricted_traces/candy_crush_500.tar.gz.sha1":
     "b0772c8cf2d3d49e49fea9fe7cff0446",
+  "src/tests/restricted_traces/car_parking_multiplayer.tar.gz.sha1":
+    "99f13305fcca8315a941f6c2efeeddf0",
   "src/tests/restricted_traces/clash_of_clans.tar.gz.sha1":
     "4e3190f8b3cdded405172d6ef1fa7fa3",
   "src/tests/restricted_traces/clash_royale.tar.gz.sha1":
@@ -38,7 +44,7 @@
   "src/tests/restricted_traces/free_fire.tar.gz.sha1":
     "a4e7aba54fb48524bb4f3022623bc7cd",
   "src/tests/restricted_traces/gen_restricted_traces.py":
-    "eccb9514e9606eb56b24cf57598e596c",
+    "7df2fbfb890d54ea9932b443439ae97e",
   "src/tests/restricted_traces/google_maps.tar.gz.sha1":
     "5d7001969619570e80e5a39b1ab8b0c4",
   "src/tests/restricted_traces/happy_color.tar.gz.sha1":
@@ -63,6 +69,8 @@
     "12256b955ea6f318e99c8bcd8ab97d2d",
   "src/tests/restricted_traces/marvel_contest_of_champions.tar.gz.sha1":
     "80cf00c9a348c2ea95d538e9257375dd",
+  "src/tests/restricted_traces/messenger_lite.tar.gz.sha1":
+    "8972e27c2d12ff8d3ac8f5b8104d6b4c",
   "src/tests/restricted_traces/minecraft.tar.gz.sha1":
     "f9f4e3d480c83b03a1de55d63a04a207",
   "src/tests/restricted_traces/mobile_legends.tar.gz.sha1":
@@ -80,25 +88,31 @@
   "src/tests/restricted_traces/real_gangster_crime.tar.gz.sha1":
     "c85be329035a760edad673eb2ca7c3f1",
   "src/tests/restricted_traces/restricted_traces.json":
-    "3268b18d8e847d9c799a85a0467d6ddf",
+    "e1d1b013f60fc9349d0f9190e7efa5b2",
   "src/tests/restricted_traces/restricted_traces_autogen.cpp":
-    "f0bef406ba544b4aad8276b3734004c7",
+    "8cda6f05df47a23e663ef1ce44f6ad3b",
   "src/tests/restricted_traces/restricted_traces_autogen.gni":
-    "297936bf8a465953a24e94c408506017",
+    "7380c5d634735e54aebf3b7d968158b0",
   "src/tests/restricted_traces/restricted_traces_autogen.h":
-    "9d4592e09551a0795ba7531f423d9ec0",
+    "d6c08b0e6e023c3132ed34bb154f3ec1",
   "src/tests/restricted_traces/rise_of_kingdoms.tar.gz.sha1":
     "d4618f857c44f0dfa642ae3af8f161d9",
   "src/tests/restricted_traces/romancing_saga.tar.gz.sha1":
     "a46c4faab1651f5d87374c231c8dcea6",
+  "src/tests/restricted_traces/rope_hero_vice_town.tar.gz.sha1":
+    "ce79b6ef759e66cd3f08a54d4691eebd",
   "src/tests/restricted_traces/saint_seiya_awakening.tar.gz.sha1":
     "c9cde6bdfd9096a44d5f03d905a45a4f",
   "src/tests/restricted_traces/shadow_fight_2.tar.gz.sha1":
     "f8490221b74d0186b86a3d9e2b37b97d",
   "src/tests/restricted_traces/sniper_3d.tar.gz.sha1":
     "1901148bf50860b68778ffb077c72406",
+  "src/tests/restricted_traces/standoff_2.tar.gz.sha1":
+    "5ebf645e4ea83fc7da1baf6616742eeb",
   "src/tests/restricted_traces/subway_surfers.tar.gz.sha1":
     "647775e4cd6bc9969b69463c2ad99a39",
+  "src/tests/restricted_traces/talking_tom_hero_dash.tar.gz.sha1":
+    "e72092832f4642e7a2711820dcbc78e4",
   "src/tests/restricted_traces/temple_run_2.tar.gz.sha1":
     "6ba951f53dccc520995fc7cc17f86288",
   "src/tests/restricted_traces/temple_run_300.tar.gz.sha1":

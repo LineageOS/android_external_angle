@@ -944,6 +944,11 @@ void WriteShaderVar(BinaryOutputStream *stream, const sh::ShaderVariable &var)
     stream->writeInt(var.offset);
     stream->writeBool(var.readonly);
     stream->writeBool(var.writeonly);
+    stream->writeBool(var.isFragmentInOut);
+    if (var.isFragmentInOut)
+    {
+        stream->writeInt(var.location);
+    }
     stream->writeBool(var.texelFetchStaticUse);
 
     ASSERT(var.fields.empty());
@@ -963,10 +968,15 @@ void LoadShaderVar(BinaryInputStream *stream, sh::ShaderVariable *var)
     var->mappedStructOrBlockName = stream->readString();
     var->setParentArrayIndex(stream->readInt<int>());
 
-    var->imageUnitFormat     = stream->readInt<GLenum>();
-    var->offset              = stream->readInt<int>();
-    var->readonly            = stream->readBool();
-    var->writeonly           = stream->readBool();
+    var->imageUnitFormat = stream->readInt<GLenum>();
+    var->offset          = stream->readInt<int>();
+    var->readonly        = stream->readBool();
+    var->writeonly       = stream->readBool();
+    var->isFragmentInOut = stream->readBool();
+    if (var->isFragmentInOut)
+    {
+        var->location = stream->readInt<int>();
+    }
     var->texelFetchStaticUse = stream->readBool();
 }
 
@@ -3379,14 +3389,46 @@ bool Program::linkValidateShaders(InfoLog &infoLog)
         Shader *tessControlShader = shaders[ShaderType::TessControl];
         if (tessControlShader)
         {
-            mState.mExecutable->mTessControlShaderVertices =
-                tessControlShader->getTessControlShaderVertices();
+            int tcsShaderVertices = tessControlShader->getTessControlShaderVertices();
+            if (tcsShaderVertices == 0)
+            {
+                // In tessellation control shader, output vertices should be specified at least
+                // once.
+                // > GLSL ES Version 3.20.6 spec:
+                // > 4.4.2. Output Layout Qualifiers
+                // > Tessellation Control Outputs
+                // > ...
+                // > There must be at least one layout qualifier specifying an output patch vertex
+                // > count in any program containing a tessellation control shader.
+                infoLog << "In Tessellation Control Shader, at least one layout qualifier "
+                           "specifying an output patch vertex count must exist.";
+                return false;
+            }
+
+            mState.mExecutable->mTessControlShaderVertices = tcsShaderVertices;
         }
 
         Shader *tessEvaluationShader = shaders[ShaderType::TessEvaluation];
         if (tessEvaluationShader)
         {
-            mState.mExecutable->mTessGenMode        = tessEvaluationShader->getTessGenMode();
+            GLenum tesPrimitiveMode = tessEvaluationShader->getTessGenMode();
+            if (tesPrimitiveMode == 0)
+            {
+                // In tessellation evaluation shader, a primitive mode should be specified at least
+                // once.
+                // > GLSL ES Version 3.20.6 spec:
+                // > 4.4.1. Input Layout Qualifiers
+                // > Tessellation Evaluation Inputs
+                // > ...
+                // > The tessellation evaluation shader object in a program must declare a primitive
+                // > mode in its input layout. Declaring vertex spacing, ordering, or point mode
+                // > identifiers is optional.
+                infoLog << "The Tessellation Evaluation Shader object in a program must declare a "
+                           "primitive mode in its input layout.";
+                return false;
+            }
+
+            mState.mExecutable->mTessGenMode        = tesPrimitiveMode;
             mState.mExecutable->mTessGenSpacing     = tessEvaluationShader->getTessGenSpacing();
             mState.mExecutable->mTessGenVertexOrder = tessEvaluationShader->getTessGenVertexOrder();
             mState.mExecutable->mTessGenPointMode   = tessEvaluationShader->getTessGenPointMode();
@@ -3554,8 +3596,8 @@ void Program::linkSamplerAndImageBindings(GLuint *combinedImageUniforms)
 {
     ASSERT(combinedImageUniforms);
 
-    // Iterate over mExecutable->mUniforms from the back, and find the range of atomic counters,
-    // images and samplers in that order.
+    // Iterate over mExecutable->mUniforms from the back, and find the range of subpass inputs,
+    // atomic counters, images and samplers in that order.
     auto highIter = mState.mExecutable->getUniforms().rbegin();
     auto lowIter  = highIter;
 
@@ -3564,7 +3606,19 @@ void Program::linkSamplerAndImageBindings(GLuint *combinedImageUniforms)
 
     // Note that uniform block uniforms are not yet appended to this list.
     ASSERT(mState.mExecutable->getUniforms().size() == 0 || highIter->isAtomicCounter() ||
-           highIter->isImage() || highIter->isSampler() || highIter->isInDefaultBlock());
+           highIter->isImage() || highIter->isSampler() || highIter->isInDefaultBlock() ||
+           highIter->isFragmentInOut);
+
+    for (; lowIter != mState.mExecutable->getUniforms().rend() && lowIter->isFragmentInOut;
+         ++lowIter)
+    {
+        --low;
+    }
+
+    mState.mExecutable->mFragmentInoutRange = RangeUI(low, high);
+
+    highIter = lowIter;
+    high     = low;
 
     for (; lowIter != mState.mExecutable->getUniforms().rend() && lowIter->isAtomicCounter();
          ++lowIter)

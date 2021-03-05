@@ -2756,6 +2756,11 @@ void TParseContext::rValueErrorCheck(const TSourceLoc& loc, const char* op, TInt
     if (!(symNode && symNode->getQualifier().isWriteOnly())) // base class checks
         if (symNode && symNode->getQualifier().isExplicitInterpolation())
             error(loc, "can't read from explicitly-interpolated object: ", op, symNode->getName().c_str());
+
+    // local_size_{xyz} must be assigned or specialized before gl_WorkGroupSize can be assigned. 
+    if(node->getQualifier().builtIn == EbvWorkGroupSize &&
+       !(intermediate.isLocalSizeSet() || intermediate.isLocalSizeSpecialized()))
+        error(loc, "can't read from gl_WorkGroupSize before a fixed workgroup size has been declared", op, "");
 }
 
 //
@@ -4296,8 +4301,10 @@ TSymbol* TParseContext::redeclareBuiltinVariable(const TSourceLoc& loc, const TS
         // If it wasn't at a built-in level, then it's already been redeclared;
         // that is, this is a redeclaration of a redeclaration; reuse that initial
         // redeclaration.  Otherwise, make the new one.
-        if (builtIn)
+        if (builtIn) {
             makeEditable(symbol);
+            symbolTable.amendSymbolIdLevel(*symbol);
+        }
 
         // Now, modify the type of the copy, as per the type of the current redeclaration.
 
@@ -4826,7 +4833,7 @@ void TParseContext::inductiveLoopCheck(const TSourceLoc& loc, TIntermNode* init,
     }
 
     // get the unique id of the loop index
-    int loopIndex = binaryInit->getLeft()->getAsSymbolNode()->getId();
+    long long loopIndex = binaryInit->getLeft()->getAsSymbolNode()->getId();
     inductiveLoopIds.insert(loopIndex);
 
     // condition's form must be "loop-index relational-operator constant-expression"
@@ -5767,6 +5774,8 @@ void TParseContext::layoutObjectCheck(const TSourceLoc& loc, const TSymbol& symb
                     error(loc, "can only specify on a uniform block", "push_constant", "");
                 if (qualifier.isShaderRecord())
                     error(loc, "can only specify on a buffer block", "shaderRecordNV", "");
+                if (qualifier.hasLocation() && type.isAtomic())
+                    error(loc, "cannot specify on atomic counter", "location", "");
             }
             break;
         default:
@@ -5904,16 +5913,12 @@ void TParseContext::layoutTypeCheck(const TSourceLoc& loc, const TType& type)
         if (type.getBasicType() == EbtSampler) {
             int lastBinding = qualifier.layoutBinding;
             if (type.isArray()) {
-                if (spvVersion.vulkan > 0)
-                    lastBinding += 1;
-                else {
+                if (spvVersion.vulkan == 0) {
                     if (type.isSizedArray())
-                        lastBinding += type.getCumulativeArraySize();
+                        lastBinding += (type.getCumulativeArraySize() - 1);
                     else {
-                        lastBinding += 1;
 #ifndef GLSLANG_WEB
-                        if (spvVersion.vulkan == 0)
-                            warn(loc, "assuming binding count of one for compile-time checking of binding numbers for unsized array", "[]", "");
+                        warn(loc, "assuming binding count of one for compile-time checking of binding numbers for unsized array", "[]", "");
 #endif
                     }
                 }
