@@ -1870,18 +1870,16 @@ angle::Result FramebufferVk::syncState(const gl::Context *context,
         ANGLE_TRY(contextVk->flushCommandsAndEndRenderPass());
     }
 
-    updateRenderPassDesc();
+    updateRenderPassDesc(contextVk);
 
     // Deactivate Framebuffer
     mFramebuffer = nullptr;
 
     // Notify the ContextVk to update the pipeline desc.
-    contextVk->onFramebufferChange(this);
-
-    return angle::Result::Continue;
+    return contextVk->onFramebufferChange(this);
 }
 
-void FramebufferVk::updateRenderPassDesc()
+void FramebufferVk::updateRenderPassDesc(ContextVk *contextVk)
 {
     mRenderPassDesc = {};
     mRenderPassDesc.setSamples(getSamples());
@@ -1927,6 +1925,22 @@ void FramebufferVk::updateRenderPassDesc()
 
             mRenderPassDesc.packDepthStencilResolveAttachment(hasDepth, hasStencil);
         }
+    }
+
+    // In case bound program uses shader framebuffer fetch and bound attachments are changed without
+    // program change, we update framebuffer fetch mode in Renderpass here.
+    bool programUsesFramebufferFetch        = false;
+    const gl::State &glState                = contextVk->getState();
+    const gl::ProgramExecutable *executable = glState.getProgramExecutable();
+    if (executable)
+    {
+        programUsesFramebufferFetch = executable->usesFramebufferFetch();
+    }
+
+    if (programUsesFramebufferFetch != mRenderPassDesc.getFramebufferFetchMode())
+    {
+        mCurrentFramebufferDesc.updateFramebufferFetchMode(programUsesFramebufferFetch);
+        mRenderPassDesc.setFramebufferFetchMode(programUsesFramebufferFetch);
     }
 
     mCurrentFramebufferDesc.updateUnresolveMask({});
@@ -2368,9 +2382,24 @@ angle::Result FramebufferVk::startNewRenderPass(ContextVk *contextVk,
                                                   ? VK_ATTACHMENT_LOAD_OP_LOAD
                                                   : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 
-            renderPassAttachmentOps.setOps(colorIndexVk, loadOp, storeOp);
-            packedClearValues.store(colorIndexVk, VK_IMAGE_ASPECT_COLOR_BIT,
-                                    kUninitializedClearValue);
+            if (loadOp == VK_ATTACHMENT_LOAD_OP_DONT_CARE &&
+                mEmulatedAlphaAttachmentMask[colorIndexGL])
+            {
+                // This color attachment has a format with no alpha channel, but is emulated with a
+                // format that does have an alpha channel, which must be cleared to 1.0 in order to
+                // be visible.
+                renderPassAttachmentOps.setOps(colorIndexVk, VK_ATTACHMENT_LOAD_OP_CLEAR, storeOp);
+                VkClearValue emulatedAlphaClearValue =
+                    getCorrectedColorClearValue(colorIndexGL, {});
+                packedClearValues.store(colorIndexVk, VK_IMAGE_ASPECT_COLOR_BIT,
+                                        emulatedAlphaClearValue);
+            }
+            else
+            {
+                renderPassAttachmentOps.setOps(colorIndexVk, loadOp, storeOp);
+                packedClearValues.store(colorIndexVk, VK_IMAGE_ASPECT_COLOR_BIT,
+                                        kUninitializedClearValue);
+            }
         }
         renderPassAttachmentOps.setStencilOps(colorIndexVk, VK_ATTACHMENT_LOAD_OP_DONT_CARE,
                                               vk::RenderPassStoreOp::DontCare);
@@ -2598,9 +2627,7 @@ angle::Result FramebufferVk::startNewRenderPass(ContextVk *contextVk,
 
     if (unresolveChanged || anyUnresolve)
     {
-        contextVk->onDrawFramebufferRenderPassDescChange(this);
-        // Notify that the render pass desc has changed.
-        *renderPassDescChangedOut = true;
+        contextVk->onDrawFramebufferRenderPassDescChange(this, renderPassDescChangedOut);
     }
 
     return angle::Result::Continue;
@@ -2727,6 +2754,20 @@ void FramebufferVk::updateRenderPassReadOnlyDepthMode(ContextVk *contextVk,
     ASSERT(readOnlyDepthStencilMode || !mReadOnlyDepthFeedbackLoopMode);
 
     renderPass->updateStartedRenderPassWithDepthMode(readOnlyDepthStencilMode);
+}
+
+void FramebufferVk::onSwitchProgramFramebufferFetch(ContextVk *contextVk,
+                                                    bool programUsesFramebufferFetch)
+{
+    if (programUsesFramebufferFetch != mRenderPassDesc.getFramebufferFetchMode())
+    {
+        // Make sure framebuffer is recreated.
+        mFramebuffer = nullptr;
+        mCurrentFramebufferDesc.updateFramebufferFetchMode(programUsesFramebufferFetch);
+
+        mRenderPassDesc.setFramebufferFetchMode(programUsesFramebufferFetch);
+        contextVk->onDrawFramebufferRenderPassDescChange(this, nullptr);
+    }
 }
 
 // FramebufferCache implementation.
