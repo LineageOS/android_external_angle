@@ -2784,6 +2784,7 @@ bool TGlslangToSpvTraverser::visitAggregate(glslang::TVisit visit, glslang::TInt
         break;
 
     case glslang::EOpAtomicAdd:
+    case glslang::EOpAtomicSubtract:
     case glslang::EOpAtomicMin:
     case glslang::EOpAtomicMax:
     case glslang::EOpAtomicAnd:
@@ -2955,6 +2956,7 @@ bool TGlslangToSpvTraverser::visitAggregate(glslang::TVisit visit, glslang::TInt
             break;
 
         case glslang::EOpAtomicAdd:
+        case glslang::EOpAtomicSubtract:
         case glslang::EOpAtomicMin:
         case glslang::EOpAtomicMax:
         case glslang::EOpAtomicAnd:
@@ -3164,7 +3166,9 @@ bool TGlslangToSpvTraverser::visitAggregate(glslang::TVisit visit, glslang::TInt
 #endif
     if (atomic) {
         // Handle all atomics
-        result = createAtomicOperation(node->getOp(), precision, resultType(), operands, node->getBasicType(),
+        glslang::TBasicType typeProxy = (node->getOp() == glslang::EOpAtomicStore)
+            ? node->getSequence()[0]->getAsTyped()->getBasicType() : node->getBasicType();
+        result = createAtomicOperation(node->getOp(), precision, resultType(), operands, typeProxy,
             lvalueCoherentFlags);
     } else if (node->getOp() == glslang::EOpDebugPrintf) {
         if (!nonSemanticDebugPrintf) {
@@ -6892,6 +6896,7 @@ spv::Id TGlslangToSpvTraverser::createAtomicOperation(glslang::TOperator op, spv
                 builder.addCapability(spv::CapabilityAtomicFloat64AddEXT);
         }
         break;
+    case glslang::EOpAtomicSubtract:
     case glslang::EOpAtomicCounterSubtract:
         opCode = spv::OpAtomicISub;
         break;
