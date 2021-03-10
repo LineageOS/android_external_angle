@@ -67,7 +67,25 @@ egl::ShareGroup *AllocateOrGetShareGroup(egl::Display *display, const gl::Contex
 template <typename T>
 angle::Result GetQueryObjectParameter(const Context *context, Query *query, GLenum pname, T *params)
 {
-    ASSERT(query != nullptr || pname == GL_QUERY_RESULT_AVAILABLE_EXT);
+    if (!query)
+    {
+        // Some applications call into glGetQueryObjectuiv(...) prior to calling glBeginQuery(...)
+        // This wouldn't be an issue since the validation layer will handle such a usecases but when
+        // the app enables EGL_KHR_create_context_no_error extension, we skip the validation layer.
+        switch (pname)
+        {
+            case GL_QUERY_RESULT_EXT:
+                *params = 0;
+                break;
+            case GL_QUERY_RESULT_AVAILABLE_EXT:
+                *params = GL_FALSE;
+                break;
+            default:
+                UNREACHABLE();
+                return angle::Result::Stop;
+        }
+        return angle::Result::Continue;
+    }
 
     switch (pname)
     {
@@ -854,10 +872,6 @@ GLuint Context::createShaderProgramv(ShaderType type, GLsizei count, const GLcha
                     return 0u;
                 }
 
-                // Need to manually resolveLink(), since onProgramLink() doesn't think the program
-                // is in use.   For the normal glDetachShader() API call path, this is done during
-                // ValidateDetachShader() via gl::GetValidProgram().
-                programObject->resolveLink(this);
                 programObject->detachShader(this, shaderObject);
             }
 
@@ -6594,7 +6608,7 @@ void Context::getFloatvRobust(GLenum pname, GLsizei bufSize, GLsizei *length, GL
 
 void Context::getIntegerv(GLenum pname, GLint *params)
 {
-    GLenum nativeType;
+    GLenum nativeType      = GL_NONE;
     unsigned int numParams = 0;
     getQueryParameterInfo(pname, &nativeType, &numParams);
 

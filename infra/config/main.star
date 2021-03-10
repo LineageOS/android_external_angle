@@ -142,7 +142,7 @@ def angle_standalone_builder(name, clang, debug, cpu, uwp = False, trace_tests =
         # Cache for mac_toolchain tool and XCode.app
         caches += [swarming.cache(name = "osx_sdk", path = "osx_sdk")]
         properties["$depot_tools/osx_sdk"] = {
-            "sdk_version": "12a7209"
+            "sdk_version": "12D4e"
         }
 
     if not clang:
@@ -379,6 +379,9 @@ luci.cq_group(
             builder = 'chromium:try/win-angle-chromium-x64-try',
         ),
         luci.cq_tryjob_verifier(
+            builder = 'chromium:try/win-angle-chromium-x86-try',
+        ),
+        luci.cq_tryjob_verifier(
             builder = 'chromium:try/win-angle-deqp-rel-32',
         ),
         luci.cq_tryjob_verifier(
@@ -386,6 +389,9 @@ luci.cq_group(
         ),
         luci.cq_tryjob_verifier(
             builder = 'chromium:try/win-angle-x64-try',
+        ),
+        luci.cq_tryjob_verifier(
+            builder = 'chromium:try/win-angle-x86-try',
         ),
         luci.cq_tryjob_verifier(
             builder = 'chromium:try/win-swangle-try-tot-angle-x86',
