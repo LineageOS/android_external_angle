@@ -1118,6 +1118,9 @@ class Texture3DTestES2 : public TexCoordDrawTest
 
     void testSetUp() override
     {
+        // http://anglebug.com/5728
+        ANGLE_SKIP_TEST_IF(IsOzone());
+
         TexCoordDrawTest::testSetUp();
 
         glGenTextures(1, &mTexture3D);
@@ -2992,6 +2995,10 @@ TEST_P(Texture2DTest, NPOTSubImageParameters)
 TEST_P(Texture3DTestES2, RGBA)
 {
     ANGLE_SKIP_TEST_IF(!hasTexture3DExt());
+
+    // http://anglebug.com/5728
+    ANGLE_SKIP_TEST_IF(IsOzone());
+
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_3D, mTexture3D);
     std::vector<GLColor> texDataGreen(2u * 2u * 2u, GLColor::green);
@@ -3014,6 +3021,10 @@ TEST_P(Texture3DTestES2, RGBA)
 TEST_P(Texture3DTestES2, Luminance)
 {
     ANGLE_SKIP_TEST_IF(!hasTexture3DExt());
+
+    // http://anglebug.com/5728
+    ANGLE_SKIP_TEST_IF(IsOzone());
+
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_3D, mTexture3D);
     std::vector<GLubyte> texData(2u * 2u * 2u, 125);
@@ -3034,6 +3045,9 @@ TEST_P(Texture3DTestES2, Luminance)
 TEST_P(Texture3DTestES2, CopySubImageRGBA)
 {
     ANGLE_SKIP_TEST_IF(!hasTexture3DExt());
+
+    // http://anglebug.com/5728
+    ANGLE_SKIP_TEST_IF(IsOzone());
 
     glClearColor(0, 0, 1, 1);
     glClear(GL_COLOR_BUFFER_BIT);
@@ -3069,6 +3083,9 @@ TEST_P(Texture3DTestES2, CopySubImageLuminance)
 {
     ANGLE_SKIP_TEST_IF(!hasTexture3DExt());
 
+    // http://anglebug.com/5728
+    ANGLE_SKIP_TEST_IF(IsOzone());
+
     glClearColor(1, 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT);
 
@@ -3101,6 +3118,9 @@ TEST_P(Texture3DTestES2, CopySubImageLuminance)
 TEST_P(Texture3DTestES2, CopySubImageAlpha)
 {
     ANGLE_SKIP_TEST_IF(!hasTexture3DExt());
+
+    // http://anglebug.com/5728
+    ANGLE_SKIP_TEST_IF(IsOzone());
 
     glClearColor(1, 0, 0, 0.5);
     glClear(GL_COLOR_BUFFER_BIT);
