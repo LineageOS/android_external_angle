@@ -40,6 +40,13 @@
 namespace
 {
 constexpr VkFormatFeatureFlags kInvalidFormatFeatureFlags = static_cast<VkFormatFeatureFlags>(-1);
+
+#if defined(ANGLE_EXPOSE_NON_CONFORMANT_EXTENSIONS_AND_VERSIONS)
+constexpr bool kExposeNonConformantExtensionsAndVersions = true;
+#else
+constexpr bool kExposeNonConformantExtensionsAndVersions = false;
+#endif
+
 }  // anonymous namespace
 
 namespace rx
@@ -1935,6 +1942,13 @@ void RendererVk::initFeatures(DisplayVk *displayVk,
         &mFeatures, supportsIncrementalPresent,
         ExtensionFound(VK_KHR_INCREMENTAL_PRESENT_EXTENSION_NAME, deviceExtensionNames));
 
+    // The Vulkan specification for the VK_KHR_incremental_present extension does not address
+    // rotation.  In Android, this extension is implemented on top of the same platform code as
+    // eglSwapBuffersWithDamageKHR(), which code assumes that it should rotate each rectangle.  To
+    // avoid double-rotating damage rectangles on Android, we must avoid pre-rotating
+    // application-provided rectangles.   See: https://issuetracker.google.com/issues/181796746
+    ANGLE_FEATURE_CONDITION(&mFeatures, disablePreRotateIncrementalPresentRectangles, IsAndroid());
+
 #if defined(ANGLE_PLATFORM_ANDROID)
     ANGLE_FEATURE_CONDITION(
         &mFeatures, supportsAndroidHardwareBuffer,
@@ -2143,6 +2157,10 @@ void RendererVk::initFeatures(DisplayVk *displayVk,
 
     // Negative viewports are exposed in the Maintenance1 extension and in core Vulkan 1.1+.
     ANGLE_FEATURE_CONDITION(&mFeatures, supportsNegativeViewport, supportsNegativeViewport);
+
+    // Whether non-conformant configurations and extensions should be exposed.
+    ANGLE_FEATURE_CONDITION(&mFeatures, exposeNonConformantExtensionsAndVersions,
+                            kExposeNonConformantExtensionsAndVersions);
 
     angle::PlatformMethods *platform = ANGLEPlatformCurrent();
     platform->overrideFeaturesVk(platform, &mFeatures);
