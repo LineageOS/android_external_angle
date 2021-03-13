@@ -26,7 +26,6 @@ DifferentStencilMasksTest.*
 EGLContextASANTest.*
 EGLContextSharingTest.TextureLifetime/*
 FramebufferTest.MultiContextNoRenderingFeedbackLoops/*
-GetTexLevelParameterTest.ExtensionStringExposed/*
 GLSLTest.InactiveVaryingInVertexActiveInFragment/*
 InstancingTest.LineLoop/*
 MaxTextureSizeTest.*
@@ -81,7 +80,8 @@ IndexedPointsTestUShort.*
 OcclusionQueriesTest.*
 PBOExtensionTest.*
 PixmapTest.Clearing/*
-SemaphoreTest.SemaphoreShouldBeSemaphore/*
+RobustClientMemoryTest.*
+SemaphoreTest.*
 SRGBFramebufferTest.Validation/*
 StateChangeRenderTest.GenerateMipmap/*
 SyncQueriesTest.*
@@ -94,6 +94,13 @@ VertexAttributeCachingTest.*
 VertexAttributeOORTest.*
 VertexAttributeTest.*
 ViewportTest.*
+VulkanExternalImageTest.ShouldClearMutableNoStorageUsageOpaqueFdRGBA8/*
+VulkanExternalImageTest.ShouldClearOpaqueFdWithSemaphores/*
+VulkanExternalImageTest.ShouldClearZirconVmoRGBA8/*
+VulkanExternalImageTest.ShouldClearZirconWithFlagsVmoRGBA8/*
+VulkanExternalImageTest.ShouldImportSemaphoreOpaqueFd/*
+VulkanExternalImageTest.TextureFormatCompatChromiumMutableNoStorageZirconVmo/*
+VulkanExternalImageTest.TextureFormatCompatChromiumZirconVmo/*
 WebGLCompatibilityTest.*
 WebGLFramebufferTest.*
 
@@ -105,8 +112,4 @@ MipmapTest.DISABLED_ThreeLevelsInitData/*
 
 # Compile failed tests
 GetImageTest.*
-GetTexLevelParameterTest.Queries/*
-RobustClientMemoryTest.*
 RobustResourceInitTest.*
-SemaphoreTest.*
-VulkanExternalImageTest.*

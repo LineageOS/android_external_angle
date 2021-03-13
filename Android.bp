@@ -1626,6 +1626,7 @@ cc_defaults {
         "src/third_party/khronos/",
         "src/third_party/volk/",
         "third_party/abseil-cpp/",
+        "third_party/vulkan-deps/spirv-headers/src/include/",
         "third_party/vulkan-deps/vulkan-headers/src/include/",
         "third_party/zlib/",
         "third_party/zlib/google/",
@@ -1754,10 +1755,12 @@ cc_defaults {
         "angle_compression",
         "angle_glslang_wrapper",
         "angle_libANGLE_headers",
+        "src_common_spirv_angle_spirv_builder",
         "src_common_vulkan_angle_vulkan_entry_points",
         "src_common_vulkan_angle_vulkan_headers",
         "src_common_vulkan_vulkan",
         "src_libANGLE_renderer_vulkan_angle_vk_mem_alloc_wrapper",
+        "third_party_vulkan_deps_spirv_headers_src_spv_headers",
     ],
 }
 cc_defaults {
@@ -4627,6 +4630,65 @@ cc_defaults {
     },
 }
 cc_defaults {
+    name: "third_party_abseil_cpp_absl_numeric_representation",
+    stl: "libc++_static",
+    local_include_dirs: [
+        "",
+        "third_party/abseil-cpp/",
+    ],
+    sdk_version: "28",
+    cflags: [
+        "-DABSL_ALLOCATOR_NOTHROW=1",
+        "-DANDROID",
+        "-DANDROID_NDK_VERSION_ROLL=r22_1",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-3462-gfe5c2c3c-2\"",
+        "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
+        "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
+        "-DHAVE_SYS_UIO_H",
+        "-DNDEBUG",
+        "-DNVALGRIND",
+        "-D_GNU_SOURCE",
+        "-D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS",
+        "-D_LIBCPP_ENABLE_NODISCARD",
+        "-D_LIBCPP_HAS_NO_VENDOR_AVAILABILITY_ANNOTATIONS",
+        "-D_LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS",
+        "-Wno-builtin-assume-aligned-alignment",
+        "-Wno-builtin-macro-redefined",
+        "-Wno-c++11-narrowing",
+        "-Wno-deprecated-copy",
+        "-Wno-final-dtor-non-final-class",
+        "-Wno-ignored-pragma-optimize",
+        "-Wno-implicit-fallthrough",
+        "-Wno-implicit-int-float-conversion",
+        "-Wno-misleading-indentation",
+        "-Wno-missing-field-initializers",
+        "-Wno-non-c-typedef-for-linkage",
+        "-Wno-psabi",
+        "-Wno-sign-conversion",
+        "-Wno-trigraphs",
+        "-Wno-undefined-var-template",
+        "-Wno-unknown-warning-option",
+        "-Wno-unneeded-internal-declaration",
+        "-Wno-unused-parameter",
+        "-Wno-unused-variable",
+    ],
+    defaults: [
+        "third_party_abseil_cpp_absl_base_config",
+    ],
+    arch: {
+        x86_64: {
+            cflags: [
+                "-Wno-max-tokens",
+            ],
+        },
+        x86: {
+            cflags: [
+                "-Wno-max-tokens",
+            ],
+        },
+    },
+}
+cc_defaults {
     name: "third_party_abseil_cpp_absl_strings_str_format_internal",
     stl: "libc++_static",
     local_include_dirs: [
@@ -4696,6 +4758,7 @@ cc_defaults {
         "third_party_abseil_cpp_absl_meta_type_traits",
         "third_party_abseil_cpp_absl_numeric_bits",
         "third_party_abseil_cpp_absl_numeric_int128",
+        "third_party_abseil_cpp_absl_numeric_representation",
         "third_party_abseil_cpp_absl_strings_strings",
         "third_party_abseil_cpp_absl_types_optional",
         "third_party_abseil_cpp_absl_types_span",
