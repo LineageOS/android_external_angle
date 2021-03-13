@@ -37,14 +37,14 @@ class ShaderInfo final : angle::NonCopyable
 
     ANGLE_INLINE bool valid() const { return mIsInitialized; }
 
-    const gl::ShaderMap<SpirvBlob> &getSpirvBlobs() const { return mSpirvBlobs; }
+    const gl::ShaderMap<angle::spirv::Blob> &getSpirvBlobs() const { return mSpirvBlobs; }
 
     // Save and load implementation for GLES Program Binary support.
     void load(gl::BinaryInputStream *stream);
     void save(gl::BinaryOutputStream *stream);
 
   private:
-    gl::ShaderMap<SpirvBlob> mSpirvBlobs;
+    gl::ShaderMap<angle::spirv::Blob> mSpirvBlobs;
     bool mIsInitialized = false;
 };
 
@@ -99,6 +99,14 @@ struct DefaultUniformBlock final : private angle::NonCopyable
     // Since the default blocks are laid out in std140, this tells us where to write on a call
     // to a setUniform method. They are arranged in uniform location order.
     std::vector<sh::BlockMemberInfo> uniformLayout;
+};
+
+// Performance and resource counters.
+using DescriptorSetCountList = std::array<uint32_t, DescriptorSetIndex::EnumCount>;
+
+struct ProgramExecutablePerfCounters
+{
+    DescriptorSetCountList descriptorSetsAllocated;
 };
 
 class ProgramExecutableVk
@@ -175,14 +183,7 @@ class ProgramExecutableVk
         mProgramPipeline = pipeline;
     }
 
-    using DescriptorSetCountList = std::array<uint32_t, DescriptorSetIndex::EnumCount>;
-    // Performance and resource counters.
-    struct PerfCounters
-    {
-        DescriptorSetCountList descriptorSetsAllocated;
-    };
-
-    const PerfCounters getObjectPerfCounters() const { return mObjectPerfCounters; }
+    ProgramExecutablePerfCounters getAndResetObjectPerfCounters();
 
   private:
     friend class ProgramVk;
@@ -282,7 +283,7 @@ class ProgramExecutableVk
     ProgramVk *mProgram;
     ProgramPipelineVk *mProgramPipeline;
 
-    PerfCounters mObjectPerfCounters;
+    ProgramExecutablePerfCounters mObjectPerfCounters;
 };
 
 }  // namespace rx

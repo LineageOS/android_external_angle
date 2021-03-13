@@ -28,6 +28,7 @@
 #include "efootball_pes_2021/efootball_pes_2021_capture_context7.h"
 #include "egypt_1500/egypt_1500_capture_context1.h"
 #include "eight_ball_pool/eight_ball_pool_capture_context2.h"
+#include "extreme_car_driving_simulator/extreme_car_driving_simulator_capture_context3.h"
 #include "fallout_shelter_online/fallout_shelter_online_capture_context3.h"
 #include "fate_grand_order/fate_grand_order_capture_context1.h"
 #include "fifa_mobile/fifa_mobile_capture_context2.h"
@@ -40,6 +41,7 @@
 #include "kartrider_rush/kartrider_rush_capture_context1.h"
 #include "klondike_adventures/klondike_adventures_capture_context2.h"
 #include "lego_legacy/lego_legacy_capture_context2.h"
+#include "lineage_m/lineage_m_capture_context2.h"
 #include "magic_tiles_3/magic_tiles_3_capture_context2.h"
 #include "manhattan_10/manhattan_10_capture_context1.h"
 #include "manhattan_31/manhattan_31_capture_context6.h"
@@ -49,6 +51,7 @@
 #include "mobile_legends/mobile_legends_capture_context1.h"
 #include "nba2k20_800/nba2k20_800_capture_context1.h"
 #include "one_punch_man/one_punch_man_capture_context3.h"
+#include "plants_vs_zombies_2/plants_vs_zombies_2_capture_context1.h"
 #include "pubg_mobile_lite/pubg_mobile_lite_capture_context1.h"
 #include "raid_shadow_legends/raid_shadow_legends_capture_context2.h"
 #include "real_commando_secret_mission/real_commando_secret_mission_capture_context1.h"
@@ -155,6 +158,13 @@ constexpr angle::PackedEnumMap<RestrictedTraceID, TraceInfo> kTraceInfos = {
       eight_ball_pool::kReplayContextClientMinorVersion, eight_ball_pool::kReplayFrameStart,
       eight_ball_pool::kReplayFrameEnd, eight_ball_pool::kReplayDrawSurfaceWidth,
       eight_ball_pool::kReplayDrawSurfaceHeight, "eight_ball_pool"}},
+    {RestrictedTraceID::extreme_car_driving_simulator,
+     {extreme_car_driving_simulator::kReplayContextClientMajorVersion,
+      extreme_car_driving_simulator::kReplayContextClientMinorVersion,
+      extreme_car_driving_simulator::kReplayFrameStart,
+      extreme_car_driving_simulator::kReplayFrameEnd,
+      extreme_car_driving_simulator::kReplayDrawSurfaceWidth,
+      extreme_car_driving_simulator::kReplayDrawSurfaceHeight, "extreme_car_driving_simulator"}},
     {RestrictedTraceID::fallout_shelter_online,
      {fallout_shelter_online::kReplayContextClientMajorVersion,
       fallout_shelter_online::kReplayContextClientMinorVersion,
@@ -209,6 +219,10 @@ constexpr angle::PackedEnumMap<RestrictedTraceID, TraceInfo> kTraceInfos = {
      {kDefaultReplayContextClientMajorVersion, kDefaultReplayContextClientMinorVersion,
       lego_legacy::kReplayFrameStart, lego_legacy::kReplayFrameEnd,
       lego_legacy::kReplayDrawSurfaceWidth, lego_legacy::kReplayDrawSurfaceHeight, "lego_legacy"}},
+    {RestrictedTraceID::lineage_m,
+     {lineage_m::kReplayContextClientMajorVersion, lineage_m::kReplayContextClientMinorVersion,
+      lineage_m::kReplayFrameStart, lineage_m::kReplayFrameEnd, lineage_m::kReplayDrawSurfaceWidth,
+      lineage_m::kReplayDrawSurfaceHeight, "lineage_m"}},
     {RestrictedTraceID::magic_tiles_3,
      {kDefaultReplayContextClientMajorVersion, kDefaultReplayContextClientMinorVersion,
       magic_tiles_3::kReplayFrameStart, magic_tiles_3::kReplayFrameEnd,
@@ -252,6 +266,11 @@ constexpr angle::PackedEnumMap<RestrictedTraceID, TraceInfo> kTraceInfos = {
       one_punch_man::kReplayContextClientMinorVersion, one_punch_man::kReplayFrameStart,
       one_punch_man::kReplayFrameEnd, one_punch_man::kReplayDrawSurfaceWidth,
       one_punch_man::kReplayDrawSurfaceHeight, "one_punch_man"}},
+    {RestrictedTraceID::plants_vs_zombies_2,
+     {plants_vs_zombies_2::kReplayContextClientMajorVersion,
+      plants_vs_zombies_2::kReplayContextClientMinorVersion, plants_vs_zombies_2::kReplayFrameStart,
+      plants_vs_zombies_2::kReplayFrameEnd, plants_vs_zombies_2::kReplayDrawSurfaceWidth,
+      plants_vs_zombies_2::kReplayDrawSurfaceHeight, "plants_vs_zombies_2"}},
     {RestrictedTraceID::pubg_mobile_lite,
      {kDefaultReplayContextClientMajorVersion, kDefaultReplayContextClientMinorVersion,
       pubg_mobile_lite::kReplayFrameStart, pubg_mobile_lite::kReplayFrameEnd,
@@ -412,6 +431,9 @@ void ReplayFrame(RestrictedTraceID traceID, uint32_t frameIndex)
         case RestrictedTraceID::eight_ball_pool:
             eight_ball_pool::ReplayContext2Frame(frameIndex);
             break;
+        case RestrictedTraceID::extreme_car_driving_simulator:
+            extreme_car_driving_simulator::ReplayContext3Frame(frameIndex);
+            break;
         case RestrictedTraceID::fallout_shelter_online:
             fallout_shelter_online::ReplayContext3Frame(frameIndex);
             break;
@@ -448,6 +470,9 @@ void ReplayFrame(RestrictedTraceID traceID, uint32_t frameIndex)
         case RestrictedTraceID::lego_legacy:
             lego_legacy::ReplayContext2Frame(frameIndex);
             break;
+        case RestrictedTraceID::lineage_m:
+            lineage_m::ReplayContext2Frame(frameIndex);
+            break;
         case RestrictedTraceID::magic_tiles_3:
             magic_tiles_3::ReplayContext2Frame(frameIndex);
             break;
@@ -474,6 +499,9 @@ void ReplayFrame(RestrictedTraceID traceID, uint32_t frameIndex)
             break;
         case RestrictedTraceID::one_punch_man:
             one_punch_man::ReplayContext3Frame(frameIndex);
+            break;
+        case RestrictedTraceID::plants_vs_zombies_2:
+            plants_vs_zombies_2::ReplayContext1Frame(frameIndex);
             break;
         case RestrictedTraceID::pubg_mobile_lite:
             pubg_mobile_lite::ReplayContext1Frame(frameIndex);
@@ -597,6 +625,9 @@ void ResetReplay(RestrictedTraceID traceID)
         case RestrictedTraceID::eight_ball_pool:
             eight_ball_pool::ResetContext2Replay();
             break;
+        case RestrictedTraceID::extreme_car_driving_simulator:
+            extreme_car_driving_simulator::ResetContext3Replay();
+            break;
         case RestrictedTraceID::fallout_shelter_online:
             fallout_shelter_online::ResetContext3Replay();
             break;
@@ -633,6 +664,9 @@ void ResetReplay(RestrictedTraceID traceID)
         case RestrictedTraceID::lego_legacy:
             lego_legacy::ResetContext2Replay();
             break;
+        case RestrictedTraceID::lineage_m:
+            lineage_m::ResetContext2Replay();
+            break;
         case RestrictedTraceID::magic_tiles_3:
             magic_tiles_3::ResetContext2Replay();
             break;
@@ -659,6 +693,9 @@ void ResetReplay(RestrictedTraceID traceID)
             break;
         case RestrictedTraceID::one_punch_man:
             one_punch_man::ResetContext3Replay();
+            break;
+        case RestrictedTraceID::plants_vs_zombies_2:
+            plants_vs_zombies_2::ResetContext1Replay();
             break;
         case RestrictedTraceID::pubg_mobile_lite:
             pubg_mobile_lite::ResetContext1Replay();
@@ -782,6 +819,9 @@ void SetupReplay(RestrictedTraceID traceID)
         case RestrictedTraceID::eight_ball_pool:
             eight_ball_pool::SetupContext2Replay();
             break;
+        case RestrictedTraceID::extreme_car_driving_simulator:
+            extreme_car_driving_simulator::SetupContext3Replay();
+            break;
         case RestrictedTraceID::fallout_shelter_online:
             fallout_shelter_online::SetupContext3Replay();
             break;
@@ -818,6 +858,9 @@ void SetupReplay(RestrictedTraceID traceID)
         case RestrictedTraceID::lego_legacy:
             lego_legacy::SetupContext2Replay();
             break;
+        case RestrictedTraceID::lineage_m:
+            lineage_m::SetupContext2Replay();
+            break;
         case RestrictedTraceID::magic_tiles_3:
             magic_tiles_3::SetupContext2Replay();
             break;
@@ -844,6 +887,9 @@ void SetupReplay(RestrictedTraceID traceID)
             break;
         case RestrictedTraceID::one_punch_man:
             one_punch_man::SetupContext3Replay();
+            break;
+        case RestrictedTraceID::plants_vs_zombies_2:
+            plants_vs_zombies_2::SetupContext1Replay();
             break;
         case RestrictedTraceID::pubg_mobile_lite:
             pubg_mobile_lite::SetupContext1Replay();
@@ -967,6 +1013,9 @@ void SetBinaryDataDir(RestrictedTraceID traceID, const char *dataDir)
         case RestrictedTraceID::eight_ball_pool:
             eight_ball_pool::SetBinaryDataDir(dataDir);
             break;
+        case RestrictedTraceID::extreme_car_driving_simulator:
+            extreme_car_driving_simulator::SetBinaryDataDir(dataDir);
+            break;
         case RestrictedTraceID::fallout_shelter_online:
             fallout_shelter_online::SetBinaryDataDir(dataDir);
             break;
@@ -1003,6 +1052,9 @@ void SetBinaryDataDir(RestrictedTraceID traceID, const char *dataDir)
         case RestrictedTraceID::lego_legacy:
             lego_legacy::SetBinaryDataDir(dataDir);
             break;
+        case RestrictedTraceID::lineage_m:
+            lineage_m::SetBinaryDataDir(dataDir);
+            break;
         case RestrictedTraceID::magic_tiles_3:
             magic_tiles_3::SetBinaryDataDir(dataDir);
             break;
@@ -1029,6 +1081,9 @@ void SetBinaryDataDir(RestrictedTraceID traceID, const char *dataDir)
             break;
         case RestrictedTraceID::one_punch_man:
             one_punch_man::SetBinaryDataDir(dataDir);
+            break;
+        case RestrictedTraceID::plants_vs_zombies_2:
+            plants_vs_zombies_2::SetBinaryDataDir(dataDir);
             break;
         case RestrictedTraceID::pubg_mobile_lite:
             pubg_mobile_lite::SetBinaryDataDir(dataDir);
@@ -1152,6 +1207,9 @@ void SetBinaryDataDecompressCallback(RestrictedTraceID traceID, DecompressCallba
         case RestrictedTraceID::eight_ball_pool:
             eight_ball_pool::SetBinaryDataDecompressCallback(callback);
             break;
+        case RestrictedTraceID::extreme_car_driving_simulator:
+            extreme_car_driving_simulator::SetBinaryDataDecompressCallback(callback);
+            break;
         case RestrictedTraceID::fallout_shelter_online:
             fallout_shelter_online::SetBinaryDataDecompressCallback(callback);
             break;
@@ -1188,6 +1246,9 @@ void SetBinaryDataDecompressCallback(RestrictedTraceID traceID, DecompressCallba
         case RestrictedTraceID::lego_legacy:
             lego_legacy::SetBinaryDataDecompressCallback(callback);
             break;
+        case RestrictedTraceID::lineage_m:
+            lineage_m::SetBinaryDataDecompressCallback(callback);
+            break;
         case RestrictedTraceID::magic_tiles_3:
             magic_tiles_3::SetBinaryDataDecompressCallback(callback);
             break;
@@ -1214,6 +1275,9 @@ void SetBinaryDataDecompressCallback(RestrictedTraceID traceID, DecompressCallba
             break;
         case RestrictedTraceID::one_punch_man:
             one_punch_man::SetBinaryDataDecompressCallback(callback);
+            break;
+        case RestrictedTraceID::plants_vs_zombies_2:
+            plants_vs_zombies_2::SetBinaryDataDecompressCallback(callback);
             break;
         case RestrictedTraceID::pubg_mobile_lite:
             pubg_mobile_lite::SetBinaryDataDecompressCallback(callback);
