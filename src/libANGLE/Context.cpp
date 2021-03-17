@@ -576,7 +576,7 @@ void Context::initializeDefaultResources()
 
     mBlitDirtyBits.set(State::DIRTY_BIT_SCISSOR_TEST_ENABLED);
     mBlitDirtyBits.set(State::DIRTY_BIT_SCISSOR);
-    mBlitDirtyBits.set(State::DIRTY_BIT_FRAMEBUFFER_SRGB);
+    mBlitDirtyBits.set(State::DIRTY_BIT_FRAMEBUFFER_SRGB_WRITE_CONTROL_MODE);
     mBlitDirtyBits.set(State::DIRTY_BIT_READ_FRAMEBUFFER_BINDING);
     mBlitDirtyBits.set(State::DIRTY_BIT_DRAW_FRAMEBUFFER_BINDING);
     mBlitDirtyObjects.set(State::DIRTY_OBJECT_READ_FRAMEBUFFER);
@@ -3689,10 +3689,12 @@ void Context::initCaps()
     for (ShaderType shaderType : AllShaderTypes())
     {
         ANGLE_LIMIT_CAP(mState.mCaps.maxShaderAtomicCounterBuffers[shaderType],
-                        IMPLEMENTATION_MAX_ATOMIC_COUNTER_BUFFERS);
+                        IMPLEMENTATION_MAX_ATOMIC_COUNTER_BUFFER_BINDINGS);
     }
+    ANGLE_LIMIT_CAP(mState.mCaps.maxAtomicCounterBufferBindings,
+                    IMPLEMENTATION_MAX_ATOMIC_COUNTER_BUFFER_BINDINGS);
     ANGLE_LIMIT_CAP(mState.mCaps.maxCombinedAtomicCounterBuffers,
-                    IMPLEMENTATION_MAX_ATOMIC_COUNTER_BUFFERS);
+                    IMPLEMENTATION_MAX_ATOMIC_COUNTER_BUFFER_BINDINGS);
 
     for (ShaderType shaderType : AllShaderTypes())
     {
