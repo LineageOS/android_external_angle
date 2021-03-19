@@ -453,6 +453,12 @@ void RendererVk::ensureCapsInitialized() const
         vk::GetTextureSRGBOverrideSupport(this, mNativeExtensions);
     mNativeExtensions.textureSRGBDecode = vk::GetTextureSRGBDecodeSupport(this);
 
+    // Doesn't yet support glBlitFramebuffer
+    // http://anglebug.com/5075
+    // Will be fully enabled in a follow up change when issues with glBlitFramebuffer have been
+    // resolved
+    mNativeExtensions.sRGBWriteControl = false;
+
     // Vulkan natively supports io interface block.
     mNativeExtensions.shaderIoBlocksOES = true;
     mNativeExtensions.shaderIoBlocksEXT = true;
@@ -688,20 +694,21 @@ void RendererVk::ensureCapsInitialized() const
     // likely not very useful, so we use the same limit (4 + MAX_ATOMIC_COUNTER_BUFFERS) for the
     // vertex stage to determine if we would want to add support for atomic counter buffers.
     constexpr uint32_t kMinimumStorageBuffersForAtomicCounterBufferSupport =
-        gl::limits::kMinimumComputeStorageBuffers + gl::IMPLEMENTATION_MAX_ATOMIC_COUNTER_BUFFERS;
+        gl::limits::kMinimumComputeStorageBuffers +
+        gl::IMPLEMENTATION_MAX_ATOMIC_COUNTER_BUFFER_BINDINGS;
     uint32_t maxVertexStageAtomicCounterBuffers = 0;
     uint32_t maxPerStageAtomicCounterBuffers    = 0;
     uint32_t maxCombinedAtomicCounterBuffers    = 0;
 
     if (maxPerStageStorageBuffers >= kMinimumStorageBuffersForAtomicCounterBufferSupport)
     {
-        maxPerStageAtomicCounterBuffers = gl::IMPLEMENTATION_MAX_ATOMIC_COUNTER_BUFFERS;
-        maxCombinedAtomicCounterBuffers = gl::IMPLEMENTATION_MAX_ATOMIC_COUNTER_BUFFERS;
+        maxPerStageAtomicCounterBuffers = gl::IMPLEMENTATION_MAX_ATOMIC_COUNTER_BUFFER_BINDINGS;
+        maxCombinedAtomicCounterBuffers = gl::IMPLEMENTATION_MAX_ATOMIC_COUNTER_BUFFER_BINDINGS;
     }
 
     if (maxVertexStageStorageBuffers >= kMinimumStorageBuffersForAtomicCounterBufferSupport)
     {
-        maxVertexStageAtomicCounterBuffers = gl::IMPLEMENTATION_MAX_ATOMIC_COUNTER_BUFFERS;
+        maxVertexStageAtomicCounterBuffers = gl::IMPLEMENTATION_MAX_ATOMIC_COUNTER_BUFFER_BINDINGS;
     }
 
     maxVertexStageStorageBuffers -= maxVertexStageAtomicCounterBuffers;
