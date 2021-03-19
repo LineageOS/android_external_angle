@@ -102,7 +102,7 @@ struct DefaultUniformBlock final : private angle::NonCopyable
 };
 
 // Performance and resource counters.
-using DescriptorSetCountList = std::array<uint32_t, DescriptorSetIndex::EnumCount>;
+using DescriptorSetCountList = angle::PackedEnumMap<DescriptorSetIndex, uint32_t>;
 
 struct ProgramExecutablePerfCounters
 {
@@ -222,6 +222,8 @@ class ProgramExecutableVk
                                             ContextVk *contextVk);
     void updateTransformFeedbackDescriptorSetImpl(const gl::ProgramState &programState,
                                                   ContextVk *contextVk);
+    angle::Result getOrAllocateShaderResourcesDescriptorSet(ContextVk *contextVk,
+                                                            VkDescriptorSet *descriptorSetOut);
     angle::Result updateBuffersDescriptorSet(ContextVk *contextVk,
                                              const gl::ShaderType shaderType,
                                              vk::CommandBufferHelper *commandBufferHelper,
