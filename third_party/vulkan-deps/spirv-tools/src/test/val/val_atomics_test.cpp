@@ -222,7 +222,6 @@ TEST_F(ValidateAtomics, AtomicLoadShaderSuccess) {
   const std::string body = R"(
 %val1 = OpAtomicLoad %u32 %u32_var %device %relaxed
 %val2 = OpAtomicLoad %u32 %u32_var %workgroup %acquire
-%val3 = OpAtomicLoad %u64 %u64_var %subgroup %sequentially_consistent
 )";
 
   CompileSuccessfully(GenerateShaderCode(body));
@@ -233,10 +232,27 @@ TEST_F(ValidateAtomics, AtomicLoadKernelSuccess) {
   const std::string body = R"(
 %val1 = OpAtomicLoad %f32 %f32_var %device %relaxed
 %val2 = OpAtomicLoad %u32 %u32_var %workgroup %sequentially_consistent
-%val3 = OpAtomicLoad %u64 %u64_var %subgroup %acquire
 )";
 
   CompileSuccessfully(GenerateKernelCode(body));
+  ASSERT_EQ(SPV_SUCCESS, ValidateInstructions());
+}
+
+TEST_F(ValidateAtomics, AtomicLoadInt64ShaderSuccess) {
+  const std::string body = R"(
+%val1 = OpAtomicLoad %u64 %u64_var %subgroup %sequentially_consistent
+)";
+
+  CompileSuccessfully(GenerateShaderCode(body, "OpCapability Int64Atomics\n"));
+  ASSERT_EQ(SPV_SUCCESS, ValidateInstructions());
+}
+
+TEST_F(ValidateAtomics, AtomicLoadInt64KernelSuccess) {
+  const std::string body = R"(
+%val1 = OpAtomicLoad %u64 %u64_var %subgroup %acquire
+)";
+
+  CompileSuccessfully(GenerateKernelCode(body, "OpCapability Int64Atomics\n"));
   ASSERT_EQ(SPV_SUCCESS, ValidateInstructions());
 }
 
@@ -244,6 +260,7 @@ TEST_F(ValidateAtomics, AtomicLoadInt32VulkanSuccess) {
   const std::string body = R"(
 %val1 = OpAtomicLoad %u32 %u32_var %device %relaxed
 %val2 = OpAtomicLoad %u32 %u32_var %workgroup %acquire
+%val3 = OpAtomicLoad %u32 %u32_var %invocation %relaxed
 )";
 
   CompileSuccessfully(GenerateShaderComputeCode(body), SPV_ENV_VULKAN_1_0);
@@ -354,6 +371,7 @@ OpExtension "SPV_EXT_shader_atomic_float_add"
 TEST_F(ValidateAtomics, AtomicAddFloatVulkanSuccess) {
   const std::string body = R"(
 %val1 = OpAtomicFAddEXT %f32 %f32_var %device %relaxed %f32_1
+%val2 = OpAtomicFAddEXT %f32 %f32_var %invocation %relaxed %f32_1
 )";
   const std::string extra = R"(
 OpCapability AtomicFloat32AddEXT
@@ -396,6 +414,7 @@ TEST_F(ValidateAtomics, AtomicLoadInt64WithCapabilityVulkanSuccess) {
   const std::string body = R"(
   %val1 = OpAtomicLoad %u64 %u64_var %device %relaxed
   %val2 = OpAtomicLoad %u64 %u64_var %workgroup %acquire
+  %val3 = OpAtomicLoad %u64 %u64_var %invocation %relaxed
   )";
 
   CompileSuccessfully(
@@ -515,6 +534,21 @@ TEST_F(ValidateAtomics, AtomicLoadVulkanSequentiallyConsistent) {
                 "Release, AcquireRelease and SequentiallyConsistent"));
 }
 
+TEST_F(ValidateAtomics, AtomicLoadVulkanInvocationSemantics) {
+  const std::string body = R"(
+%val1 = OpAtomicLoad %u32 %u32_var %invocation %acquire
+)";
+
+  CompileSuccessfully(GenerateShaderCode(body), SPV_ENV_VULKAN_1_0);
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions(SPV_ENV_VULKAN_1_0));
+  EXPECT_THAT(getDiagnosticString(),
+              AnyVUID("VUID-StandaloneSpirv-None-04641"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("AtomicLoad: Vulkan specification requires Memory Semantics to "
+                "be None if used with Invocation Memory Scope"));
+}
+
 TEST_F(ValidateAtomics, AtomicLoadShaderFloat) {
   const std::string body = R"(
 %val1 = OpAtomicLoad %f32 %f32_var %device %relaxed
@@ -537,6 +571,19 @@ TEST_F(ValidateAtomics, AtomicLoadVulkanInt64) {
           "AtomicLoad: 64-bit atomics require the Int64Atomics capability"));
 }
 
+TEST_F(ValidateAtomics, AtomicLoadKernelInt64) {
+  const std::string body = R"(
+%val1 = OpAtomicLoad %u64 %u64_var %device %relaxed
+)";
+
+  CompileSuccessfully(GenerateKernelCode(body));
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr(
+          "AtomicLoad: 64-bit atomics require the Int64Atomics capability"));
+}
+
 TEST_F(ValidateAtomics, AtomicStoreVulkanInt64) {
   const std::string body = R"(
 OpAtomicStore %u64_var %device %relaxed %u64_1
@@ -544,6 +591,19 @@ OpAtomicStore %u64_var %device %relaxed %u64_1
 
   CompileSuccessfully(GenerateShaderCode(body), SPV_ENV_VULKAN_1_0);
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions(SPV_ENV_VULKAN_1_0));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr(
+          "AtomicStore: 64-bit atomics require the Int64Atomics capability"));
+}
+
+TEST_F(ValidateAtomics, AtomicStoreKernelInt64) {
+  const std::string body = R"(
+OpAtomicStore %u64_var %device %relaxed %u64_1
+)";
+
+  CompileSuccessfully(GenerateKernelCode(body));
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
   EXPECT_THAT(
       getDiagnosticString(),
       HasSubstr(
@@ -681,6 +741,7 @@ OpAtomicStore %u32_var %subgroup %sequentially_consistent %u32_1
 TEST_F(ValidateAtomics, AtomicStoreVulkanSuccess) {
   const std::string body = R"(
 OpAtomicStore %u32_var %device %release %u32_1
+OpAtomicStore %u32_var %invocation %relaxed %u32_1
 )";
 
   CompileSuccessfully(GenerateShaderCode(body), SPV_ENV_VULKAN_1_0);
@@ -730,6 +791,21 @@ OpAtomicStore %u32_var %device %sequentially_consistent %u32_1
       getDiagnosticString(),
       HasSubstr("Vulkan spec disallows OpAtomicStore with Memory Semantics "
                 "Acquire, AcquireRelease and SequentiallyConsistent"));
+}
+
+TEST_F(ValidateAtomics, AtomicStoreVulkanInvocationSemantics) {
+  const std::string body = R"(
+OpAtomicStore %u32_var %invocation %acquire %u32_1
+)";
+
+  CompileSuccessfully(GenerateShaderCode(body), SPV_ENV_VULKAN_1_0);
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions(SPV_ENV_VULKAN_1_0));
+  EXPECT_THAT(getDiagnosticString(),
+              AnyVUID("VUID-StandaloneSpirv-None-04641"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("AtomicStore: Vulkan specification requires Memory Semantics "
+                "to be None if used with Invocation Memory Scope"));
 }
 
 TEST_F(ValidateAtomics, AtomicStoreWrongPointerType) {
@@ -931,6 +1007,22 @@ OpAtomicStore %f32_var %device %relaxed %f32_1
                         "expected Value to be of type Result Type"));
 }
 
+TEST_F(ValidateAtomics, AtomicExchangeVulkanInvocationSemantics) {
+  const std::string body = R"(
+OpAtomicStore %u32_var %invocation %relaxed %u32_1
+%val2 = OpAtomicExchange %u32 %u32_var %invocation %acquire %u32_0
+)";
+
+  CompileSuccessfully(GenerateShaderCode(body), SPV_ENV_VULKAN_1_0);
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions(SPV_ENV_VULKAN_1_0));
+  EXPECT_THAT(getDiagnosticString(),
+              AnyVUID("VUID-StandaloneSpirv-None-04641"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("AtomicExchange: Vulkan specification requires Memory "
+                "Semantics to be None if used with Invocation Memory Scope"));
+}
+
 TEST_F(ValidateAtomics, AtomicCompareExchangeShaderSuccess) {
   const std::string body = R"(
 OpAtomicStore %u32_var %device %relaxed %u32_1
@@ -1106,6 +1198,38 @@ OpAtomicStore %f32_var %device %relaxed %f32_1
                         "expected Result Type to be int scalar type"));
 }
 
+TEST_F(ValidateAtomics, AtomicCompareExchangeVulkanInvocationSemanticsEqual) {
+  const std::string body = R"(
+OpAtomicStore %u32_var %device %relaxed %u32_1
+%val2 = OpAtomicCompareExchange %u32 %u32_var %invocation %release %relaxed %u32_0 %u32_0
+)";
+
+  CompileSuccessfully(GenerateShaderCode(body), SPV_ENV_VULKAN_1_0);
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions(SPV_ENV_VULKAN_1_0));
+  EXPECT_THAT(getDiagnosticString(),
+              AnyVUID("VUID-StandaloneSpirv-None-04641"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("AtomicCompareExchange: Vulkan specification requires Memory "
+                "Semantics to be None if used with Invocation Memory Scope"));
+}
+
+TEST_F(ValidateAtomics, AtomicCompareExchangeVulkanInvocationSemanticsUnequal) {
+  const std::string body = R"(
+OpAtomicStore %u32_var %device %relaxed %u32_1
+%val2 = OpAtomicCompareExchange %u32 %u32_var %invocation %relaxed %acquire %u32_0 %u32_0
+)";
+
+  CompileSuccessfully(GenerateShaderCode(body), SPV_ENV_VULKAN_1_0);
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions(SPV_ENV_VULKAN_1_0));
+  EXPECT_THAT(getDiagnosticString(),
+              AnyVUID("VUID-StandaloneSpirv-None-04641"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("AtomicCompareExchange: Vulkan specification requires Memory "
+                "Semantics to be None if used with Invocation Memory Scope"));
+}
+
 TEST_F(ValidateAtomics, AtomicArithmeticsSuccess) {
   const std::string body = R"(
 OpAtomicStore %u32_var %device %relaxed %u32_1
@@ -1178,7 +1302,7 @@ TEST_F(ValidateAtomics, AtomicFlagTestAndSetNotInt32Pointer) {
 %val1 = OpAtomicFlagTestAndSet %bool %u64_var %device %relaxed
 )";
 
-  CompileSuccessfully(GenerateKernelCode(body));
+  CompileSuccessfully(GenerateKernelCode(body, "OpCapability Int64Atomics\n"));
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
   EXPECT_THAT(
       getDiagnosticString(),
@@ -1252,7 +1376,7 @@ TEST_F(ValidateAtomics, AtomicFlagClearNotInt32Pointer) {
 OpAtomicFlagClear %u64_var %device %relaxed
 )";
 
-  CompileSuccessfully(GenerateKernelCode(body));
+  CompileSuccessfully(GenerateKernelCode(body, "OpCapability Int64Atomics\n"));
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
   EXPECT_THAT(
       getDiagnosticString(),
