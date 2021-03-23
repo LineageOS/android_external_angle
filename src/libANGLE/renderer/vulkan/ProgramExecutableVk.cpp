@@ -252,7 +252,7 @@ void ProgramExecutableVk::reset(ContextVk *contextVk)
 
     RendererVk *rendererVk = contextVk->getRenderer();
     mTextureDescriptorsCache.destroy(rendererVk);
-    mUniformsAndXfbDescriptorSetCache.destroy(rendererVk);
+    mUniformsAndXfbDescriptorsCache.destroy(rendererVk);
 
     // Initialize with a unique BufferSerial
     vk::ResourceSerialFactory &factory = rendererVk->getResourceSerialFactory();
@@ -418,14 +418,14 @@ uint32_t GetInterfaceBlockArraySize(const std::vector<gl::InterfaceBlock> &block
 
 angle::Result ProgramExecutableVk::allocUniformAndXfbDescriptorSet(
     ContextVk *contextVk,
-    const vk::UniformsAndXfbDesc &xfbBufferDesc,
+    const vk::UniformsAndXfbDescriptorDesc &xfbBufferDesc,
     bool *newDescriptorSetAllocated)
 {
     mCurrentDefaultUniformBufferSerial = xfbBufferDesc.getDefaultUniformBufferSerial();
 
     // Look up in the cache first
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
-    if (mUniformsAndXfbDescriptorSetCache.get(xfbBufferDesc, &descriptorSet))
+    if (mUniformsAndXfbDescriptorsCache.get(xfbBufferDesc, &descriptorSet))
     {
         *newDescriptorSetAllocated                          = false;
         mDescriptorSets[DescriptorSetIndex::UniformsAndXfb] = descriptorSet;
@@ -443,12 +443,12 @@ angle::Result ProgramExecutableVk::allocUniformAndXfbDescriptorSet(
     // Clear descriptor set cache. It may no longer be valid.
     if (newPoolAllocated)
     {
-        mUniformsAndXfbDescriptorSetCache.destroy(contextVk->getRenderer());
+        mUniformsAndXfbDescriptorsCache.destroy(contextVk->getRenderer());
     }
 
     // Add the descriptor set into cache
-    mUniformsAndXfbDescriptorSetCache.insert(xfbBufferDesc,
-                                             mDescriptorSets[DescriptorSetIndex::UniformsAndXfb]);
+    mUniformsAndXfbDescriptorsCache.insert(xfbBufferDesc,
+                                           mDescriptorSets[DescriptorSetIndex::UniformsAndXfb]);
     *newDescriptorSetAllocated = true;
 
     return angle::Result::Continue;
@@ -1475,7 +1475,7 @@ angle::Result ProgramExecutableVk::updateTransformFeedbackDescriptorSet(
     gl::ShaderMap<DefaultUniformBlock> &defaultUniformBlocks,
     vk::BufferHelper *defaultUniformBuffer,
     ContextVk *contextVk,
-    const vk::UniformsAndXfbDesc &xfbBufferDesc)
+    const vk::UniformsAndXfbDescriptorDesc &xfbBufferDesc)
 {
     const gl::ProgramExecutable &executable = programState.getExecutable();
     ASSERT(executable.hasTransformFeedbackOutput());
