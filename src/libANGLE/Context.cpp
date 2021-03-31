@@ -859,7 +859,7 @@ GLuint Context::createShaderProgramv(ShaderType type, GLsizei count, const GLcha
                 // We must wait to mark the program separable until it's successfully compiled.
                 programObject->setSeparable(true);
 
-                programObject->attachShader(this, shaderObject);
+                programObject->attachShader(shaderObject);
 
                 if (programObject->link(this) != angle::Result::Continue)
                 {
@@ -5915,7 +5915,7 @@ void Context::attachShader(ShaderProgramID program, ShaderProgramID shader)
     Program *programObject = mState.mShaderProgramManager->getProgram(program);
     Shader *shaderObject   = mState.mShaderProgramManager->getShader(shader);
     ASSERT(programObject && shaderObject);
-    programObject->attachShader(this, shaderObject);
+    programObject->attachShader(shaderObject);
 }
 
 void Context::copyBufferSubData(BufferBinding readTarget,
@@ -8815,6 +8815,7 @@ angle::Result Context::onProgramLink(Program *programObject)
         if (programObject->isLinked())
         {
             ANGLE_TRY(mState.onProgramExecutableChange(this, programObject));
+            programObject->onStateChange(angle::SubjectMessage::ProgramRelinked);
         }
         mStateCache.onProgramExecutableChange(this);
     }
