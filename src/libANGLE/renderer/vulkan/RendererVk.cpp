@@ -175,6 +175,11 @@ constexpr const char *kSkippedMessages[] = {
     "VUID-vkCmdBindDescriptorSets-pDescriptorSets-01979",
     // https://issuetracker.google.com/175584609
     "VUID-vkCmdDraw-None-04584",
+    "VUID-vkCmdDrawIndexed-None-04584",
+    "VUID-vkCmdDrawIndirect-None-04584",
+    "VUID-vkCmdDrawIndirectCount-None-04584",
+    "VUID-vkCmdDrawIndexedIndirect-None-04584",
+    "VUID-vkCmdDrawIndexedIndirectCount-None-04584",
 };
 
 // Suppress validation errors that are known
@@ -655,7 +660,6 @@ RendererVk::RendererVk()
       mPipelineCacheDirty(false),
       mPipelineCacheInitialized(false),
       mCommandProcessor(this),
-      mGlslangInitialized(false),
       mSupportedVulkanPipelineStageMask(0)
 {
     VkFormatProperties invalid = {0, 0, kInvalidFormatFeatureFlags};
@@ -725,11 +729,7 @@ void RendererVk::onDestroy(vk::Context *context)
 
     mAllocator.destroy();
 
-    if (mGlslangInitialized)
-    {
-        GlslangRelease();
-        mGlslangInitialized = false;
-    }
+    sh::FinalizeGlslang();
 
     if (mDevice)
     {
@@ -1092,10 +1092,9 @@ angle::Result RendererVk::initialize(DisplayVk *displayVk,
     // Store the physical device memory properties so we can find the right memory pools.
     mMemoryProperties.init(mPhysicalDevice);
 
-    if (!mGlslangInitialized)
     {
-        GlslangInitialize();
-        mGlslangInitialized = true;
+        ANGLE_TRACE_EVENT0("gpu.angle,startup", "GlslangWarmup");
+        sh::InitializeGlslang();
     }
 
     // Initialize the format table.
