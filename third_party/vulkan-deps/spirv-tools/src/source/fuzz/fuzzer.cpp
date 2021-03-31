@@ -228,8 +228,13 @@ Fuzzer::Fuzzer(std::unique_ptr<opt::IRContext> ir_context,
   MaybeAddFinalPass<FuzzerPassAdjustMemoryOperandsMasks>(&final_passes_);
   MaybeAddFinalPass<FuzzerPassAdjustSelectionControls>(&final_passes_);
   MaybeAddFinalPass<FuzzerPassAddNoContractionDecorations>(&final_passes_);
-  MaybeAddFinalPass<FuzzerPassInterchangeSignednessOfIntegerOperands>(
-      &final_passes_);
+  if (!fuzzer_context_->IsWgslCompatible()) {
+    // TODO(https://github.com/KhronosGroup/SPIRV-Tools/issues/4214):
+    //  this is disabled temporarily due to some issues in the Tint compiler.
+    //  Enable it back when the issues are resolved.
+    MaybeAddFinalPass<FuzzerPassInterchangeSignednessOfIntegerOperands>(
+        &final_passes_);
+  }
   MaybeAddFinalPass<FuzzerPassInterchangeZeroLikeConstants>(&final_passes_);
   MaybeAddFinalPass<FuzzerPassPermutePhiOperands>(&final_passes_);
   MaybeAddFinalPass<FuzzerPassSwapCommutableOperands>(&final_passes_);

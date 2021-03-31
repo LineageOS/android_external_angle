@@ -343,9 +343,8 @@ void RendererVk::ensureCapsInitialized() const
     mNativeExtensions.robustness =
         !IsSwiftshader(mPhysicalDeviceProperties.vendorID, mPhysicalDeviceProperties.deviceID) &&
         !IsARM(mPhysicalDeviceProperties.vendorID);
-    mNativeExtensions.textureBorderClampOES  = false;  // not implemented yet
-    mNativeExtensions.translatedShaderSource = true;
-    mNativeExtensions.discardFramebuffer     = true;
+    mNativeExtensions.textureBorderClampOES = false;  // not implemented yet
+    mNativeExtensions.discardFramebuffer    = true;
 
     // Enable EXT_texture_type_2_10_10_10_REV
     mNativeExtensions.textureFormat2101010REV = true;
@@ -453,11 +452,8 @@ void RendererVk::ensureCapsInitialized() const
         vk::GetTextureSRGBOverrideSupport(this, mNativeExtensions);
     mNativeExtensions.textureSRGBDecode = vk::GetTextureSRGBDecodeSupport(this);
 
-    // Doesn't yet support glBlitFramebuffer
-    // http://anglebug.com/5075
-    // Will be fully enabled in a follow up change when issues with glBlitFramebuffer have been
-    // resolved
-    mNativeExtensions.sRGBWriteControl = false;
+    // EXT_srgb_write_control requires image_format_list
+    mNativeExtensions.sRGBWriteControl = getFeatures().supportsImageFormatList.enabled;
 
     // Vulkan natively supports io interface block.
     mNativeExtensions.shaderIoBlocksOES = true;
