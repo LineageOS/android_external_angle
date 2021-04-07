@@ -310,6 +310,9 @@ $(eval $(call gen_spvtools_generators_inc,$(SPVTOOLS_OUT_PATH)))
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := SPIRV-Tools
+LOCAL_LICENSE_KINDS := SPDX-license-identifier-Apache-2.0 SPDX-license-identifier-BSD SPDX-license-identifier-MIT
+LOCAL_LICENSE_CONDITIONS := notice
+LOCAL_NOTICE_FILE := $(LOCAL_PATH)/LICENSE
 LOCAL_C_INCLUDES := \
 		$(LOCAL_PATH)/include \
 		$(SPVHEADERS_LOCAL_PATH)/include \
@@ -322,6 +325,9 @@ include $(BUILD_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := SPIRV-Tools-opt
+LOCAL_LICENSE_KINDS := SPDX-license-identifier-Apache-2.0 SPDX-license-identifier-BSD SPDX-license-identifier-MIT
+LOCAL_LICENSE_CONDITIONS := notice
+LOCAL_NOTICE_FILE := $(LOCAL_PATH)/LICENSE
 LOCAL_C_INCLUDES := \
 		$(LOCAL_PATH)/include \
 		$(LOCAL_PATH)/source \
