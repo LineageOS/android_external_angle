@@ -3903,6 +3903,14 @@ bool ValidateGetString(const Context *context, GLenum name)
             }
             break;
 
+        case GL_SERIALIZED_CONTEXT_STRING_ANGLE:
+            if (!context->getExtensions().getSerializedContextStringANGLE)
+            {
+                context->validationError(GL_INVALID_ENUM, kInvalidName);
+                return false;
+            }
+            break;
+
         default:
             context->validationError(GL_INVALID_ENUM, kInvalidName);
             return false;
@@ -6136,6 +6144,12 @@ void RecordBindTextureTypeError(const Context *context, TextureType target)
 
         case TextureType::VideoImage:
             ASSERT(!context->getExtensions().webglVideoTexture);
+            context->validationError(GL_INVALID_ENUM, kExtensionNotEnabled);
+            break;
+
+        case TextureType::Buffer:
+            ASSERT(!context->getExtensions().textureBufferOES &&
+                   !context->getExtensions().textureBufferEXT);
             context->validationError(GL_INVALID_ENUM, kExtensionNotEnabled);
             break;
 

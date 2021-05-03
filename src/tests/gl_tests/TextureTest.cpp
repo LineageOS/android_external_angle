@@ -480,7 +480,7 @@ class Texture2DBaseMaxTestES3 : public ANGLETest
         }
     }
 
-    void initTest()
+    void initTest(bool immutable)
     {
         // Set up program to sample from specific lod level.
         mProgram.makeRaster(essl3_shaders::vs::Texture2DLod(), essl3_shaders::fs::Texture2DLod());
@@ -501,11 +501,24 @@ class Texture2DBaseMaxTestES3 : public ANGLETest
         std::array<GLColor, getTotalMipDataSize(kMip0Size)> mipData;
         fillMipData(mipData.data(), kMip0Size, kMipColors);
 
-        for (size_t mip = 0; mip < kMipCount; ++mip)
+        if (immutable)
         {
-            glTexImage2D(GL_TEXTURE_2D, mip, GL_RGBA8, kMip0Size >> mip, kMip0Size >> mip, 0,
-                         GL_RGBA, GL_UNSIGNED_BYTE,
-                         mipData.data() + getMipDataOffset(kMip0Size, mip));
+            glTexStorage2D(GL_TEXTURE_2D, kMipCount, GL_RGBA8, kMip0Size, kMip0Size);
+            for (size_t mip = 0; mip < kMipCount; ++mip)
+            {
+                glTexSubImage2D(GL_TEXTURE_2D, mip, 0, 0, kMip0Size >> mip, kMip0Size >> mip,
+                                GL_RGBA, GL_UNSIGNED_BYTE,
+                                mipData.data() + getMipDataOffset(kMip0Size, mip));
+            }
+        }
+        else
+        {
+            for (size_t mip = 0; mip < kMipCount; ++mip)
+            {
+                glTexImage2D(GL_TEXTURE_2D, mip, GL_RGBA8, kMip0Size >> mip, kMip0Size >> mip, 0,
+                             GL_RGBA, GL_UNSIGNED_BYTE,
+                             mipData.data() + getMipDataOffset(kMip0Size, mip));
+            }
         }
 
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
@@ -515,6 +528,9 @@ class Texture2DBaseMaxTestES3 : public ANGLETest
     }
 
     void setLodUniform(uint32_t lod) { glUniform1f(mLodLocation, lod); }
+
+    void testPingPongBaseLevel(bool immutable);
+    void testGenerateMipmapAfterRebase(bool immutable);
 
     GLProgram mProgram;
     GLTexture mTexture;
@@ -3398,6 +3414,14 @@ TEST_P(Texture2DBaseMaxTestES3, ExtendMipChainAfterRedefine)
 // Test that changing the base level of a texture multiple times preserves the data.
 TEST_P(Texture2DBaseMaxTestES3, PingPongBaseLevel)
 {
+    testPingPongBaseLevel(false);
+}
+TEST_P(Texture2DBaseMaxTestES3, PingPongBaseLevelImmutable)
+{
+    testPingPongBaseLevel(true);
+}
+void Texture2DBaseMaxTestES3::testPingPongBaseLevel(bool immutable)
+{
     // http://anglebug.com/4710
     ANGLE_SKIP_TEST_IF(IsD3D());
 
@@ -3407,7 +3431,7 @@ TEST_P(Texture2DBaseMaxTestES3, PingPongBaseLevel)
     // http://anglebug.com/4701
     ANGLE_SKIP_TEST_IF(IsOpenGL() && IsIntel() && IsOSX());
 
-    initTest();
+    initTest(immutable);
 
     // Ping pong a few times.
     for (uint32_t tries = 0; tries < 2; ++tries)
@@ -3442,7 +3466,7 @@ TEST_P(Texture2DBaseMaxTestES3, PingPongBaseLevel)
 // after the redefine data.
 TEST_P(Texture2DBaseMaxTestES3, SubImageAfterRedefine)
 {
-    initTest();
+    initTest(false);
 
     // Test that all mips have the expected data initially (this makes sure the texture image is
     // created already).
@@ -3503,7 +3527,7 @@ TEST_P(Texture2DBaseMaxTestES3, SubImageAfterRedefine)
 // Test that incompatibly redefining a level then redefining it back to its original size works.
 TEST_P(Texture2DBaseMaxTestES3, IncompatiblyRedefineLevelThenRevert)
 {
-    initTest();
+    initTest(false);
 
     // Test that all mips have the expected data initially (this makes sure the texture image is
     // created already).
@@ -3543,7 +3567,7 @@ TEST_P(Texture2DBaseMaxTestES3, IncompatiblyRedefineLevelThenRevert)
 // bits per component, to ensure alignment requirements for the new format are taken into account.
 TEST_P(Texture2DBaseMaxTestES3, RedefineEveryLevelToAnotherFormat)
 {
-    initTest();
+    initTest(false);
 
     // Test that all mips have the expected data initially (this makes sure the texture image is
     // created already).
@@ -3587,10 +3611,91 @@ TEST_P(Texture2DBaseMaxTestES3, RedefineEveryLevelToAnotherFormat)
     }
 }
 
+// Test that generating mipmaps after change base level.
+TEST_P(Texture2DBaseMaxTestES3, GenerateMipmapAfterRebase)
+{
+    // http://anglebug.com/5880
+    ANGLE_SKIP_TEST_IF(IsOSX() && IsARM64() && IsDesktopOpenGL());
+
+    testGenerateMipmapAfterRebase(false);
+}
+
+TEST_P(Texture2DBaseMaxTestES3, GenerateMipmapAfterRebaseImmutable)
+{
+    // http://anglebug.com/4710
+    ANGLE_SKIP_TEST_IF(IsD3D());
+    // http://anglebug.com/5798
+    ANGLE_SKIP_TEST_IF(IsOpenGL() && IsNVIDIA());
+    // http://anglebug.com/5880
+    ANGLE_SKIP_TEST_IF(IsOSX() && IsARM64() && IsDesktopOpenGL());
+
+    testGenerateMipmapAfterRebase(true);
+}
+
+void Texture2DBaseMaxTestES3::testGenerateMipmapAfterRebase(bool immutable)
+{
+    initTest(immutable);
+
+    // Test that all mips have the expected data initially (this makes sure the texture image is
+    // created already).
+    for (uint32_t lod = 0; lod < kMipCount; ++lod)
+    {
+        setLodUniform(lod);
+        drawQuad(mProgram, essl3_shaders::PositionAttrib(), 0.5f);
+        EXPECT_PIXEL_COLOR_EQ(0, 0, kMipColors[lod]);
+    }
+
+    // Update level 1 (any level would do other than 0) with new data
+    const GLColor kNewMipColor = GLColor::yellow;
+    std::array<GLColor, getMipDataSize(kMip0Size >> 1, 0)> newMipData;
+    std::fill(newMipData.begin(), newMipData.end(), kNewMipColor);
+
+    glTexSubImage2D(GL_TEXTURE_2D, 1, 0, 0, kMip0Size >> 1, kMip0Size >> 1, GL_RGBA,
+                    GL_UNSIGNED_BYTE, newMipData.data());
+
+    // Change base level and max level and then generate mipmaps. This should redefine level 1 and 2
+    // with kNewMipColor and leave levels 0 and 3 unchanged.
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 1);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, kMipCount - 2);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, kMipCount - 1);
+
+    // Test that the texture looks as expected.
+    const int w = getWindowWidth() - 1;
+    const int h = getWindowHeight() - 1;
+    for (uint32_t lod = 0; lod < kMipCount; ++lod)
+    {
+        setLodUniform(lod);
+        drawQuad(mProgram, essl3_shaders::PositionAttrib(), 0.5f);
+        if (lod == 0)
+        {
+            EXPECT_PIXEL_COLOR_EQ(0, 0, kMipColors[lod]);
+            EXPECT_PIXEL_COLOR_EQ(w, 0, kMipColors[lod]);
+            EXPECT_PIXEL_COLOR_EQ(0, h, kMipColors[lod]);
+            EXPECT_PIXEL_COLOR_EQ(w, h, kMipColors[lod]);
+        }
+        else if (lod == kMipCount - 1)
+        {
+            EXPECT_PIXEL_COLOR_EQ(0, 0, kMipColors[lod]);
+            EXPECT_PIXEL_COLOR_EQ(w, 0, kMipColors[lod]);
+            EXPECT_PIXEL_COLOR_EQ(0, h, kMipColors[lod]);
+            EXPECT_PIXEL_COLOR_EQ(w, h, kMipColors[lod]);
+        }
+        else
+        {
+            EXPECT_PIXEL_COLOR_EQ(0, 0, kNewMipColor);
+            EXPECT_PIXEL_COLOR_EQ(w, 0, kNewMipColor);
+            EXPECT_PIXEL_COLOR_EQ(0, h, kNewMipColor);
+            EXPECT_PIXEL_COLOR_EQ(w, h, kNewMipColor);
+        }
+    }
+}
+
 // Test that generating mipmaps after incompatibly redefining a level works.
 TEST_P(Texture2DBaseMaxTestES3, GenerateMipmapAfterRedefine)
 {
-    initTest();
+    initTest(false);
 
     // Test that all mips have the expected data initially (this makes sure the texture image is
     // created already).
@@ -3639,7 +3744,7 @@ TEST_P(Texture2DBaseMaxTestES3, GenerateMipmapAfterRedefineAndRebase)
     // TODO(anglebug.com/5360): Failing on ARM-based Apple DTKs.
     ANGLE_SKIP_TEST_IF(IsOSX() && IsARM64() && IsDesktopOpenGL());
 
-    initTest();
+    initTest(false);
 
     // Test that all mips have the expected data initially (this makes sure the texture image is
     // created already).
@@ -3700,7 +3805,7 @@ TEST_P(Texture2DBaseMaxTestES3, GenerateMipmapAfterRedefineAndRebase)
 // Test that generating mipmaps after incompatibly redefining the base level of the texture works.
 TEST_P(Texture2DBaseMaxTestES3, GenerateMipmapAfterRedefiningBase)
 {
-    initTest();
+    initTest(false);
 
     // Test that all mips have the expected data initially (this makes sure the texture image is
     // created already).
@@ -3740,7 +3845,7 @@ TEST_P(Texture2DBaseMaxTestES3, GenerateMipmapAfterRedefiningBase)
 // changing MAX_LEVEL works.
 TEST_P(Texture2DBaseMaxTestES3, GenerateMipmapAfterRedefiningBaseAndChangingMax)
 {
-    initTest();
+    initTest(false);
 
     // Test that all mips have the expected data initially (this makes sure the texture image is
     // created already).
@@ -3784,7 +3889,7 @@ TEST_P(Texture2DBaseMaxTestES3, StageInvalidLevels)
     constexpr uint32_t kMaxLevel           = 2;
     const GLColor kMipColor[kMaxLevel + 1] = {GLColor::red, GLColor::green, GLColor::blue};
 
-    initTest();
+    initTest(false);
 
     GLTexture texture;
     glBindTexture(GL_TEXTURE_2D, texture);
@@ -3820,6 +3925,114 @@ TEST_P(Texture2DBaseMaxTestES3, StageInvalidLevels)
         EXPECT_PIXEL_COLOR_EQ(w, 0, kMipColor[lod]);
         EXPECT_PIXEL_COLOR_EQ(0, h, kMipColor[lod]);
         EXPECT_PIXEL_COLOR_EQ(w, h, kMipColor[lod]);
+    }
+}
+
+// Test redefine a mutable texture into an immutable texture.
+TEST_P(Texture2DBaseMaxTestES3, RedefineMutableToImmutable)
+{
+    // http://anglebug.com/4710
+    ANGLE_SKIP_TEST_IF(IsD3D());
+
+    // http://anglebug.com/4701
+    ANGLE_SKIP_TEST_IF(IsOpenGL() && IsIntel() && IsOSX());
+
+    constexpr uint32_t kBaseLevel          = 1;
+    const GLColor kNewMipColors[kMipCount] = {
+        GLColor::yellow,
+        GLColor::cyan,
+        GLColor::white,
+        GLColor(127u, 127u, 127u, 255u),
+    };
+
+    initTest(false);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, kBaseLevel);
+
+    // Test that all mips have the expected data
+    for (uint32_t lod = kBaseLevel; lod < kMipCount; ++lod)
+    {
+        setLodUniform(lod - kBaseLevel);
+        drawQuad(mProgram, essl3_shaders::PositionAttrib(), 0.5f);
+        EXPECT_PIXEL_COLOR_EQ(0, 0, kMipColors[lod]);
+    }
+
+    glTexStorage2D(GL_TEXTURE_2D, kMipCount, GL_RGBA8, kMip0Size, kMip0Size);
+    std::array<GLColor, getTotalMipDataSize(kMip0Size)> mipData;
+    fillMipData(mipData.data(), kMip0Size, kNewMipColors);
+    for (size_t mip = 0; mip < kMipCount; ++mip)
+    {
+        glTexSubImage2D(GL_TEXTURE_2D, mip, 0, 0, kMip0Size >> mip, kMip0Size >> mip, GL_RGBA,
+                        GL_UNSIGNED_BYTE, mipData.data() + getMipDataOffset(kMip0Size, mip));
+    }
+
+    // Test that all enabled mips have the expected data
+    for (uint32_t lod = kBaseLevel; lod < kMipCount; ++lod)
+    {
+        setLodUniform(lod - kBaseLevel);
+        drawQuad(mProgram, essl3_shaders::PositionAttrib(), 0.5f);
+        EXPECT_PIXEL_COLOR_EQ(0, 0, kNewMipColors[lod]);
+    }
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+    for (uint32_t lod = 0; lod < kBaseLevel; ++lod)
+    {
+        setLodUniform(lod);
+        drawQuad(mProgram, essl3_shaders::PositionAttrib(), 0.5f);
+        EXPECT_PIXEL_COLOR_EQ(0, 0, kNewMipColors[lod]);
+    }
+}
+
+// Test that redefine a level with incompatible size beyond the max level.
+TEST_P(Texture2DBaseMaxTestES3, RedefineIncompatibleLevelBeyondMaxLevel)
+{
+    initTest(false);
+
+    // Test that all mips have the expected data initially (this makes sure the texture image is
+    // created already).
+    for (uint32_t lod = 0; lod < kMipCount; ++lod)
+    {
+        setLodUniform(lod);
+        drawQuad(mProgram, essl3_shaders::PositionAttrib(), 0.5f);
+        EXPECT_PIXEL_COLOR_EQ(0, 0, kMipColors[lod]);
+    }
+
+    uint32_t maxLevel = 1;
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, maxLevel);
+
+    // Update level 0
+    const GLColor kNewMipLevle0Color = GLColor::yellow;
+    std::array<GLColor, getMipDataSize(kMip0Size, 0)> newMipData;
+    std::fill(newMipData.begin(), newMipData.end(), kNewMipLevle0Color);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, kMip0Size, kMip0Size, GL_RGBA, GL_UNSIGNED_BYTE,
+                    newMipData.data());
+
+    // Update level 2 with incompatible data
+    glTexImage2D(GL_TEXTURE_2D, 2, GL_RGBA8, 10, 10, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                 newMipData.data());
+    EXPECT_GL_NO_ERROR();
+
+    // Test that the texture looks as expected.
+    const int w = getWindowWidth() - 1;
+    const int h = getWindowHeight() - 1;
+    for (uint32_t lod = 0; lod < maxLevel; ++lod)
+    {
+        setLodUniform(lod);
+        drawQuad(mProgram, essl3_shaders::PositionAttrib(), 0.5f);
+        if (lod == 0)
+        {
+            EXPECT_PIXEL_COLOR_EQ(0, 0, kNewMipLevle0Color);
+            EXPECT_PIXEL_COLOR_EQ(w, 0, kNewMipLevle0Color);
+            EXPECT_PIXEL_COLOR_EQ(0, h, kNewMipLevle0Color);
+            EXPECT_PIXEL_COLOR_EQ(w, h, kNewMipLevle0Color);
+        }
+        else
+        {
+            EXPECT_PIXEL_COLOR_EQ(0, 0, kMipColors[lod]);
+            EXPECT_PIXEL_COLOR_EQ(w, 0, kMipColors[lod]);
+            EXPECT_PIXEL_COLOR_EQ(0, h, kMipColors[lod]);
+            EXPECT_PIXEL_COLOR_EQ(w, h, kMipColors[lod]);
+        }
     }
 }
 
@@ -8151,6 +8364,66 @@ TEST_P(Texture2DTestES3, NonZeroBaseEmulatedClear)
     EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::black);
 }
 
+// Test that uploading data to buffer that's in use then using it as PBO to update a texture works.
+TEST_P(Texture2DTestES3, UseAsUBOThenUpdateThenAsPBO)
+{
+    const std::array<GLColor, 4> kInitialData = {GLColor::red, GLColor::red, GLColor::red,
+                                                 GLColor::red};
+    const std::array<GLColor, 4> kUpdateData  = {GLColor::blue, GLColor::blue, GLColor::blue,
+                                                GLColor::blue};
+
+    GLBuffer buffer;
+    glBindBuffer(GL_UNIFORM_BUFFER, buffer);
+    glBufferData(GL_UNIFORM_BUFFER, sizeof(kInitialData), kInitialData.data(), GL_DYNAMIC_COPY);
+    glBindBufferBase(GL_UNIFORM_BUFFER, 0, buffer);
+    EXPECT_GL_NO_ERROR();
+
+    constexpr char kVerifyUBO[] = R"(#version 300 es
+precision mediump float;
+uniform block {
+    uvec4 data;
+} ubo;
+out vec4 colorOut;
+void main()
+{
+    if (all(equal(ubo.data, uvec4(0xFF0000FFu))))
+        colorOut = vec4(0, 1.0, 0, 1.0);
+    else
+        colorOut = vec4(1.0, 0, 0, 1.0);
+})";
+
+    ANGLE_GL_PROGRAM(verifyUbo, essl3_shaders::vs::Simple(), kVerifyUBO);
+    drawQuad(verifyUbo, essl3_shaders::PositionAttrib(), 0.5);
+    EXPECT_GL_NO_ERROR();
+
+    // Update buffer data
+    glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(kInitialData), kUpdateData.data());
+    EXPECT_GL_NO_ERROR();
+
+    // Bind as PBO
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, buffer);
+    EXPECT_GL_NO_ERROR();
+
+    // Upload from PBO to texture
+    GLTexture tex;
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, 2, 2);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 2, 2, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    EXPECT_GL_NO_ERROR();
+
+    // Make sure uniform data is correct.
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green);
+
+    // Make sure the texture data is correct.
+    GLFramebuffer fbo;
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+    EXPECT_GL_NO_ERROR();
+    EXPECT_GL_FRAMEBUFFER_COMPLETE(GL_FRAMEBUFFER);
+
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::blue);
+}
+
 // Draw a quad with an integer texture with a non-zero base level, and test that the color of the
 // texture is output.
 TEST_P(Texture2DIntegerTestES3, IntegerTextureNonZeroBaseLevel)
@@ -8675,6 +8948,85 @@ TEST_P(TextureBufferTestES31, QueryWidthAfterBufferResize)
         ASSERT_GL_NO_ERROR();
         EXPECT_EQ(queryResult, modifiedSize / 4);
     }
+}
+
+// Test that uploading data to buffer that's in use then using it as texture buffer works.
+TEST_P(TextureBufferTestES31, UseAsUBOThenUpdateThenAsTextureBuffer)
+{
+    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_OES_texture_buffer"));
+
+    // Claims to support GL_OES_texture_buffer, but fails compilation of shader because "extension
+    // 'GL_OES_texture_buffer' is not supported".  http://anglebug.com/5832
+    ANGLE_SKIP_TEST_IF(IsQualcomm() && IsOpenGLES());
+
+    const std::array<GLColor, 4> kInitialData = {GLColor::red, GLColor::red, GLColor::red,
+                                                 GLColor::red};
+    const std::array<GLColor, 4> kUpdateData  = {GLColor::blue, GLColor::blue, GLColor::blue,
+                                                GLColor::blue};
+
+    GLBuffer buffer;
+    glBindBuffer(GL_UNIFORM_BUFFER, buffer);
+    glBufferData(GL_UNIFORM_BUFFER, sizeof(kInitialData), kInitialData.data(), GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_UNIFORM_BUFFER, 0, buffer);
+    EXPECT_GL_NO_ERROR();
+
+    constexpr char kVerifyUBO[] = R"(#version 310 es
+precision mediump float;
+layout(binding = 0) uniform block {
+    uvec4 data;
+} ubo;
+out vec4 colorOut;
+void main()
+{
+    if (all(equal(ubo.data, uvec4(0xFF0000FFu))))
+        colorOut = vec4(0, 1.0, 0, 1.0);
+    else
+        colorOut = vec4(1.0, 0, 0, 1.0);
+})";
+
+    ANGLE_GL_PROGRAM(verifyUbo, essl31_shaders::vs::Simple(), kVerifyUBO);
+    drawQuad(verifyUbo, essl31_shaders::PositionAttrib(), 0.5);
+    EXPECT_GL_NO_ERROR();
+
+    // Update buffer data
+    glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(kInitialData), kUpdateData.data());
+    EXPECT_GL_NO_ERROR();
+
+    // Bind as texture buffer
+    GLTexture texture;
+    glBindTexture(GL_TEXTURE_BUFFER, texture);
+    glTexBufferEXT(GL_TEXTURE_BUFFER, GL_RGBA8, buffer);
+    EXPECT_GL_NO_ERROR();
+
+    constexpr char kVerifySamplerBuffer[] = R"(#version 310 es
+#extension GL_OES_texture_buffer : require
+precision mediump float;
+uniform highp samplerBuffer s;
+out vec4 colorOut;
+void main()
+{
+    colorOut = texelFetch(s, 0);
+})";
+
+    ANGLE_GL_PROGRAM(verifySamplerBuffer, essl31_shaders::vs::Simple(), kVerifySamplerBuffer);
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_ONE);
+    drawQuad(verifySamplerBuffer, essl31_shaders::PositionAttrib(), 0.5);
+    EXPECT_GL_NO_ERROR();
+
+    // Make sure both draw calls succeed
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::cyan);
+}
+
+// Test that the correct error is generated if texture buffer support used anyway when not enabled.
+TEST_P(TextureBufferTestES31, TestErrorWhenNotEnabled)
+{
+    ANGLE_SKIP_TEST_IF(IsGLExtensionEnabled("GL_EXT_texture_buffer"));
+
+    GLTexture texture;
+    glBindTexture(GL_TEXTURE_BUFFER, texture);
+    ASSERT_GL_ERROR(GL_INVALID_ENUM);
 }
 
 class CopyImageTestES31 : public ANGLETest

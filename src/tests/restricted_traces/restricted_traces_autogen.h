@@ -60,15 +60,22 @@ enum class RestrictedTraceID
     arena_of_valor,
     asphalt_8,
     avakin_life,
+    aztec_ruins,
     brawl_stars,
+    bubble_shooter,
     bus_simulator_indonesia,
+    call_break_offline_card_game,
     candy_crush_500,
+    candy_crush_soda_saga,
     car_parking_multiplayer,
     clash_of_clans,
     clash_royale,
     cod_mobile,
     coin_master,
+    command_and_conquer_rivals,
+    disney_tsum_tsum,
     dragon_ball_legends,
+    dragon_raja,
     efootball_pes_2021,
     egypt_1500,
     eight_ball_pool,
@@ -77,16 +84,22 @@ enum class RestrictedTraceID
     fate_grand_order,
     fifa_mobile,
     free_fire,
+    gardenscapes,
     google_maps,
     happy_color,
     hay_day,
     hearthstone,
+    higgs_domino_island,
     hill_climb_racing,
+    homescapes,
+    idle_heroes,
     junes_journey,
     kartrider_rush,
     klondike_adventures,
+    league_of_legends_wild_rift,
     lego_legacy,
     lineage_m,
+    ludo_king,
     magic_tiles_3,
     manhattan_10,
     manhattan_31,
@@ -97,6 +110,7 @@ enum class RestrictedTraceID
     nba2k20_800,
     one_punch_man,
     plants_vs_zombies_2,
+    professional_baseball_spirits,
     pubg_mobile_lite,
     ragnarok_m_eternal_love,
     raid_shadow_legends,
@@ -108,6 +122,8 @@ enum class RestrictedTraceID
     rope_hero_vice_town,
     saint_seiya_awakening,
     shadow_fight_2,
+    slingshot_test1,
+    slingshot_test2,
     sniper_3d,
     standoff_2,
     subway_surfers,
@@ -122,12 +138,6 @@ enum class RestrictedTraceID
     InvalidEnum,
     EnumCount = InvalidEnum
 };
-
-using ReplayFunc           = void (*)(uint32_t);
-using ResetFunc            = void (*)();
-using SetupFunc            = void (*)();
-using DecompressFunc       = uint8_t *(*)(const std::vector<uint8_t> &);
-using SetBinaryDataDirFunc = void (*)(const char *);
 
 static constexpr size_t kTraceInfoMaxNameLen = 32;
 
@@ -145,15 +155,7 @@ struct TraceInfo
     char name[kTraceInfoMaxNameLen];
 };
 
-using DecompressCallback = uint8_t *(*)(const std::vector<uint8_t> &);
-
 ANGLE_TRACE_EXPORT const TraceInfo &GetTraceInfo(RestrictedTraceID traceID);
-ANGLE_TRACE_EXPORT void ReplayFrame(RestrictedTraceID traceID, uint32_t frameIndex);
-ANGLE_TRACE_EXPORT void ResetReplay(RestrictedTraceID traceID);
-ANGLE_TRACE_EXPORT void SetupReplay(RestrictedTraceID traceID);
-ANGLE_TRACE_EXPORT void SetBinaryDataDir(RestrictedTraceID traceID, const char *dataDir);
-ANGLE_TRACE_EXPORT void SetBinaryDataDecompressCallback(RestrictedTraceID traceID,
-                                                        DecompressCallback callback);
 }  // namespace angle
 
 #endif  // ANGLE_RESTRICTED_TRACES_H_

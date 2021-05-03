@@ -3033,34 +3033,6 @@ void Program::validate(const Caps &caps)
     }
 }
 
-bool Program::validateSamplersImpl(InfoLog *infoLog, const Caps &caps)
-{
-    const ProgramExecutable *executable = mState.mExecutable.get();
-    ASSERT(!mLinkingState);
-
-    // if any two active samplers in a program are of different types, but refer to the same
-    // texture image unit, and this is the current program, then ValidateProgram will fail, and
-    // DrawArrays and DrawElements will issue the INVALID_OPERATION error.
-    for (size_t textureUnit : executable->mActiveSamplersMask)
-    {
-        if (executable->mActiveSamplerTypes[textureUnit] == TextureType::InvalidEnum)
-        {
-            if (infoLog)
-            {
-                (*infoLog) << "Samplers of conflicting types refer to the same texture "
-                              "image unit ("
-                           << textureUnit << ").";
-            }
-
-            mCachedValidateSamplersResult = false;
-            return false;
-        }
-    }
-
-    mCachedValidateSamplersResult = true;
-    return true;
-}
-
 bool Program::isValidated() const
 {
     ASSERT(!mLinkingState);
@@ -4473,6 +4445,14 @@ void Program::updateSamplerUniform(Context *context,
             }
         }
 
+        // Update the observing PPO's executable, if any.
+        // Do this before any of the Context work, since that uses the current ProgramExecutable,
+        // which will be the PPO's if this Program is bound to it, rather than this Program's.
+        if (isSeparable())
+        {
+            onStateChange(angle::SubjectMessage::ProgramTextureOrImageBindingChanged);
+        }
+
         // Notify context.
         if (context)
         {
@@ -4482,7 +4462,9 @@ void Program::updateSamplerUniform(Context *context,
     }
 
     // Invalidate the validation cache.
-    mCachedValidateSamplersResult.reset();
+    getExecutable().resetCachedValidateSamplersResult();
+    // Inform any PPOs this Program may be bound to.
+    onStateChange(angle::SubjectMessage::SamplerUniformsUpdated);
 }
 
 void ProgramState::setSamplerUniformTextureTypeAndFormat(size_t textureUnitIndex)
