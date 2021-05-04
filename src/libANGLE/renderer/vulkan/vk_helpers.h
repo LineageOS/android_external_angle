@@ -332,7 +332,7 @@ class DynamicDescriptorPool final : angle::NonCopyable
   private:
     angle::Result allocateNewPool(ContextVk *contextVk);
 
-    static constexpr uint32_t KMaxSetsPerPoolMax = 512;
+    static constexpr uint32_t kMaxSetsPerPoolMax = 512;
     static uint32_t mMaxSetsPerPool;
     static uint32_t mMaxSetsPerPoolMultiplier;
     size_t mCurrentPoolIndex;
@@ -1100,12 +1100,7 @@ class CommandBufferHelper : angle::NonCopyable
 
     void endRenderPass(ContextVk *contextVk);
 
-    void updateStartedRenderPassWithDepthMode(bool readOnlyDepthStencilMode)
-    {
-        ASSERT(mIsRenderPassCommandBuffer);
-        ASSERT(mRenderPassStarted);
-        mReadOnlyDepthStencilMode = readOnlyDepthStencilMode;
-    }
+    void updateStartedRenderPassWithDepthMode(bool readOnlyDepthStencilMode);
 
     void beginTransformFeedback(size_t validBufferCount,
                                 const VkBuffer *counterBuffers,
@@ -1190,8 +1185,6 @@ class CommandBufferHelper : angle::NonCopyable
                    VK_ATTACHMENT_LOAD_OP_CLEAR;
     }
 
-    bool isReadOnlyDepthMode() const { return mReadOnlyDepthStencilMode; }
-
     void addCommandDiagnostics(ContextVk *contextVk);
 
     const RenderPassDesc &getRenderPassDesc() const { return mRenderPassDesc; }
@@ -1259,7 +1252,6 @@ class CommandBufferHelper : angle::NonCopyable
     bool mIsTransformFeedbackActiveUnpaused;
 
     bool mIsRenderPassCommandBuffer;
-    bool mReadOnlyDepthStencilMode;
 
     // Whether the command buffers contains any draw/dispatch calls that possibly output data
     // through storage buffers and images.  This is used to determine whether glMemoryBarrier*
@@ -1350,6 +1342,8 @@ enum class ImageLayout
     ColorAttachment,
     ColorAttachmentAndFragmentShaderRead,
     ColorAttachmentAndAllShadersRead,
+    DepthStencilAttachmentAndFragmentShaderRead,
+    DepthStencilAttachmentAndAllShadersRead,
     DepthStencilReadOnly,
     DepthStencilAttachment,
     DepthStencilResolveAttachment,
@@ -1381,13 +1375,19 @@ VkImageLayout ConvertImageLayoutToVkImageLayout(ImageLayout imageLayout);
 // How the ImageHelper object is being used by the renderpass
 enum class RenderPassUsage
 {
+    // Attached to the render taget of the current renderpass commands. It could be read/write or
+    // read only access.
     RenderTargetAttachment,
+    // This is special case of RenderTargetAttachment where the render target access is read only.
+    // Right now it is only tracked for depth stencil attachment
+    ReadOnlyAttachment,
+    // Attached to the texture sampler of the current renderpass commands
     TextureSampler,
 
     InvalidEnum,
     EnumCount = InvalidEnum,
 };
-using RenderPassUseFlags = angle::PackedEnumBitSet<RenderPassUsage, uint16_t>;
+using RenderPassUsageFlags = angle::PackedEnumBitSet<RenderPassUsage, uint16_t>;
 
 bool FormatHasNecessaryFeature(RendererVk *renderer,
                                angle::FormatID formatID,
@@ -1418,8 +1418,7 @@ class ImageHelper final : public Resource, public angle::Subject
                        const Format &format,
                        GLint samples,
                        VkImageUsageFlags usage,
-                       gl::LevelIndex baseLevel,
-                       gl::LevelIndex maxLevel,
+                       gl::LevelIndex firstLevel,
                        uint32_t mipLevels,
                        uint32_t layerCount,
                        bool isRobustResourceInitEnabled);
@@ -1430,8 +1429,7 @@ class ImageHelper final : public Resource, public angle::Subject
                                     const Format &format,
                                     GLint samples,
                                     VkImageUsageFlags usage,
-                                    gl::LevelIndex baseLevel,
-                                    gl::LevelIndex maxLevel,
+                                    gl::LevelIndex firstLevel,
                                     uint32_t mipLevels,
                                     uint32_t layerCount,
                                     bool isRobustResourceInitEnabled);
@@ -1444,8 +1442,7 @@ class ImageHelper final : public Resource, public angle::Subject
                                VkImageCreateFlags additionalCreateFlags,
                                ImageLayout initialLayout,
                                const void *externalImageCreateInfo,
-                               gl::LevelIndex baseLevel,
-                               gl::LevelIndex maxLevel,
+                               gl::LevelIndex firstLevel,
                                uint32_t mipLevels,
                                uint32_t layerCount,
                                bool isRobustResourceInitEnabled,
@@ -1575,8 +1572,9 @@ class ImageHelper final : public Resource, public angle::Subject
     bool isDepthOrStencil() const;
 
     void setRenderPassUsageFlag(RenderPassUsage flag);
+    void clearRenderPassUsageFlag(RenderPassUsage flag);
     void resetRenderPassUsageFlags();
-    bool hasRenderPassUseFlag(RenderPassUsage flag) const;
+    bool hasRenderPassUsageFlag(RenderPassUsage flag) const;
     bool usedByCurrentRenderPassAsAttachmentAndSampler() const;
 
     // Clear either color or depth/stencil based on image format.
@@ -1612,7 +1610,9 @@ class ImageHelper final : public Resource, public angle::Subject
                                           GLsizei srcDepth);
 
     // Generate mipmap from level 0 into the rest of the levels with blit.
-    angle::Result generateMipmapsWithBlit(ContextVk *contextVk, LevelIndex maxLevel);
+    angle::Result generateMipmapsWithBlit(ContextVk *contextVk,
+                                          LevelIndex baseLevel,
+                                          LevelIndex maxLevel);
 
     // Resolve this image into a destination image.  This image should be in the TransferSrc layout.
     // The destination image is automatically transitioned into TransferDst.
@@ -1790,9 +1790,9 @@ class ImageHelper final : public Resource, public angle::Subject
     // Returns true if the image is owned by an external API or instance.
     bool isReleasedToExternal() const;
 
-    gl::LevelIndex getBaseLevel() const { return mBaseLevel; }
-    void setBaseAndMaxLevels(gl::LevelIndex baseLevel, gl::LevelIndex maxLevel);
-    gl::LevelIndex getMaxLevel() const { return mMaxLevel; }
+    gl::LevelIndex getFirstAllocatedLevel() const { return mFirstAllocatedLevel; }
+    void setFirstAllocatedLevel(gl::LevelIndex firstLevel);
+    gl::LevelIndex getLastAllocatedLevel() const;
     LevelIndex toVkLevel(gl::LevelIndex levelIndexGL) const;
     gl::LevelIndex toGLLevel(LevelIndex levelIndexVk) const;
 
@@ -2051,15 +2051,18 @@ class ImageHelper final : public Resource, public angle::Subject
     ImageLayout mLastNonShaderReadOnlyLayout;
     VkPipelineStageFlags mCurrentShaderReadStageMask;
     // Track how it is being used by current open renderpass.
-    RenderPassUseFlags mRenderPassUseFlags;
+    RenderPassUsageFlags mRenderPassUsageFlags;
 
     // For imported images
     BindingPointer<SamplerYcbcrConversion> mYuvConversionSampler;
     uint64_t mExternalFormat;
 
+    // The first level that has been allocated. For mutable textures, this should be same as
+    // mBaseLevel since we always reallocate VkImage based on mBaseLevel change. But for immutable
+    // textures, we always allocate from level 0 regardless of mBaseLevel change.
+    gl::LevelIndex mFirstAllocatedLevel;
+
     // Cached properties.
-    gl::LevelIndex mBaseLevel;
-    gl::LevelIndex mMaxLevel;
     uint32_t mLayerCount;
     uint32_t mLevelCount;
 

@@ -399,6 +399,12 @@ void TParseContext::outOfRangeError(bool isError,
     }
 }
 
+void TParseContext::setTreeRoot(TIntermBlock *treeRoot)
+{
+    mTreeRoot = treeRoot;
+    mTreeRoot->setIsTreeRoot();
+}
+
 //
 // Same error message for all places assignments don't work.
 //
@@ -1210,8 +1216,23 @@ void TParseContext::checkCanBeDeclaredWithoutInitializer(const TSourceLoc &line,
             error(line, "variables with qualifier 'const' must be initialized", identifier);
         }
     }
-    checkIsNotUnsizedArray(line, "implicitly sized arrays need to be initialized", identifier,
-                           type);
+
+    // Implicitly declared arrays are disallowed for shaders other than tessellation shaders.
+    if (mShaderType != GL_TESS_CONTROL_SHADER && mShaderType != GL_TESS_EVALUATION_SHADER &&
+        type->isArray())
+    {
+        const TSpan<const unsigned int> &arraySizes = type->getArraySizes();
+        for (unsigned int size : arraySizes)
+        {
+            if (size == 0)
+            {
+                error(line,
+                      "implicitly sized arrays disallowed for shaders that are not tessellation "
+                      "shaders",
+                      identifier);
+            }
+        }
+    }
 }
 
 // Do some simple checks that are shared between all variable declarations,
@@ -4500,7 +4521,7 @@ TIntermDeclaration *TParseContext::addInterfaceBlock(
             TType *fieldType = new TType(*field->type());
 
             // set parent pointer of the field variable
-            fieldType->setInterfaceBlock(interfaceBlock);
+            fieldType->setInterfaceBlockField(interfaceBlock, memberIndex);
 
             fieldType->setQualifier(typeQualifier.qualifier);
 

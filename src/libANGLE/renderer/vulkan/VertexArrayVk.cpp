@@ -49,6 +49,31 @@ ANGLE_INLINE bool BindingIsAligned(const gl::VertexBinding &binding,
     }
 }
 
+angle::Result WarnOnVertexFormatConversion(ContextVk *contextVk,
+                                           const vk::Format &vertexFormat,
+                                           bool compressed,
+                                           bool insertEventMarker)
+{
+    if (!vertexFormat.getVertexLoadRequiresConversion(compressed))
+    {
+        return angle::Result::Continue;
+    }
+
+    std::ostringstream stream;
+    stream << "The Vulkan driver does not support the 0x" << std::hex
+           << vertexFormat.intendedFormat().glInternalFormat
+           << " vertex attribute format; emulating with 0x"
+           << vertexFormat.actualBufferFormat(compressed).glInternalFormat;
+    ANGLE_PERF_WARNING(contextVk->getDebug(), GL_DEBUG_SEVERITY_LOW, stream.str().c_str());
+
+    if (insertEventMarker)
+    {
+        ANGLE_TRY(contextVk->insertEventMarker(0, stream.str().c_str()));
+    }
+
+    return angle::Result::Continue;
+}
+
 angle::Result StreamVertexData(ContextVk *contextVk,
                                vk::DynamicBuffer *dynamicBuffer,
                                const uint8_t *sourceData,
@@ -576,13 +601,33 @@ angle::Result VertexArrayVk::syncDirtyAttrib(ContextVk *contextVk,
             bool bindingIsAligned               = BindingIsAligned(
                 binding, intendedFormat, intendedFormat.channelCount, attrib.relativeOffset);
 
+            if (renderer->getFeatures().compressVertexData.enabled &&
+                gl::IsStaticBufferUsage(bufferGL->getUsage()) &&
+                vertexFormat.actualCompressedBufferFormatID != angle::FormatID::NONE &&
+                vertexFormat.actualBufferFormatID != vertexFormat.actualCompressedBufferFormatID)
+            {
+                compressed = true;
+            }
+
             if (vertexFormat.getVertexLoadRequiresConversion(compressed) || !bindingIsAligned)
             {
+                ANGLE_TRY(WarnOnVertexFormatConversion(contextVk, vertexFormat, compressed, true));
+
                 ConversionBuffer *conversion = bufferVk->getVertexConversionBuffer(
                     renderer, intendedFormat.id, binding.getStride(),
                     binding.getOffset() + attrib.relativeOffset, !bindingIsAligned);
                 if (conversion->dirty)
                 {
+                    if (compressed)
+                    {
+                        INFO() << "Compressing vertex data in buffer " << bufferGL->id().value
+                               << " from "
+                               << static_cast<unsigned int>(vertexFormat.intendedFormatID) << " to "
+                               << static_cast<unsigned int>(
+                                      vertexFormat.actualCompressedBufferFormatID)
+                               << ".";
+                    }
+
                     if (bindingIsAligned)
                     {
                         ANGLE_TRY(convertVertexBufferGPU(contextVk, bufferVk, binding, attribIndex,
@@ -592,6 +637,10 @@ angle::Result VertexArrayVk::syncDirtyAttrib(ContextVk *contextVk,
                     }
                     else
                     {
+                        ANGLE_PERF_WARNING(
+                            contextVk->getDebug(), GL_DEBUG_SEVERITY_HIGH,
+                            "GPU stall due to vertex format conversion of unaligned data");
+
                         ANGLE_TRY(convertVertexBufferCPU(contextVk, bufferVk, binding, attribIndex,
                                                          vertexFormat, conversion,
                                                          attrib.relativeOffset, compressed));
@@ -730,6 +779,9 @@ angle::Result VertexArrayVk::updateStreamedAttribs(const gl::Context *context,
 
         const vk::Format &vertexFormat = renderer->getFormat(attrib.format->id);
         GLuint stride                  = vertexFormat.actualBufferFormat(false).pixelBytes;
+
+        bool compressed = false;
+        ANGLE_TRY(WarnOnVertexFormatConversion(contextVk, vertexFormat, compressed, false));
 
         ASSERT(GetVertexInputAlignment(vertexFormat, false) <= vk::kVertexBufferAlignment);
 

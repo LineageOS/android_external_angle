@@ -25,6 +25,7 @@ enum VendorID : uint32_t
     VENDOR_ID_BROADCOM = 0x14E4,
     VENDOR_ID_GOOGLE   = 0x1AE0,
     VENDOR_ID_INTEL    = 0x8086,
+    VENDOR_ID_MESA     = 0x10005,
     VENDOR_ID_NVIDIA   = 0x10DE,
     VENDOR_ID_POWERVR  = 0x1010,
     // This is Qualcomm PCI Vendor ID.
@@ -151,6 +152,7 @@ bool IsCherryView(uint32_t DeviceId);
 bool IsSkylake(uint32_t DeviceId);
 bool IsBroxton(uint32_t DeviceId);
 bool IsKabylake(uint32_t DeviceId);
+bool Is9thGenIntel(uint32_t DeviceId);
 
 // Platform helpers
 inline bool IsWindows()

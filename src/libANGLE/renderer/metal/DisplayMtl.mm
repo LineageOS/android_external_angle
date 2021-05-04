@@ -139,7 +139,7 @@ std::string DisplayMtl::getRendererDescription()
 {
     ANGLE_MTL_OBJC_SCOPE
     {
-        std::string desc = "Metal Renderer";
+        std::string desc = "ANGLE Metal Renderer";
 
         if (mMetalDevice)
         {
@@ -768,6 +768,12 @@ void DisplayMtl::initializeTextureCaps() const
     if (supportsAppleGPUFamily(3) && mNativeExtensions.textureCompressionASTCLDRKHR)
     {
         mNativeExtensions.textureCompressionSliced3dASTCKHR = true;
+    }
+
+    // Enable ASTC HDR, requires MTLGPUFamilyApple6
+    if (supportsAppleGPUFamily(6) && mNativeExtensions.textureCompressionASTCLDRKHR)
+    {
+        mNativeExtensions.textureCompressionASTCHDRKHR = true;
     }
 
     // Disable all depth buffer and stencil buffer readback extensions until we need them

@@ -41,14 +41,37 @@ ANGLE_CHROMIUM_DEPS = [
     'buildtools/win',
     'testing',
     'third_party/abseil-cpp',
+    'third_party/android_build_tools',
+    'third_party/android_build_tools/aapt2',
+    'third_party/android_build_tools/art',
+    'third_party/android_build_tools/bundletool',
+    'third_party/android_deps',
+    'third_party/android_ndk',
+    'third_party/android_sdk',
+    'third_party/android_sdk/androidx_browser/src',
+    'third_party/android_sdk/public',
+    'third_party/android_system_sdk',
+    'third_party/bazel',
     'third_party/catapult',
+    'third_party/colorama/src',
+    'third_party/depot_tools',
+    'third_party/ijar',
+    'third_party/jdk',
+    'third_party/jdk/extras',
+    'third_party/jinja2',
     'third_party/libjpeg_turbo',
+    'third_party/markupsafe',
     'third_party/nasm',
+    'third_party/proguard',
     'third_party/protobuf',
     'third_party/Python-Markdown',
     'third_party/qemu-linux-x64',
     'third_party/qemu-mac-x64',
+    'third_party/r8',
+    'third_party/six',
+    'third_party/turbine',
     'third_party/zlib',
+    'tools/android/errorprone_plugin',
     'tools/clang',
     'tools/clang/dsymutil',
     'tools/luci-go',
@@ -59,6 +82,7 @@ ANGLE_CHROMIUM_DEPS = [
     'tools/skia_goldctl/linux',
     'tools/skia_goldctl/mac',
     'tools/skia_goldctl/win',
+    'tools/swarming_client',
 ]
 
 ANGLE_URL = 'https://chromium.googlesource.com/angle/angle'
@@ -454,14 +478,31 @@ def GenerateCommitMessage(
 def UpdateDepsFile(deps_filename, rev_update, changed_deps, new_cr_content, autoroll):
     """Update the DEPS file with the new revision."""
 
-    # Autoroll take care of updating chromium_revision
-    if not autoroll:
-        with open(deps_filename, 'rb') as deps_file:
-            deps_content = deps_file.read()
+    with open(deps_filename, 'rb') as deps_file:
+        deps_content = deps_file.read()
+        # Autoroll takes care of updating 'chromium_revision', thus we don't need to.
+        if not autoroll:
+            # Update the chromium_revision variable.
+            deps_content = deps_content.replace(rev_update.current_chromium_rev,
+                                                rev_update.new_chromium_rev)
 
-        # Update the chromium_revision variable.
-        deps_content = deps_content.replace(rev_update.current_chromium_rev,
-                                            rev_update.new_chromium_rev)
+        # Add and remove dependencies. For now: only generated android deps.
+        # Since gclient cannot add or remove deps, we rely on the fact that
+        # these android deps are located in one place to copy/paste.
+        deps_re = re.compile(ANDROID_DEPS_START + '.*' + ANDROID_DEPS_END, re.DOTALL)
+        new_deps = deps_re.search(new_cr_content)
+        old_deps = deps_re.search(deps_content)
+        if not new_deps or not old_deps:
+            faulty = 'Chromium' if not new_deps else 'ANGLE'
+            raise RollError('Was expecting to find "%s" and "%s"\n'
+                            'in %s DEPS' % (ANDROID_DEPS_START, ANDROID_DEPS_END, faulty))
+
+        replacement = new_deps.group(0).replace('src/third_party/android_deps',
+                                                'third_party/android_deps')
+        replacement = replacement.replace('checkout_android',
+                                          'checkout_android and not build_with_chromium')
+
+        deps_content = deps_re.sub(replacement, deps_content)
 
         with open(deps_filename, 'wb') as deps_file:
             deps_file.write(deps_content)

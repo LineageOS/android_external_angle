@@ -7,10 +7,8 @@
 //   Application that runs replay for testing of capture replay
 //
 
+#include "common/debug.h"
 #include "common/system_utils.h"
-#include "libANGLE/Context.h"
-#include "libANGLE/capture/frame_capture_utils.h"
-#include "libANGLE/serializer/JsonSerializer.h"
 #include "util/EGLPlatformParameters.h"
 #include "util/EGLWindow.h"
 #include "util/OSWindow.h"
@@ -78,6 +76,9 @@ class CaptureReplayTests
         configParams.depthBits   = testTraceInfo.defaultFramebufferDepthBits;
         configParams.stencilBits = testTraceInfo.defaultFramebufferStencilBits;
 
+        configParams.clientArraysEnabled   = testTraceInfo.areClientArraysEnabled;
+        configParams.bindGeneratesResource = testTraceInfo.bindGeneratesResources;
+
         mPlatformParams.renderer   = testTraceInfo.replayPlatformType;
         mPlatformParams.deviceType = testTraceInfo.replayDeviceType;
 
@@ -94,6 +95,10 @@ class CaptureReplayTests
             cleanupTest();
             return false;
         }
+
+        // Load trace
+        mTraceLibrary.reset(new angle::TraceLibrary(testTraceInfo.testName.c_str()));
+
         // Set CWD to executable directory.
         std::string exeDir = angle::GetExecutableDirectory();
         if (!angle::SetCWD(exeDir.c_str()))
@@ -103,16 +108,17 @@ class CaptureReplayTests
         }
         if (testTraceInfo.isBinaryDataCompressed)
         {
-            SetBinaryDataDecompressCallback(testIndex, angle::DecompressBinaryData);
+            mTraceLibrary->setBinaryDataDecompressCallback(angle::DecompressBinaryData);
         }
-        SetBinaryDataDir(testIndex, ANGLE_CAPTURE_REPLAY_TEST_DATA_DIR);
+        mTraceLibrary->setBinaryDataDir(ANGLE_CAPTURE_REPLAY_TEST_DATA_DIR);
 
-        SetupContextReplay(testIndex);
+        mTraceLibrary->setupReplay();
         return true;
     }
 
     void cleanupTest()
     {
+        mTraceLibrary.reset(nullptr);
         mEGLWindow->destroyGL();
         mOSWindow->destroy();
     }
@@ -129,19 +135,26 @@ class CaptureReplayTests
         for (uint32_t frame = testTraceInfo.replayFrameStart; frame <= testTraceInfo.replayFrameEnd;
              frame++)
         {
-            ReplayContextFrame(testIndex, frame);
-            gl::Context *context = static_cast<gl::Context *>(mEGLWindow->getContext());
-            angle::JsonSerializer json;
-            if (angle::SerializeContext(&json, context) != angle::Result::Continue)
-            {
-                cleanupTest();
-                return -1;
-            }
-            bool isEqual = compareSerializedContexts(testIndex, frame, json.data());
+            mTraceLibrary->replayFrame(frame);
+
+            const GLubyte *bytes = glGetString(GL_SERIALIZED_CONTEXT_STRING_ANGLE);
+            bool isEqual =
+                compareSerializedContexts(testIndex, frame, reinterpret_cast<const char *>(bytes));
             // Swap always to allow RenderDoc/other tools to capture frames.
             swap();
             if (!isEqual)
             {
+                std::ostringstream replayName;
+                replayName << testTraceInfo.testName << "_ContextReplayed" << frame << ".json";
+                std::ofstream debugReplay(replayName.str());
+                debugReplay << reinterpret_cast<const char *>(bytes) << "\n";
+
+                std::ostringstream captureName;
+                captureName << testTraceInfo.testName << "_ContextCaptured" << frame << ".json";
+                std::ofstream debugCapture(captureName.str());
+
+                debugCapture << mTraceLibrary->getSerializedContextState(frame) << "\n";
+
                 cleanupTest();
                 return -1;
             }
@@ -166,7 +179,8 @@ class CaptureReplayTests
                                    const char *replaySerializedContextState)
     {
 
-        return !strcmp(replaySerializedContextState, GetSerializedContextState(testIndex, frame));
+        return !strcmp(replaySerializedContextState,
+                       mTraceLibrary->getSerializedContextState(frame));
     }
 
     OSWindow *mOSWindow   = nullptr;
@@ -174,6 +188,7 @@ class CaptureReplayTests
     EGLPlatformParameters mPlatformParams;
     // Handle to the entry point binding library.
     std::unique_ptr<angle::Library> mEntryPointsLib;
+    std::unique_ptr<angle::TraceLibrary> mTraceLibrary;
 };
 
 int main(int argc, char **argv)

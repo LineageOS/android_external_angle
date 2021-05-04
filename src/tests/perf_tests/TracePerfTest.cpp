@@ -24,6 +24,19 @@
 #include <functional>
 #include <sstream>
 
+// When --minimize-gpu-work is specified, we want to reduce GPU work to minimum and lift up the CPU
+// overhead to surface so that we can see how much CPU overhead each driver has for each app trace.
+// On some driver(s) the bufferSubData/texSubImage calls end up dominating the frame time when the
+// actual GPU work is minimized. Even reducing the texSubImage calls to only update 1x1 area is not
+// enough. The driver may be implementing copy on write by cloning the entire texture to another
+// memory storage for texSubImage call. While this information is also important for performance,
+// they should be evaluated separately in real app usage scenario, or write stand alone tests for
+// these. For the purpose of CPU overhead and avoid data copy to dominate the trace, I am using this
+// flag to noop the texSubImage and bufferSubData call when --minimize-gpu-work is specified. Feel
+// free to disable this when you have other needs. Or it can be turned to another run time option
+// when desired.
+#define NOOP_SUBDATA_SUBIMAGE_FOR_MINIMIZE_GPU_WORK
+
 using namespace angle;
 using namespace egl_platform;
 
@@ -129,6 +142,7 @@ class TracePerfTest : public ANGLERenderTest, public ::testing::WithParamInterfa
     uint32_t mCurrentFrame         = 0;
     uint32_t mOffscreenFrameCount  = 0;
     bool mScreenshotSaved          = false;
+    std::unique_ptr<TraceLibrary> mTraceLibrary;
 };
 
 class TracePerfTest;
@@ -176,6 +190,246 @@ void KHRONOS_APIENTRY DiscardFramebufferEXTProc(GLenum target,
     gCurrentTracePerfTest->onReplayDiscardFramebufferEXT(target, numAttachments, attachments);
 }
 
+void KHRONOS_APIENTRY ViewportMinimizedProc(GLint x, GLint y, GLsizei width, GLsizei height)
+{
+    glViewport(x, y, 1, 1);
+}
+
+void KHRONOS_APIENTRY ScissorMinimizedProc(GLint x, GLint y, GLsizei width, GLsizei height)
+{
+    glScissor(x, y, 1, 1);
+}
+
+// Interpose the calls that generate actual GPU work
+void KHRONOS_APIENTRY DrawElementsMinimizedProc(GLenum mode,
+                                                GLsizei count,
+                                                GLenum type,
+                                                const void *indices)
+{
+    glDrawElements(GL_POINTS, 1, type, indices);
+}
+
+void KHRONOS_APIENTRY DrawElementsIndirectMinimizedProc(GLenum mode,
+                                                        GLenum type,
+                                                        const void *indirect)
+{
+    glDrawElementsInstancedBaseVertex(GL_POINTS, 1, type, 0, 1, 0);
+}
+
+void KHRONOS_APIENTRY DrawElementsInstancedMinimizedProc(GLenum mode,
+                                                         GLsizei count,
+                                                         GLenum type,
+                                                         const void *indices,
+                                                         GLsizei instancecount)
+{
+    glDrawElementsInstanced(GL_POINTS, 1, type, indices, 1);
+}
+
+void KHRONOS_APIENTRY DrawElementsBaseVertexMinimizedProc(GLenum mode,
+                                                          GLsizei count,
+                                                          GLenum type,
+                                                          const void *indices,
+                                                          GLint basevertex)
+{
+    glDrawElementsBaseVertex(GL_POINTS, 1, type, indices, basevertex);
+}
+
+void KHRONOS_APIENTRY DrawElementsInstancedBaseVertexMinimizedProc(GLenum mode,
+                                                                   GLsizei count,
+                                                                   GLenum type,
+                                                                   const void *indices,
+                                                                   GLsizei instancecount,
+                                                                   GLint basevertex)
+{
+    glDrawElementsInstancedBaseVertex(GL_POINTS, 1, type, indices, 1, basevertex);
+}
+
+void KHRONOS_APIENTRY DrawRangeElementsMinimizedProc(GLenum mode,
+                                                     GLuint start,
+                                                     GLuint end,
+                                                     GLsizei count,
+                                                     GLenum type,
+                                                     const void *indices)
+{
+    glDrawRangeElements(GL_POINTS, start, end, 1, type, indices);
+}
+
+void KHRONOS_APIENTRY DrawArraysMinimizedProc(GLenum mode, GLint first, GLsizei count)
+{
+    glDrawArrays(GL_POINTS, first, 1);
+}
+
+void KHRONOS_APIENTRY DrawArraysInstancedMinimizedProc(GLenum mode,
+                                                       GLint first,
+                                                       GLsizei count,
+                                                       GLsizei instancecount)
+{
+    glDrawArraysInstanced(GL_POINTS, first, 1, 1);
+}
+
+void KHRONOS_APIENTRY DrawArraysIndirectMinimizedProc(GLenum mode, const void *indirect)
+{
+    glDrawArraysInstanced(GL_POINTS, 0, 1, 1);
+}
+
+void KHRONOS_APIENTRY DispatchComputeMinimizedProc(GLuint num_groups_x,
+                                                   GLuint num_groups_y,
+                                                   GLuint num_groups_z)
+{
+    glDispatchCompute(1, 1, 1);
+}
+
+void KHRONOS_APIENTRY DispatchComputeIndirectMinimizedProc(GLintptr indirect)
+{
+    glDispatchCompute(1, 1, 1);
+}
+
+// Interpose the calls that generate data copying work
+void KHRONOS_APIENTRY BufferDataMinimizedProc(GLenum target,
+                                              GLsizeiptr size,
+                                              const void *data,
+                                              GLenum usage)
+{
+    glBufferData(target, size, nullptr, usage);
+}
+
+void KHRONOS_APIENTRY BufferSubDataMinimizedProc(GLenum target,
+                                                 GLintptr offset,
+                                                 GLsizeiptr size,
+                                                 const void *data)
+{
+#if !defined(NOOP_SUBDATA_SUBIMAGE_FOR_MINIMIZE_GPU_WORK)
+    glBufferSubData(target, offset, 1, data);
+#endif
+}
+
+void *KHRONOS_APIENTRY MapBufferRangeMinimizedProc(GLenum target,
+                                                   GLintptr offset,
+                                                   GLsizeiptr length,
+                                                   GLbitfield access)
+{
+    access |= GL_MAP_UNSYNCHRONIZED_BIT;
+    return glMapBufferRange(target, offset, length, access);
+}
+
+void KHRONOS_APIENTRY TexImage2DMinimizedProc(GLenum target,
+                                              GLint level,
+                                              GLint internalformat,
+                                              GLsizei width,
+                                              GLsizei height,
+                                              GLint border,
+                                              GLenum format,
+                                              GLenum type,
+                                              const void *pixels)
+{
+    GLint unpackBuffer = 0;
+    glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &unpackBuffer);
+    if (unpackBuffer)
+    {
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+    }
+    glTexImage2D(target, level, internalformat, width, height, border, format, type, nullptr);
+    if (unpackBuffer)
+    {
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, unpackBuffer);
+    }
+}
+
+void KHRONOS_APIENTRY TexSubImage2DMinimizedProc(GLenum target,
+                                                 GLint level,
+                                                 GLint xoffset,
+                                                 GLint yoffset,
+                                                 GLsizei width,
+                                                 GLsizei height,
+                                                 GLenum format,
+                                                 GLenum type,
+                                                 const void *pixels)
+{
+#if !defined(NOOP_SUBDATA_SUBIMAGE_FOR_MINIMIZE_GPU_WORK)
+    glTexSubImage2D(target, level, xoffset, yoffset, 1, 1, format, type, pixels);
+#endif
+}
+
+void KHRONOS_APIENTRY TexImage3DMinimizedProc(GLenum target,
+                                              GLint level,
+                                              GLint internalformat,
+                                              GLsizei width,
+                                              GLsizei height,
+                                              GLsizei depth,
+                                              GLint border,
+                                              GLenum format,
+                                              GLenum type,
+                                              const void *pixels)
+{
+    GLint unpackBuffer = 0;
+    glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &unpackBuffer);
+    if (unpackBuffer)
+    {
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+    }
+    glTexImage3D(target, level, internalformat, width, height, depth, border, format, type,
+                 nullptr);
+    if (unpackBuffer)
+    {
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, unpackBuffer);
+    }
+}
+
+void KHRONOS_APIENTRY TexSubImage3DMinimizedProc(GLenum target,
+                                                 GLint level,
+                                                 GLint xoffset,
+                                                 GLint yoffset,
+                                                 GLint zoffset,
+                                                 GLsizei width,
+                                                 GLsizei height,
+                                                 GLsizei depth,
+                                                 GLenum format,
+                                                 GLenum type,
+                                                 const void *pixels)
+{
+#if !defined(NOOP_SUBDATA_SUBIMAGE_FOR_MINIMIZE_GPU_WORK)
+    glTexSubImage3D(target, level, xoffset, yoffset, zoffset, 1, 1, 1, format, type, pixels);
+#endif
+}
+
+void KHRONOS_APIENTRY GenerateMipmapMinimizedProc(GLenum target)
+{
+    // Noop it for now. There is a risk that this will leave an incomplete mipmap chain and cause
+    // other issues. If this turns out to be a real issue with app traces, we can turn this into a
+    // glTexImage2D call for each generated level.
+}
+
+void KHRONOS_APIENTRY BlitFramebufferMinimizedProc(GLint srcX0,
+                                                   GLint srcY0,
+                                                   GLint srcX1,
+                                                   GLint srcY1,
+                                                   GLint dstX0,
+                                                   GLint dstY0,
+                                                   GLint dstX1,
+                                                   GLint dstY1,
+                                                   GLbitfield mask,
+                                                   GLenum filter)
+{
+    glBlitFramebuffer(srcX0, srcY0, srcX0 + 1, srcY0 + 1, dstX0, dstY0, dstX0 + 1, dstY0 + 1, mask,
+                      filter);
+}
+
+void KHRONOS_APIENTRY ReadPixelsMinimizedProc(GLint x,
+                                              GLint y,
+                                              GLsizei width,
+                                              GLsizei height,
+                                              GLenum format,
+                                              GLenum type,
+                                              void *pixels)
+{
+    glReadPixels(x, y, 1, 1, format, type, pixels);
+}
+
+void KHRONOS_APIENTRY BeginTransformFeedbackMinimizedProc(GLenum primitiveMode)
+{
+    glBeginTransformFeedback(GL_POINTS);
+}
+
 angle::GenericProc KHRONOS_APIENTRY TraceLoadProc(const char *procName)
 {
     if (strcmp(procName, "glBindFramebuffer") == 0)
@@ -202,6 +456,121 @@ angle::GenericProc KHRONOS_APIENTRY TraceLoadProc(const char *procName)
     {
         return reinterpret_cast<angle::GenericProc>(DiscardFramebufferEXTProc);
     }
+
+    if (gMinimizeGPUWork)
+    {
+        if (strcmp(procName, "glViewport") == 0)
+        {
+            return reinterpret_cast<angle::GenericProc>(ViewportMinimizedProc);
+        }
+
+        if (strcmp(procName, "glScissor") == 0)
+        {
+            return reinterpret_cast<angle::GenericProc>(ScissorMinimizedProc);
+        }
+
+        // Interpose the calls that generate actual GPU work
+        if (strcmp(procName, "glDrawElements") == 0)
+        {
+            return reinterpret_cast<angle::GenericProc>(DrawElementsMinimizedProc);
+        }
+        if (strcmp(procName, "glDrawElementsIndirect") == 0)
+        {
+            return reinterpret_cast<angle::GenericProc>(DrawElementsIndirectMinimizedProc);
+        }
+        if (strcmp(procName, "glDrawElementsInstanced") == 0 ||
+            strcmp(procName, "glDrawElementsInstancedEXT") == 0)
+        {
+            return reinterpret_cast<angle::GenericProc>(DrawElementsInstancedMinimizedProc);
+        }
+        if (strcmp(procName, "glDrawElementsBaseVertex") == 0 ||
+            strcmp(procName, "glDrawElementsBaseVertexEXT") == 0 ||
+            strcmp(procName, "glDrawElementsBaseVertexOES") == 0)
+        {
+            return reinterpret_cast<angle::GenericProc>(DrawElementsBaseVertexMinimizedProc);
+        }
+        if (strcmp(procName, "glDrawElementsInstancedBaseVertex") == 0 ||
+            strcmp(procName, "glDrawElementsInstancedBaseVertexEXT") == 0 ||
+            strcmp(procName, "glDrawElementsInstancedBaseVertexOES") == 0)
+        {
+            return reinterpret_cast<angle::GenericProc>(
+                DrawElementsInstancedBaseVertexMinimizedProc);
+        }
+        if (strcmp(procName, "glDrawRangeElements") == 0)
+        {
+            return reinterpret_cast<angle::GenericProc>(DrawRangeElementsMinimizedProc);
+        }
+        if (strcmp(procName, "glDrawArrays") == 0)
+        {
+            return reinterpret_cast<angle::GenericProc>(DrawArraysMinimizedProc);
+        }
+        if (strcmp(procName, "glDrawArraysInstanced") == 0 ||
+            strcmp(procName, "glDrawArraysInstancedEXT") == 0)
+        {
+            return reinterpret_cast<angle::GenericProc>(DrawArraysInstancedMinimizedProc);
+        }
+        if (strcmp(procName, "glDrawArraysIndirect") == 0)
+        {
+            return reinterpret_cast<angle::GenericProc>(DrawArraysIndirectMinimizedProc);
+        }
+        if (strcmp(procName, "glDispatchCompute") == 0)
+        {
+            return reinterpret_cast<angle::GenericProc>(DispatchComputeMinimizedProc);
+        }
+        if (strcmp(procName, "glDispatchComputeIndirect") == 0)
+        {
+            return reinterpret_cast<angle::GenericProc>(DispatchComputeIndirectMinimizedProc);
+        }
+
+        // Interpose the calls that generate data copying work
+        if (strcmp(procName, "glBufferData") == 0)
+        {
+            return reinterpret_cast<angle::GenericProc>(BufferDataMinimizedProc);
+        }
+        if (strcmp(procName, "glBufferSubData") == 0)
+        {
+            return reinterpret_cast<angle::GenericProc>(BufferSubDataMinimizedProc);
+        }
+        if (strcmp(procName, "glMapBufferRange") == 0 ||
+            strcmp(procName, "glMapBufferRangeEXT") == 0)
+        {
+            return reinterpret_cast<angle::GenericProc>(MapBufferRangeMinimizedProc);
+        }
+        if (strcmp(procName, "glTexImage2D") == 0)
+        {
+            return reinterpret_cast<angle::GenericProc>(TexImage2DMinimizedProc);
+        }
+        if (strcmp(procName, "glTexImage3D") == 0)
+        {
+            return reinterpret_cast<angle::GenericProc>(TexImage3DMinimizedProc);
+        }
+        if (strcmp(procName, "glTexSubImage2D") == 0)
+        {
+            return reinterpret_cast<angle::GenericProc>(TexSubImage2DMinimizedProc);
+        }
+        if (strcmp(procName, "glTexSubImage3D") == 0)
+        {
+            return reinterpret_cast<angle::GenericProc>(TexSubImage3DMinimizedProc);
+        }
+        if (strcmp(procName, "glGenerateMipmap") == 0 ||
+            strcmp(procName, "glGenerateMipmapOES") == 0)
+        {
+            return reinterpret_cast<angle::GenericProc>(GenerateMipmapMinimizedProc);
+        }
+        if (strcmp(procName, "glBlitFramebuffer") == 0)
+        {
+            return reinterpret_cast<angle::GenericProc>(BlitFramebufferMinimizedProc);
+        }
+        if (strcmp(procName, "glReadPixels") == 0)
+        {
+            return reinterpret_cast<angle::GenericProc>(ReadPixelsMinimizedProc);
+        }
+        if (strcmp(procName, "glBeginTransformFeedback") == 0)
+        {
+            return reinterpret_cast<angle::GenericProc>(BeginTransformFeedbackMinimizedProc);
+        }
+    }
+
     return gCurrentTracePerfTest->getGLWindow()->getProcAddress(procName);
 }
 
@@ -308,6 +677,15 @@ TracePerfTest::TracePerfTest()
     {
         // Linux+Nvidia doesn't support GL_KHR_texture_compression_astc_ldr (possibly others also)
         addExtensionPrerequisite("GL_KHR_texture_compression_astc_ldr");
+
+        // Intel doesn't support external images.
+        addExtensionPrerequisite("GL_OES_EGL_image_external");
+
+        // Failing on Linux Intel and AMD due to invalid enum. http://anglebug.com/5822
+        if (IsLinux() && (IsIntel() || IsAMD()) && param.driver != GLESDriverType::AngleEGL)
+        {
+            mSkipTest = true;
+        }
     }
 
     if (param.testID == RestrictedTraceID::asphalt_8)
@@ -335,6 +713,15 @@ TracePerfTest::TracePerfTest()
     {
         // TODO: http://anglebug.com/5591 Trace crashes on Pixel 2 in vulkan driver
         if (IsPixel2() && param.getRenderer() == EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE)
+        {
+            mSkipTest = true;
+        }
+    }
+
+    if (param.testID == RestrictedTraceID::idle_heroes)
+    {
+        // TODO: http://anglebug.com/5591 Trace crashes on Pixel 2
+        if (IsPixel2())
         {
             mSkipTest = true;
         }
@@ -400,6 +787,15 @@ TracePerfTest::TracePerfTest()
         }
     }
 
+    if (param.testID == RestrictedTraceID::fifa_mobile)
+    {
+        // TODO: http://anglebug.com/5875 Intel Windows Vulkan flakily renders entirely black
+        if (IsWindows() && IsIntel() && param.getRenderer() == EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE)
+        {
+            mSkipTest = true;
+        }
+    }
+
     if (param.testID == RestrictedTraceID::rope_hero_vice_town)
     {
         // TODO: http://anglebug.com/5716 Trace crashes on Pixel 2 in vulkan driver
@@ -458,6 +854,93 @@ TracePerfTest::TracePerfTest()
         }
     }
 
+    if (param.testID == RestrictedTraceID::league_of_legends_wild_rift)
+    {
+        addExtensionPrerequisite("GL_OES_EGL_image_external");
+        addExtensionPrerequisite("GL_KHR_texture_compression_astc_ldr");
+
+        // TODO: http://anglebug.com/5815 Trace is crashing on Intel Linux
+        if (IsLinux() && IsIntel() && param.getRenderer() == EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE)
+        {
+            mSkipTest = true;
+        }
+    }
+
+    if (param.testID == RestrictedTraceID::aztec_ruins)
+    {
+        addExtensionPrerequisite("GL_KHR_texture_compression_astc_ldr");
+
+        // TODO: http://anglebug.com/5553 Pixel 2 errors with "Framebuffer is incomplete" on Vulkan
+        if (IsPixel2() && param.getRenderer() == EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE)
+        {
+            mSkipTest = true;
+        }
+    }
+
+    if (param.testID == RestrictedTraceID::dragon_raja)
+    {
+        addExtensionPrerequisite("GL_OES_EGL_image_external");
+
+        // TODO: http://anglebug.com/5807 Intel Linux and Pixel 2 error with "Framebuffer is
+        // incomplete" on Vulkan
+        if (((IsLinux() && IsIntel()) || IsPixel2()) &&
+            param.getRenderer() == EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE)
+        {
+            mSkipTest = true;
+        }
+    }
+
+    // Adreno gives a driver error with empty/small draw calls. http://anglebug.com/5823
+    if (param.testID == RestrictedTraceID::hill_climb_racing)
+    {
+        if (IsAndroid() && IsPixel2() && param.driver == GLESDriverType::SystemEGL)
+        {
+            mSkipTest = true;
+        }
+    }
+
+    if (param.testID == RestrictedTraceID::avakin_life)
+    {
+        addExtensionPrerequisite("GL_OES_EGL_image_external");
+    }
+
+    if (param.testID == RestrictedTraceID::professional_baseball_spirits)
+    {
+        // TODO(https://anglebug.com/5827) Linux+Mesa/RADV Vulkan generates
+        // GL_INVALID_FRAMEBUFFER_OPERATION.
+        // Mesa versions below 20.3.5 produce the same issue on Linux+Mesa/Intel Vulkan
+        if (IsLinux() && (IsAMD() || IsIntel()) &&
+            param.getRenderer() == EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE &&
+            param.eglParameters.deviceType != EGL_PLATFORM_ANGLE_DEVICE_TYPE_SWIFTSHADER_ANGLE)
+        {
+            mSkipTest = true;
+        }
+    }
+
+    if (param.testID == RestrictedTraceID::call_break_offline_card_game)
+    {
+        // TODO: http://anglebug.com/5837 Intel Linux Vulkan errors with "Framebuffer is incomplete"
+        if ((IsLinux() && IsIntel()) && param.getRenderer() == EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE)
+        {
+            mSkipTest = true;
+        }
+    }
+
+    if (param.testID == RestrictedTraceID::slingshot_test1 ||
+        param.testID == RestrictedTraceID::slingshot_test2)
+    {
+        // TODO: http://anglebug.com/5877 Trace crashes on Pixel 2 in vulkan driver
+        if (IsPixel2() && param.getRenderer() == EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE)
+        {
+            mSkipTest = true;
+        }
+    }
+
+    if (param.testID == RestrictedTraceID::ludo_king)
+    {
+        addExtensionPrerequisite("GL_KHR_texture_compression_astc_ldr");
+    }
+
     // We already swap in TracePerfTest::drawBenchmark, no need to swap again in the harness.
     disableTestHarnessSwap();
 
@@ -466,9 +949,15 @@ TracePerfTest::TracePerfTest()
 
 void TracePerfTest::initializeBenchmark()
 {
-    const auto &params = GetParam();
+    const auto &params         = GetParam();
+    const TraceInfo &traceInfo = GetTraceInfo(params.testID);
 
     mStartingDirectory = angle::GetCWD().value();
+
+    std::stringstream traceNameStr;
+    traceNameStr << "angle_restricted_trace_" << traceInfo.name;
+    std::string traceName = traceNameStr.str();
+    mTraceLibrary.reset(new TraceLibrary(traceName.c_str()));
 
     // To load the trace data path correctly we set the CWD to the executable dir.
     if (!IsAndroid())
@@ -479,10 +968,16 @@ void TracePerfTest::initializeBenchmark()
 
     trace_angle::LoadGLES(TraceLoadProc);
 
-    const TraceInfo &traceInfo = GetTraceInfo(params.testID);
-    mStartFrame                = traceInfo.startFrame;
-    mEndFrame                  = traceInfo.endFrame;
-    SetBinaryDataDecompressCallback(params.testID, DecompressBinaryData);
+    if (!mTraceLibrary->valid())
+    {
+        ERR() << "Could not load trace library.";
+        mSkipTest = true;
+        return;
+    }
+
+    mStartFrame = traceInfo.startFrame;
+    mEndFrame   = traceInfo.endFrame;
+    mTraceLibrary->setBinaryDataDecompressCallback(DecompressBinaryData);
 
     std::string relativeTestDataDir = std::string("src/tests/restricted_traces/") + traceInfo.name;
 
@@ -492,12 +987,22 @@ void TracePerfTest::initializeBenchmark()
     {
         ERR() << "Could not find test data folder.";
         mSkipTest = true;
+        return;
     }
 
-    SetBinaryDataDir(params.testID, testDataDir);
+    mTraceLibrary->setBinaryDataDir(testDataDir);
 
-    mWindowWidth  = mTestParams.windowWidth;
-    mWindowHeight = mTestParams.windowHeight;
+    if (gMinimizeGPUWork)
+    {
+        // Shrink the offscreen window to 1x1.
+        mWindowWidth  = 1;
+        mWindowHeight = 1;
+    }
+    else
+    {
+        mWindowWidth  = mTestParams.windowWidth;
+        mWindowHeight = mTestParams.windowHeight;
+    }
     mCurrentFrame = mStartFrame;
 
     if (IsAndroid())
@@ -539,7 +1044,7 @@ void TracePerfTest::initializeBenchmark()
     }
 
     // Potentially slow. Can load a lot of resources.
-    SetupReplay(params.testID);
+    mTraceLibrary->setupReplay();
 
     glFinish();
 
@@ -550,7 +1055,7 @@ void TracePerfTest::initializeBenchmark()
 
     // If we're re-tracing, trigger capture start after setup. This ensures the Setup function gets
     // recaptured into another Setup function and not merged with the first frame.
-    if (angle::gStartTraceAfterSetup)
+    if (angle::gRetraceMode)
     {
         angle::SetEnvironmentVar("ANGLE_CAPTURE_TRIGGER", "0");
         getGLWindow()->swap();
@@ -578,6 +1083,9 @@ void TracePerfTest::destroyBenchmark()
         glDeleteFramebuffers(1, &mOffscreenFramebuffer);
         mOffscreenFramebuffer = 0;
     }
+
+    mTraceLibrary->finishReplay();
+    mTraceLibrary.reset(nullptr);
 
     // In order for the next test to load, restore the working directory
     angle::SetCWD(mStartingDirectory.c_str());
@@ -633,7 +1141,7 @@ void TracePerfTest::drawBenchmark()
     beginInternalTraceEvent(frameName);
 
     startGpuTimer();
-    ReplayFrame(params.testID, mCurrentFrame);
+    mTraceLibrary->replayFrame(mCurrentFrame);
     stopGpuTimer();
 
     if (params.surfaceType == SurfaceType::Offscreen)
@@ -696,7 +1204,7 @@ void TracePerfTest::drawBenchmark()
 
     if (mCurrentFrame == mEndFrame)
     {
-        ResetReplay(params.testID);
+        mTraceLibrary->resetReplay();
         mCurrentFrame = mStartFrame;
     }
     else
