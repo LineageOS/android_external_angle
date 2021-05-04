@@ -146,6 +146,11 @@ bool IsKabylake(uint32_t DeviceId)
     return std::find(std::begin(Kabylake), std::end(Kabylake), DeviceId) != std::end(Kabylake);
 }
 
+bool Is9thGenIntel(uint32_t DeviceId)
+{
+    return IsSkylake(DeviceId) || IsBroxton(DeviceId) || IsKabylake(DeviceId);
+}
+
 const char *GetVendorString(uint32_t vendorId)
 {
     switch (vendorId)
@@ -162,6 +167,8 @@ const char *GetVendorString(uint32_t vendorId)
             return "Google";
         case VENDOR_ID_INTEL:
             return "Intel";
+        case VENDOR_ID_MESA:
+            return "Mesa";
         case VENDOR_ID_NVIDIA:
             return "NVIDIA";
         case VENDOR_ID_POWERVR:

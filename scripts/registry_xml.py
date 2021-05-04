@@ -36,6 +36,7 @@ angle_extensions = [
     "GL_CHROMIUM_lose_context",
     "GL_ANGLE_copy_texture_3d",
     "GL_ANGLE_get_image",
+    "GL_ANGLE_get_serialized_context_string",
     "GL_ANGLE_get_tex_level_parameter",
     "GL_ANGLE_program_binary",
     "GL_ANGLE_request_extension",
@@ -66,6 +67,7 @@ gles_extensions = [
     "GL_ANGLE_semaphore_fuchsia",
     "GL_ANGLE_texture_multisample",
     "GL_ANGLE_translated_shader_source",
+    "GL_KHR_blend_equation_advanced",
     "GL_EXT_blend_func_extended",
     "GL_EXT_buffer_storage",
     "GL_EXT_copy_image",
@@ -87,6 +89,7 @@ gles_extensions = [
     "GL_EXT_multisampled_render_to_texture",
     "GL_EXT_multisampled_render_to_texture2",
     "GL_EXT_occlusion_query_boolean",
+    "GL_EXT_primitive_bounding_box",
     "GL_EXT_read_format_bgra",
     "GL_EXT_robustness",
     "GL_EXT_semaphore",
@@ -96,6 +99,7 @@ gles_extensions = [
     "GL_EXT_shader_io_blocks",
     "GL_EXT_sRGB",
     "GL_EXT_tessellation_shader",
+    "GL_EXT_texture_border_clamp",
     "GL_EXT_texture_buffer",
     "GL_EXT_texture_compression_bptc",
     "GL_EXT_texture_compression_dxt1",
@@ -221,7 +225,7 @@ DESKTOP_GL_VERSIONS = [(1, 0), (1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (2, 0), (
 GLES_VERSIONS = [(2, 0), (3, 0), (3, 1), (3, 2), (1, 0)]
 EGL_VERSIONS = [(1, 0), (1, 1), (1, 2), (1, 3), (1, 4), (1, 5)]
 WGL_VERSIONS = [(1, 0)]
-CL_VERSIONS = [(1, 0)]
+CL_VERSIONS = [(1, 0), (1, 1), (1, 2), (2, 0), (2, 1), (2, 2), (3, 0)]
 
 
 # API types

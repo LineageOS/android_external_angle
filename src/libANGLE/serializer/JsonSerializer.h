@@ -11,8 +11,13 @@
 
 #include "common/angleutils.h"
 
+#if !defined(ANGLE_HAS_RAPIDJSON)
+#    error RapidJSON must be available to build this file.
+#endif  // !defined(ANGLE_HAS_RAPIDJSON)
+
 #include <rapidjson/document.h>
 
+#include <map>
 #include <memory>
 #include <sstream>
 #include <stack>
@@ -50,27 +55,6 @@ class JsonSerializer : public angle::NonCopyable
     void startDocument(const std::string &name);
     void endDocument();
 
-    template <typename T>
-    void addScalar(const std::string &name, T value)
-    {
-        rapidjson::Value tag(name.c_str(), mAllocator);
-        typename StoreAs<T>::Type v = value;
-        mGroupValueStack.top()->AddMember(tag, v, mAllocator);
-    }
-
-    template <typename T>
-    void addVector(const std::string &name, const std::vector<T> &value)
-    {
-        rapidjson::Value tag(name.c_str(), mAllocator);
-        rapidjson::Value array(rapidjson::kArrayType);
-        array.SetArray();
-
-        for (typename StoreAs<T>::Type v : value)
-            array.PushBack(v, mAllocator);
-
-        mGroupValueStack.top()->AddMember(tag, array, mAllocator);
-    }
-
     void addCString(const std::string &name, const char *value);
 
     void addString(const std::string &name, const std::string &value);
@@ -87,13 +71,44 @@ class JsonSerializer : public angle::NonCopyable
 
     size_t length() const;
 
+    template <typename T>
+    void addScalar(const std::string &name, T value)
+    {
+        typename StoreAs<T>::Type v = value;
+        mGroupValueStack.top().insert(std::make_pair(name, rapidjson::Value(v)));
+    }
+
+    template <typename T>
+    void addVector(const std::string &name, const std::vector<T> &value)
+    {
+        rapidjson::Value array(rapidjson::kArrayType);
+        array.SetArray();
+
+        for (typename StoreAs<T>::Type v : value)
+            array.PushBack(v, mAllocator);
+
+        mGroupValueStack.top().insert(std::make_pair(name, std::move(array)));
+    }
+
+    template <typename T>
+    void addVectorAsHash(const std::string &name, const std::vector<T> &value)
+    {
+        addBlob(name, reinterpret_cast<const uint8_t *>(&value[0]), value.size() * sizeof(T));
+    }
+
+    void addVectorOfStrings(const std::string &name, const std::vector<std::string> &value);
+
   private:
+    using SortedValueGroup = std::multimap<std::string, rapidjson::Value>;
+
+    rapidjson::Value makeValueGroup(SortedValueGroup &group);
+
     using ValuePointer = std::unique_ptr<rapidjson::Value>;
 
     rapidjson::Document mDoc;
     rapidjson::Document::AllocatorType &mAllocator;
     std::stack<std::string> mGroupNameStack;
-    std::stack<ValuePointer> mGroupValueStack;
+    std::stack<SortedValueGroup> mGroupValueStack;
     std::string mResult;
 };
 

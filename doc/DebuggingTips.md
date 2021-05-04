@@ -46,6 +46,51 @@ additional levels of "trace" messages will be logged when the following GN arg i
 angle_enable_trace = true
 ```
 
+## Debug Angle on Android
+
+Android is built as an Android APK, which makes it more difficult to debug an APK that is using ANGLE.  The following information can allow you to debug ANGLE with LLDB.
+* You need to build ANGLE with debug symbols enabled. Assume your build variant is called Debug. Make sure you have these lines in out/Debug/args.gn
+```
+is_component_build = false
+is_debug = true
+is_official_build = false
+symbol_level = 2
+strip_debug_info = false
+ignore_elf32_limitations = true
+angle_extract_native_libs = true
+```
+The following local patch may also be necessary:
+```
+diff --git a/build/config/compiler/compiler.gni b/build/config/compiler/compiler.gni
+index 96a18d91a3f6..ca7971fdfd48 100644
+--- a/build/config/compiler/compiler.gni
++++ b/build/config/compiler/compiler.gni
+@@ -86,7 +86,8 @@ declare_args() {
+   # Whether an error should be raised on attempts to make debug builds with
+   # is_component_build=false. Very large debug symbols can have unwanted side
+   # effects so this is enforced by default for chromium.
+-  forbid_non_component_debug_builds = build_with_chromium
++  forbid_non_component_debug_builds = false 
+```
+
+Build/install/enable ANGLE apk for your application following other instructions.
+* Modify gdbclient.py script to let it find the ANGLE symbols.
+```
+diff --git a/scripts/gdbclient.py b/scripts/gdbclient.py
+index 61fac4000..1f43f4f64 100755
+--- a/scripts/gdbclient.py
++++ b/scripts/gdbclient.py
+@@ -395,6 +395,8 @@ def generate_setup_script(debugger_path, sysroot, linker_search_dir, binary_file
+     vendor_paths = ["", "hw", "egl"]
+     solib_search_path += [os.path.join(symbols_dir, x) for x in symbols_paths]
+     solib_search_path += [os.path.join(vendor_dir, x) for x in vendor_paths]
++    solib_search_path += ["/your_path_to_chromium_src/out/Debug/lib.unstripped/"]
+     if linker_search_dir is not None:
+         solib_search_path += [linker_search_dir]
+```
+* Start your lldbclient.py from `/your_path_to_chromium_src/out/Debug` folder. This adds the ANGLE source-file paths to what is visible to LLDB, which allows LLDB to show ANGLE's source files. Refer to https://source.android.com/devices/tech/debug/gdb for how to attach the app for debugging.
+* If you are debugging angle_perftests, you can use `--shard-timeout 100000000` to disable the timeout so that the test won't get killed while you are debugging. If the test runs too fast that you don't have time to attach, use `--delay-test-start=60` to give you extra time to attach.
+
 ## Enabling Debug-Utils Markers
 
 ANGLE can emit debug-utils markers for every GLES API command that are visible to both Android GPU
@@ -99,8 +144,8 @@ angle_libs_suffix = "_ANGLE_DEV"
 ```
 
 All
-[NativeTest](https://chromium.googlesource.com/chromium/src/+/master/testing/android/native_test/java/src/org/chromium/native_test/NativeTest.java)
-based tests share the same activity name, `org.chromium.native_test.NativeUnitTestNativeActivity`.
+[AngleNativeTest](https://chromium.googlesource.com/chromium/src/+/master/third_party/angle/src/tests/test_utils/runner/android/java/src/com/android/angle/test/AngleNativeTest.java)
+based tests share the same activity name, `com.android.angle.test.AngleUnitTestActivity`.
 Thus, prior to capturing your test trace, the specific test APK must be installed on the device.
 When you build the test, a test launcher is generated, for example,
 `./out/Release/bin/run_angle_end2end_tests`. The best way to install the APK is to run this test
@@ -109,14 +154,14 @@ launcher once.
 In GAPID's "Capture Trace" dialog, "Package / Action:" should be:
 
 ```
-android.intent.action.MAIN:org.chromium.native_test/org.chromium.native_test.NativeUnitTestNativeActivity
+android.intent.action.MAIN:com.android.angle.test/com.android.angle.test.AngleUnitTestActivity
 ```
 
 The mandatory [extra intent
 argument](https://developer.android.com/studio/command-line/adb.html#IntentSpec) for starting the
 activity is `org.chromium.native_test.NativeTest.StdoutFile`. Without it the test APK crashes. Test
 filters can be specified via either the `org.chromium.native_test.NativeTest.CommandLineFlags` or
-the `org.chromium.native_test.NativeTest.Shard` argument.  Example "Intent Arguments:" values in
+the `org.chromium.native_test.NativeTest.GtestFilter` argument.  Example "Intent Arguments:" values in
 GAPID's "Capture Trace" dialog:
 
 ```
@@ -126,7 +171,7 @@ GAPID's "Capture Trace" dialog:
 or
 
 ```
--e org.chromium.native_test.NativeTest.StdoutFile /sdcard/chromium_tests_root/out.txt --esal org.chromium.native_test.NativeTest.Shard RendererTest.SimpleOperation/ES2_VULKAN,SimpleOperationTest.DrawWithTexture/ES2_VULKAN
+-e org.chromium.native_test.NativeTest.StdoutFile /sdcard/chromium_tests_root/out.txt --e org.chromium.native_test.NativeTest.GtestFilter RendererTest.SimpleOperation/ES2_VULKAN:SimpleOperationTest.DrawWithTexture/ES2_VULKAN
 ```
 
 ## Running ANGLE under RenderDoc

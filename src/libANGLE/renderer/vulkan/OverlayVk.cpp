@@ -23,12 +23,15 @@ OverlayVk::OverlayVk(const gl::OverlayState &state)
       mSupportsSubgroupBallot(false),
       mSupportsSubgroupArithmetic(false),
       mRefreshCulledWidgets(false),
+      mSubgroupSize{},
       mPresentImageExtent{}
 {}
 OverlayVk::~OverlayVk() = default;
 
-angle::Result OverlayVk::init(const gl::Context *context)
+angle::Result OverlayVk::init(const gl::Context *context, bool *successOut)
 {
+    *successOut = false;
+
     ContextVk *contextVk   = vk::GetImpl(context);
     RendererVk *rendererVk = contextVk->getRenderer();
 
@@ -66,7 +69,9 @@ angle::Result OverlayVk::init(const gl::Context *context)
 
     mRefreshCulledWidgets = true;
 
-    return contextVk->flushImpl(nullptr);
+    ANGLE_TRY(contextVk->flushImpl(nullptr));
+    *successOut = true;
+    return angle::Result::Continue;
 }
 
 void OverlayVk::onDestroy(const gl::Context *context)
@@ -110,12 +115,12 @@ angle::Result OverlayVk::createFont(ContextVk *contextVk)
     bool useRobustInit = false;
 
     // Create the font image.
-    ANGLE_TRY(mFontImage.init(
-        contextVk, gl::TextureType::_2D,
-        VkExtent3D{gl::overlay::kFontImageWidth, gl::overlay::kFontImageHeight, 1},
-        renderer->getFormat(angle::FormatID::R8_UNORM), 1,
-        VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, gl::LevelIndex(0),
-        gl::LevelIndex(0), 1, gl::overlay::kFontCount, useRobustInit));
+    ANGLE_TRY(
+        mFontImage.init(contextVk, gl::TextureType::_2D,
+                        VkExtent3D{gl::overlay::kFontImageWidth, gl::overlay::kFontImageHeight, 1},
+                        renderer->getFormat(angle::FormatID::R8_UNORM), 1,
+                        VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                        gl::LevelIndex(0), 1, gl::overlay::kFontCount, useRobustInit));
     ANGLE_TRY(mFontImage.initMemory(contextVk, renderer->getMemoryProperties(),
                                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT));
     ANGLE_TRY(mFontImage.initImageView(contextVk, gl::TextureType::_2DArray,
@@ -188,7 +193,7 @@ angle::Result OverlayVk::cullWidgets(ContextVk *contextVk)
     ANGLE_TRY(mCulledWidgets.init(contextVk, gl::TextureType::_2D, culledWidgetsExtent,
                                   renderer->getFormat(angle::FormatID::R32G32_UINT), 1,
                                   VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                                  gl::LevelIndex(0), gl::LevelIndex(0), 1, 1, useRobustInit));
+                                  gl::LevelIndex(0), 1, 1, useRobustInit));
     ANGLE_TRY(mCulledWidgets.initMemory(contextVk, renderer->getMemoryProperties(),
                                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT));
     ANGLE_TRY(mCulledWidgets.initImageView(contextVk, gl::TextureType::_2D,

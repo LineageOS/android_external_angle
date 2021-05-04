@@ -115,10 +115,6 @@ uint32_t GetConvertVertexFlags(const UtilsVk::ConvertVertexParameters &params)
         // Note that HalfFloat conversion uses the same shader as Uint.
         flags = ConvertVertex_comp::kUintToUint;
     }
-    else if (srcIsFloat && destIsHalfFloat)
-    {
-        flags = ConvertVertex_comp::kFloatToHalf;
-    }
     else if (srcIsSint && destIsSint)
     {
         flags = ConvertVertex_comp::kSintToSint;
@@ -1844,7 +1840,6 @@ angle::Result UtilsVk::convertVertexBuffer(ContextVk *contextVk,
             shaderParams.srcEmulatedAlpha = 0x10000;
             break;
 
-        case ConvertVertex_comp::kFloatToHalf:
         case ConvertVertex_comp::kFloatToFloat:
             ASSERT(ValidateFloatOneAsUint());
             shaderParams.srcEmulatedAlpha = kFloatOneAsUint;
@@ -3272,7 +3267,7 @@ angle::Result UtilsVk::cullOverlayWidgets(ContextVk *contextVk,
                                     &descriptorSet));
 
     ASSERT(dest->getLevelCount() == 1 && dest->getLayerCount() == 1 &&
-           dest->getBaseLevel() == gl::LevelIndex(0));
+           dest->getFirstAllocatedLevel() == gl::LevelIndex(0));
 
     vk::CommandBufferAccess access;
     access.onBufferComputeShaderRead(enabledWidgetsBuffer);
@@ -3349,7 +3344,7 @@ angle::Result UtilsVk::drawOverlay(ContextVk *contextVk,
                                     &descriptorSet));
 
     ASSERT(dest->getLevelCount() == 1 && dest->getLayerCount() == 1 &&
-           dest->getBaseLevel() == gl::LevelIndex(0));
+           dest->getFirstAllocatedLevel() == gl::LevelIndex(0));
 
     vk::CommandBufferAccess access;
     access.onImageComputeShaderWrite(gl::LevelIndex(0), 1, 0, 1, VK_IMAGE_ASPECT_COLOR_BIT, dest);

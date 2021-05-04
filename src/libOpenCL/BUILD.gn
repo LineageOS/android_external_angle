@@ -6,51 +6,51 @@
 
 import("../../gni/angle.gni")
 
-angle_source_set("cl_includes") {
+assert(angle_enable_cl)
+
+angle_shared_library("OpenCL_ANGLE") {
+  defines = [ "LIBCL_IMPLEMENTATION" ]
+
   sources = [
-    "../../include/CL/cl.h",
-    "../../include/CL/cl_d3d10.h",
-    "../../include/CL/cl_d3d11.h",
-    "../../include/CL/cl_dx9_media_sharing.h",
-    "../../include/CL/cl_dx9_media_sharing_intel.h",
-    "../../include/CL/cl_egl.h",
-    "../../include/CL/cl_ext.h",
-    "../../include/CL/cl_ext_intel.h",
-    "../../include/CL/cl_gl.h",
-    "../../include/CL/cl_gl_ext.h",
-    "../../include/CL/cl_half.h",
-    "../../include/CL/cl_icd.h",
-    "../../include/CL/cl_layer.h",
-    "../../include/CL/cl_platform.h",
-    "../../include/CL/cl_va_api_media_sharing_intel.h",
-    "../../include/CL/cl_version.h",
-    "../../include/CL/opencl.h",
-    "../../include/export.h",
+    "dispatch.cpp",
+    "dispatch.h",
+    "libOpenCL_autogen.cpp",
+  ]
+
+  configs += [
+    "$angle_root:debug_annotations_config",
+    "$angle_root:library_name_config",
+  ]
+
+  deps = [
+    "$angle_root:angle_common",
+    "$angle_root:cl_includes",
   ]
 }
 
-# TODO(jplate): Fix OpenCL headers for Windows http://anglebug.com/5761
-if (is_linux) {
-  angle_shared_library("OpenCL") {
-    defines = [
-      "CL_TARGET_OPENCL_VERSION=100",
-      "LIBCL_IMPLEMENTATION",
-    ]
-    sources = [
-      "cl_loader.h",
-      "cl_loader_autogen.cpp",
-      "entry_points_cl_autogen.cpp",
-      "entry_points_cl_autogen.h",
-      "entry_points_cl_utils.h",
-      "libOpenCL_autogen.cpp",
-    ]
-    deps = [ ":cl_includes" ]
-  }
+angle_shared_library("OpenCL_ICD_ANGLE") {
+  defines = [ "LIBCL_IMPLEMENTATION" ]
+
+  sources = [
+    "dispatch.cpp",
+    "dispatch.h",
+    "libOpenCL_ICD.cpp",
+  ]
+
+  configs += [
+    "$angle_root:debug_annotations_config",
+    "$angle_root:library_name_config",
+  ]
+
+  deps = [
+    "$angle_root:angle_common",
+    "$angle_root:cl_includes",
+  ]
 }
 
 group("angle_cl") {
-  # TODO(jplate): Fix OpenCL headers for Windows http://anglebug.com/5761
-  if (is_linux) {
-    data_deps = [ ":OpenCL" ]
-  }
+  data_deps = [
+    ":OpenCL_ANGLE",
+    ":OpenCL_ICD_ANGLE",
+  ]
 }

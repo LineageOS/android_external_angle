@@ -131,10 +131,10 @@ angle::Result InitImageHelper(DisplayVk *displayVk,
     VkExtent3D extents = {std::max(static_cast<uint32_t>(width), 1u),
                           std::max(static_cast<uint32_t>(height), 1u), 1u};
 
-    ANGLE_TRY(imageHelper->initExternal(
-        displayVk, gl::TextureType::_2D, extents, vkFormat, samples, usage,
-        vk::kVkImageCreateFlagsNone, vk::ImageLayout::Undefined, nullptr, gl::LevelIndex(0),
-        gl::LevelIndex(0), 1, 1, isRobustResourceInitEnabled, nullptr));
+    ANGLE_TRY(imageHelper->initExternal(displayVk, gl::TextureType::_2D, extents, vkFormat, samples,
+                                        usage, vk::kVkImageCreateFlagsNone,
+                                        vk::ImageLayout::Undefined, nullptr, gl::LevelIndex(0), 1,
+                                        1, isRobustResourceInitEnabled, nullptr));
 
     return angle::Result::Continue;
 }
@@ -1045,7 +1045,7 @@ angle::Result WindowSurfaceVk::createSwapChain(vk::Context *context,
         // values and then rotates the final rectangle).
         ANGLE_TRY(mColorImageMS.initMSAASwapchain(
             context, gl::TextureType::_2D, vkExtents, Is90DegreeRotation(getPreTransform()), format,
-            samples, usage, gl::LevelIndex(0), gl::LevelIndex(0), 1, 1, robustInit));
+            samples, usage, gl::LevelIndex(0), 1, 1, robustInit));
         ANGLE_TRY(mColorImageMS.initMemory(context, renderer->getMemoryProperties(),
                                            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT));
 
@@ -1075,8 +1075,7 @@ angle::Result WindowSurfaceVk::createSwapChain(vk::Context *context,
         const VkImageUsageFlags dsUsage = kSurfaceVkDepthStencilImageUsageFlags;
 
         ANGLE_TRY(mDepthStencilImage.init(context, gl::TextureType::_2D, vkExtents, dsFormat,
-                                          samples, dsUsage, gl::LevelIndex(0), gl::LevelIndex(0), 1,
-                                          1, robustInit));
+                                          samples, dsUsage, gl::LevelIndex(0), 1, 1, robustInit));
         ANGLE_TRY(mDepthStencilImage.initMemory(context, renderer->getMemoryProperties(),
                                                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT));
 
@@ -1422,12 +1421,7 @@ angle::Result WindowSurfaceVk::present(ContextVk *contextVk,
             rect.extent.width  = gl::clamp(*eglRects++, 0, width - rect.offset.x);
             rect.extent.height = gl::clamp(*eglRects++, 0, height - rect.offset.y);
             rect.layer         = 0;
-            if (Is90DegreeRotation(getPreTransform()) &&
-                !contextVk->getFeatures().disablePreRotateIncrementalPresentRectangles.enabled)
-            {
-                std::swap(rect.offset.x, rect.offset.y);
-                std::swap(rect.extent.width, rect.extent.height);
-            }
+            // No rotation is done to these damage rectangles per the Vulkan spec.
         }
         presentRegion.pRectangles = vkRects.data();
 
@@ -1543,7 +1537,7 @@ angle::Result WindowSurfaceVk::doDeferredAcquireNextImage(const gl::Context *con
     }
 
     RendererVk *renderer = contextVk->getRenderer();
-    ANGLE_TRY(renderer->syncPipelineCacheVk(displayVk, contextVk));
+    ANGLE_TRY(renderer->syncPipelineCacheVk(displayVk, context));
 
     return angle::Result::Continue;
 }

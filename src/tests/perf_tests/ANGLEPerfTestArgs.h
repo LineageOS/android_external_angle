@@ -27,7 +27,8 @@ extern double gTestTimeSeconds;
 extern int gTestTrials;
 extern bool gNoFinish;
 extern bool gEnableAllTraceTests;
-extern bool gStartTraceAfterSetup;
+extern bool gRetraceMode;
+extern bool gMinimizeGPUWork;
 
 inline bool OneFrame()
 {
