@@ -281,10 +281,7 @@
 // ABSL_ATTRIBUTE_RETURNS_NONNULL
 //
 // Tells the compiler that a particular function never returns a null pointer.
-#if ABSL_HAVE_ATTRIBUTE(returns_nonnull) || \
-    (defined(__GNUC__) && \
-     (__GNUC__ > 5 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 9)) && \
-     !defined(__clang__))
+#if ABSL_HAVE_ATTRIBUTE(returns_nonnull)
 #define ABSL_ATTRIBUTE_RETURNS_NONNULL __attribute__((returns_nonnull))
 #else
 #define ABSL_ATTRIBUTE_RETURNS_NONNULL
@@ -622,7 +619,7 @@
 #if __has_feature(cxx_attributes) && __has_warning("-Wimplicit-fallthrough")
 #define ABSL_FALLTHROUGH_INTENDED [[clang::fallthrough]]
 #endif
-#elif defined(__GNUC__) && __GNUC__ >= 7
+#elif ABSL_INTERNAL_HAVE_MIN_GNUC_VERSION(7, 0)
 #define ABSL_FALLTHROUGH_INTENDED [[gnu::fallthrough]]
 #endif
 
@@ -704,6 +701,28 @@
 #define ABSL_ATTRIBUTE_PURE_FUNCTION __attribute__((pure))
 #else
 #define ABSL_ATTRIBUTE_PURE_FUNCTION
+#endif
+
+// ABSL_ATTRIBUTE_LIFETIME_BOUND indicates that a resource owned by a function
+// parameter or implicit object parameter is retained by the return value of the
+// annotated function (or, for a parameter of a constructor, in the value of the
+// constructed object). This attribute causes warnings to be produced if a
+// temporary object does not live long enough.
+//
+// When applied to a reference parameter, the referenced object is assumed to be
+// retained by the return value of the function. When applied to a non-reference
+// parameter (for example, a pointer or a class type), all temporaries
+// referenced by the parameter are assumed to be retained by the return value of
+// the function.
+//
+// See also the upstream documentation:
+// https://clang.llvm.org/docs/AttributeReference.html#lifetimebound
+#if ABSL_HAVE_CPP_ATTRIBUTE(clang::lifetimebound)
+#define ABSL_ATTRIBUTE_LIFETIME_BOUND [[clang::lifetimebound]]
+#elif ABSL_HAVE_ATTRIBUTE(lifetimebound)
+#define ABSL_ATTRIBUTE_LIFETIME_BOUND __attribute__((lifetimebound))
+#else
+#define ABSL_ATTRIBUTE_LIFETIME_BOUND
 #endif
 
 #endif  // ABSL_BASE_ATTRIBUTES_H_

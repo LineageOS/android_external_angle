@@ -40,6 +40,7 @@
 #include "libANGLE/TransformFeedback.h"
 #include "libANGLE/VertexArray.h"
 #include "libANGLE/capture/FrameCapture.h"
+#include "libANGLE/capture/frame_capture_utils.h"
 #include "libANGLE/formatutils.h"
 #include "libANGLE/queryconversions.h"
 #include "libANGLE/queryutils.h"
@@ -250,18 +251,6 @@ void GetObjectLabelBase(const std::string &objectLabel,
         *length = static_cast<GLsizei>(writeLength);
     }
 }
-
-// The rest default to false.
-constexpr angle::PackedEnumMap<PrimitiveMode, bool, angle::EnumSize<PrimitiveMode>() + 1>
-    kValidBasicDrawModes = {{
-        {PrimitiveMode::Points, true},
-        {PrimitiveMode::Lines, true},
-        {PrimitiveMode::LineLoop, true},
-        {PrimitiveMode::LineStrip, true},
-        {PrimitiveMode::Triangles, true},
-        {PrimitiveMode::TriangleStrip, true},
-        {PrimitiveMode::TriangleFan, true},
-    }};
 
 enum SubjectIndexes : angle::SubjectIndex
 {
@@ -874,7 +863,14 @@ GLuint Context::createShaderProgramv(ShaderType type, GLsizei count, const GLcha
                     return 0u;
                 }
 
-                programObject->detachShader(this, shaderObject);
+                // If frame capture is enabled, don't detach the shader since we need the following
+                // to recreate the Shader and Program during MEC setup:
+                // 1.) Shader ID
+                // 2.) Shader source
+                if (!getFrameCapture()->enabled())
+                {
+                    programObject->detachShader(this, shaderObject);
+                }
             }
 
             InfoLog &programInfoLog = programObject->getExecutable().getInfoLog();
@@ -3215,6 +3211,17 @@ const GLubyte *Context::getString(GLenum name) const
         case GL_REQUESTABLE_EXTENSIONS_ANGLE:
             return reinterpret_cast<const GLubyte *>(mRequestableExtensionString);
 
+        case GL_SERIALIZED_CONTEXT_STRING_ANGLE:
+            if (angle::SerializeContextToString(this, &mCachedSerializedStateString) ==
+                angle::Result::Continue)
+            {
+                return reinterpret_cast<const GLubyte *>(mCachedSerializedStateString.c_str());
+            }
+            else
+            {
+                return nullptr;
+            }
+
         default:
             UNREACHABLE();
             return nullptr;
@@ -3534,6 +3541,9 @@ Extensions Context::generateSupportedExtensions() const
 
     // GL_ANGLE_get_tex_level_parameter is implemented in the frontend
     supportedExtensions.getTexLevelParameterANGLE = true;
+
+    // Always enabled. Will return a default string if capture is not enabled.
+    supportedExtensions.getSerializedContextStringANGLE = true;
 
     return supportedExtensions;
 }
@@ -3920,7 +3930,9 @@ void Context::updateCaps()
         mValidBufferBindings.set(BufferBinding::Texture);
     }
 
-    mThreadPool = angle::WorkerThreadPool::Create(mState.mExtensions.parallelShaderCompile);
+    mThreadPool = angle::WorkerThreadPool::Create(
+        mState.mExtensions.parallelShaderCompile ||
+        getFrontendFeatures().enableCompressingPipelineCacheInThreadPool.enabled);
 
     // Reinitialize some dirty bits that depend on extensions.
     if (mState.isRobustResourceInitEnabled())
@@ -9032,7 +9044,9 @@ StateCache::StateCache()
       mCachedBasicDrawElementsError(kInvalidPointer),
       mCachedTransformFeedbackActiveUnpaused(false),
       mCachedCanDraw(false)
-{}
+{
+    mCachedValidDrawModes.fill(false);
+}
 
 StateCache::~StateCache() = default;
 
@@ -9261,11 +9275,11 @@ void StateCache::setValidDrawModes(bool pointsOK,
 {
     mCachedValidDrawModes[PrimitiveMode::Points]                 = pointsOK;
     mCachedValidDrawModes[PrimitiveMode::Lines]                  = linesOK;
-    mCachedValidDrawModes[PrimitiveMode::LineStrip]              = linesOK;
     mCachedValidDrawModes[PrimitiveMode::LineLoop]               = linesOK;
+    mCachedValidDrawModes[PrimitiveMode::LineStrip]              = linesOK;
     mCachedValidDrawModes[PrimitiveMode::Triangles]              = trisOK;
-    mCachedValidDrawModes[PrimitiveMode::TriangleFan]            = trisOK;
     mCachedValidDrawModes[PrimitiveMode::TriangleStrip]          = trisOK;
+    mCachedValidDrawModes[PrimitiveMode::TriangleFan]            = trisOK;
     mCachedValidDrawModes[PrimitiveMode::LinesAdjacency]         = lineAdjOK;
     mCachedValidDrawModes[PrimitiveMode::LineStripAdjacency]     = lineAdjOK;
     mCachedValidDrawModes[PrimitiveMode::TrianglesAdjacency]     = triAdjOK;
@@ -9309,18 +9323,19 @@ void StateCache::updateValidDrawModes(Context *context)
 
     if (!programExecutable || !programExecutable->hasLinkedShaderStage(ShaderType::Geometry))
     {
-        mCachedValidDrawModes = kValidBasicDrawModes;
+        // All draw modes are valid, since drawing without a program does not generate an error and
+        // and operations requiring a GS will trigger other validation errors.
+        // `patchOK = false` due to checking above already enabling it if a TS is present.
+        setValidDrawModes(true, true, true, true, true, false);
         return;
     }
 
-    ASSERT(programExecutable->hasLinkedShaderStage(ShaderType::Geometry));
     PrimitiveMode gsMode = programExecutable->getGeometryShaderInputPrimitiveType();
-
-    bool pointsOK  = gsMode == PrimitiveMode::Points;
-    bool linesOK   = gsMode == PrimitiveMode::Lines;
-    bool trisOK    = gsMode == PrimitiveMode::Triangles;
-    bool lineAdjOK = gsMode == PrimitiveMode::LinesAdjacency;
-    bool triAdjOK  = gsMode == PrimitiveMode::TrianglesAdjacency;
+    bool pointsOK        = gsMode == PrimitiveMode::Points;
+    bool linesOK         = gsMode == PrimitiveMode::Lines;
+    bool trisOK          = gsMode == PrimitiveMode::Triangles;
+    bool lineAdjOK       = gsMode == PrimitiveMode::LinesAdjacency;
+    bool triAdjOK        = gsMode == PrimitiveMode::TrianglesAdjacency;
 
     setValidDrawModes(pointsOK, linesOK, trisOK, lineAdjOK, triAdjOK, false);
 }

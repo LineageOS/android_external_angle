@@ -2191,6 +2191,16 @@ void TParseContext::builtInOpCheck(const TSourceLoc& loc, const TFunction& fnCan
                               "[gl_MinProgramTexelOffset, gl_MaxProgramTexelOffset]");
                 }
             }
+
+            if (callNode.getOp() == EOpTextureOffset) {
+                TSampler s = arg0->getType().getSampler();
+                if (s.is2D() && s.isArrayed() && s.isShadow()) {
+                    if (isEsProfile())
+                        error(loc, "TextureOffset does not support sampler2DArrayShadow : ", "sampler", "ES Profile");
+                    else if (version <= 420)
+                        error(loc, "TextureOffset does not support sampler2DArrayShadow : ", "sampler", "version <= 420");
+                }
+            }
         }
 
         break;
@@ -5602,14 +5612,7 @@ void TParseContext::setLayoutQualifier(const TSourceLoc& loc, TPublicType& publi
         if (! IsPow2(value))
             error(loc, "must be a power of 2", "buffer_reference_align", "");
         else
-#ifdef __ANDROID__
-            // Android NDK r15c tageting ABI 15 doesn't have full support for C++11
-            // (no std::exp2/log2). ::exp2 is available from C99 but ::log2 isn't
-            // available up until ABI 18 so we use the mathematical equivalent form
-            publicType.qualifier.layoutBufferReferenceAlign = (unsigned int)(std::log(value) / std::log(2.0));
-#else
-            publicType.qualifier.layoutBufferReferenceAlign = (unsigned int)std::log2(value);
-#endif
+            publicType.qualifier.layoutBufferReferenceAlign = IntLog2(value);
         if (nonLiteral)
             error(loc, "needs a literal integer", "buffer_reference_align", "");
         return;
@@ -6431,8 +6434,11 @@ const TFunction* TParseContext::findFunction(const TSourceLoc& loc, const TFunct
                                 extensionTurnedOn(E_GL_EXT_shader_explicit_arithmetic_types_float64);
 
     if (isEsProfile())
-        function = (extensionTurnedOn(E_GL_EXT_shader_implicit_conversions) && version >= 310) ?
-                    findFunction120(loc, call, builtIn) : findFunctionExact(loc, call, builtIn);
+        function = (explicitTypesEnabled && version >= 310)
+                   ? findFunctionExplicitTypes(loc, call, builtIn)
+                   : ((extensionTurnedOn(E_GL_EXT_shader_implicit_conversions) && version >= 310)
+                      ? findFunction120(loc, call, builtIn)
+                      : findFunctionExact(loc, call, builtIn));
     else if (version < 120)
         function = findFunctionExact(loc, call, builtIn);
     else if (version < 400)
@@ -8524,8 +8530,8 @@ void TParseContext::fixBlockUniformLayoutMatrix(TQualifier& qualifier, TTypeList
 }
 
 //
-// Spread LayoutPacking to block member, if a  block member is a struct, we need spread LayoutPacking to
-// this struct member too. and keep this rule for recursive.
+// Spread LayoutPacking to matrix or aggregate block members. If a block member is a struct or
+// array of struct, spread LayoutPacking recursively to its matrix or aggregate members.
 //
 void TParseContext::fixBlockUniformLayoutPacking(TQualifier& qualifier, TTypeList* originTypeList,
                                                  TTypeList* tmpTypeList)
@@ -8534,11 +8540,13 @@ void TParseContext::fixBlockUniformLayoutPacking(TQualifier& qualifier, TTypeLis
     for (unsigned int member = 0; member < originTypeList->size(); ++member) {
         if (qualifier.layoutPacking != ElpNone) {
             if (tmpTypeList == nullptr) {
-                if ((*originTypeList)[member].type->getQualifier().layoutPacking == ElpNone) {
+                if ((*originTypeList)[member].type->getQualifier().layoutPacking == ElpNone &&
+                    !(*originTypeList)[member].type->isScalarOrVector()) {
                     (*originTypeList)[member].type->getQualifier().layoutPacking = qualifier.layoutPacking;
                 }
             } else {
-                if ((*tmpTypeList)[member].type->getQualifier().layoutPacking == ElpNone) {
+                if ((*tmpTypeList)[member].type->getQualifier().layoutPacking == ElpNone &&
+                    !(*tmpTypeList)[member].type->isScalarOrVector()) {
                     (*tmpTypeList)[member].type->getQualifier().layoutPacking = qualifier.layoutPacking;
                 }
             }

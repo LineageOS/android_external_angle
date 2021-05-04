@@ -35,6 +35,7 @@
 #include "absl/base/macros.h"
 #include "absl/container/fixed_array.h"
 #include "absl/strings/cord_test_helpers.h"
+#include "absl/strings/cordz_test_helpers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
@@ -239,7 +240,6 @@ TEST(GigabyteCord, FromExternal) {
   // caused crashes in production.  We grow exponentially so that the code will
   // execute in a reasonable amount of time.
   absl::Cord c;
-  ABSL_RAW_LOG(INFO, "Made a Cord with %zu bytes!", c.size());
   c.Append(from);
   while (c.size() < max_size) {
     c.Append(c);
@@ -1314,6 +1314,26 @@ TEST(Cord, Concat_Append) {
   // 7465150 modifies s1 when it shouldn't.
   EXPECT_EQ(s1.size(), size);
   EXPECT_EQ(s2.size(), size + 1);
+}
+
+TEST(Cord, DiabolicalGrowth) {
+  // This test exercises a diabolical Append(<one char>) on a cord, making the
+  // cord shared before each Append call resulting in a terribly fragmented
+  // resulting cord.
+  // TODO(b/183983616): Apply some minimum compaction when copying a shared
+  // source cord into a mutable copy for updates in CordRepRing.
+  RandomEngine rng(testing::GTEST_FLAG(random_seed));
+  const std::string expected = RandomLowercaseString(&rng, 5000);
+  absl::Cord cord;
+  for (char c : expected) {
+    absl::Cord shared(cord);
+    cord.Append(absl::string_view(&c, 1));
+  }
+  std::string value;
+  absl::CopyCordToString(cord, &value);
+  EXPECT_EQ(value, expected);
+  ABSL_RAW_LOG(INFO, "Diabolical size allocated = %zu",
+               cord.EstimatedMemoryUsage());
 }
 
 TEST(MakeFragmentedCord, MakeFragmentedCordFromInitializerList) {
