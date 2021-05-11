@@ -889,6 +889,7 @@ cc_defaults {
     },
     defaults: [
         "src_common_spirv_angle_spirv_base",
+        "src_common_spirv_angle_spirv_headers",
         "third_party_vulkan_deps_spirv_headers_src_spv_headers",
     ],
 }
@@ -979,6 +980,7 @@ cc_defaults {
     },
     defaults: [
         "src_common_spirv_angle_spirv_base",
+        "src_common_spirv_angle_spirv_headers",
         "third_party_vulkan_deps_spirv_headers_src_spv_headers",
     ],
 }
@@ -1072,6 +1074,7 @@ cc_defaults {
         "angle_libANGLE_headers",
         "src_common_spirv_angle_spirv_base",
         "src_common_spirv_angle_spirv_builder",
+        "src_common_spirv_angle_spirv_headers",
         "src_common_spirv_angle_spirv_parser",
         "third_party_vulkan_deps_spirv_headers_src_spv_headers",
     ],
@@ -2101,6 +2104,88 @@ cc_defaults {
     generated_headers: [
         "angle_commit_id",
     ],
+    name: "src_common_spirv_angle_spirv_headers",
+    stl: "libc++_static",
+    static_libs: [
+        "angle_common",
+    ],
+    local_include_dirs: [
+        "",
+        "include/",
+        "src/",
+        "src/common/third_party/base/",
+        "third_party/abseil-cpp/",
+    ],
+    shared_libs: [
+        "liblog",
+        "libnativewindow",
+    ],
+    sdk_version: "28",
+    cflags: [
+        "-DABSL_ALLOCATOR_NOTHROW=1",
+        "-DANDROID",
+        "-DANDROID_NDK_VERSION_ROLL=r22_1",
+        "-DANGLE_USE_ABSEIL",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-7296-ga749bd76-3\"",
+        "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
+        "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
+        "-DHAVE_SYS_UIO_H",
+        "-DNDEBUG",
+        "-DNVALGRIND",
+        "-D_FORTIFY_SOURCE=2",
+        "-D_GNU_SOURCE",
+        "-D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS",
+        "-D_LIBCPP_ENABLE_NODISCARD",
+        "-D_LIBCPP_HAS_NO_VENDOR_AVAILABILITY_ANNOTATIONS",
+        "-D_LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS",
+        "-D__STDC_CONSTANT_MACROS",
+        "-D__STDC_FORMAT_MACROS",
+        "-Wno-builtin-assume-aligned-alignment",
+        "-Wno-builtin-macro-redefined",
+        "-Wno-c++11-narrowing",
+        "-Wno-deprecated-copy",
+        "-Wno-final-dtor-non-final-class",
+        "-Wno-ignored-pragma-optimize",
+        "-Wno-implicit-fallthrough",
+        "-Wno-implicit-int-float-conversion",
+        "-Wno-missing-field-initializers",
+        "-Wno-non-c-typedef-for-linkage",
+        "-Wno-psabi",
+        "-Wno-trigraphs",
+        "-Wno-undefined-var-template",
+        "-Wno-unknown-warning-option",
+        "-Wno-unneeded-internal-declaration",
+        "-Wno-unused-parameter",
+    ],
+    arch: {
+        x86_64: {
+            cflags: [
+                "-DANGLE_IS_64_BIT_CPU",
+                "-Wno-max-tokens",
+            ],
+        },
+        x86: {
+            cflags: [
+                "-DANGLE_IS_32_BIT_CPU",
+                "-Wno-max-tokens",
+            ],
+        },
+        arm: {
+            cflags: [
+                "-DANGLE_IS_32_BIT_CPU",
+            ],
+        },
+        arm64: {
+            cflags: [
+                "-DANGLE_IS_64_BIT_CPU",
+            ],
+        },
+    },
+}
+cc_defaults {
+    generated_headers: [
+        "angle_commit_id",
+    ],
     name: "src_common_spirv_angle_spirv_base",
     stl: "libc++_static",
     static_libs: [
@@ -2184,6 +2269,7 @@ cc_defaults {
         },
     },
     defaults: [
+        "src_common_spirv_angle_spirv_headers",
         "third_party_vulkan_deps_spirv_headers_src_spv_headers",
         "third_party_vulkan_deps_spirv_tools_src_spvtools_headers",
     ],
@@ -2511,6 +2597,7 @@ cc_library_static {
         "angle_includes",
         "angle_translator_headers",
         "src_common_spirv_angle_spirv_base",
+        "src_common_spirv_angle_spirv_headers",
         "third_party_vulkan_deps_glslang_src_glslang_default_resource_limits_sources",
         "third_party_vulkan_deps_glslang_src_glslang_lib_sources",
         "third_party_vulkan_deps_spirv_tools_src_spvtools_headers",
