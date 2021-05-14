@@ -40,6 +40,9 @@ LOCAL_MODULE:=glslang_ndk_test
 LOCAL_LDLIBS:=-landroid
 LOCAL_CXXFLAGS:=-std=c++11 -fno-exceptions -fno-rtti -Werror
 LOCAL_STATIC_LIBRARIES:=glslang SPIRV HLSL
+LOCAL_LICENSE_KINDS := SPDX-license-identifier-Apache-2.0
+LOCAL_LICENSE_CONDITIONS := notice
+LOCAL_NOTICE_FILE := $(LOCAL_PATH)/../LICENSE.txt $(LOCAL_PATH)/../license-checker.cfg
 include $(BUILD_SHARED_LIBRARY)
 
 include $(LOCAL_PATH)/../Android.mk
