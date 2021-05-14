@@ -62,6 +62,9 @@ LOCAL_EXPORT_C_INCLUDES:=$(LOCAL_PATH)
 LOCAL_SRC_FILES:=glslang/OSDependent/Unix/ossource.cpp
 LOCAL_C_INCLUDES:=$(LOCAL_PATH) $(LOCAL_PATH)/glslang/OSDependent/Unix/
 LOCAL_EXPORT_C_INCLUDES:=$(LOCAL_PATH)/glslang/OSDependent/Unix/
+LOCAL_LICENSE_KINDS := SPDX-license-identifier-Apache-2.0 SPDX-license-identifier-BSD SPDX-license-identifier-GPL SPDX-license-identifier-GPL-3.0 SPDX-license-identifier-MIT
+LOCAL_LICENSE_CONDITIONS := notice restricted
+LOCAL_NOTICE_FILE := $(LOCAL_PATH)/LICENSE.txt $(LOCAL_PATH)/license-checker.cfg
 include $(BUILD_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)
@@ -71,6 +74,9 @@ LOCAL_EXPORT_C_INCLUDES:=$(LOCAL_PATH)
 LOCAL_SRC_FILES:=OGLCompilersDLL/InitializeDll.cpp
 LOCAL_C_INCLUDES:=$(LOCAL_PATH)/OGLCompiler
 LOCAL_STATIC_LIBRARIES:=OSDependent
+LOCAL_LICENSE_KINDS := SPDX-license-identifier-Apache-2.0 SPDX-license-identifier-BSD SPDX-license-identifier-GPL SPDX-license-identifier-GPL-3.0 SPDX-license-identifier-MIT
+LOCAL_LICENSE_CONDITIONS := notice restricted
+LOCAL_NOTICE_FILE := $(LOCAL_PATH)/LICENSE.txt $(LOCAL_PATH)/license-checker.cfg
 include $(BUILD_STATIC_LIBRARY)
 
 # Build the stubbed HLSL library.
@@ -83,6 +89,9 @@ LOCAL_SRC_FILES:= \
 	hlsl/stub.cpp
 LOCAL_C_INCLUDES:=$(LOCAL_PATH) \
 	$(LOCAL_PATH)/glslang/HLSL
+LOCAL_LICENSE_KINDS := SPDX-license-identifier-Apache-2.0 SPDX-license-identifier-BSD SPDX-license-identifier-GPL SPDX-license-identifier-GPL-3.0 SPDX-license-identifier-MIT
+LOCAL_LICENSE_CONDITIONS := notice restricted
+LOCAL_NOTICE_FILE := $(LOCAL_PATH)/LICENSE.txt $(LOCAL_PATH)/license-checker.cfg
 include $(BUILD_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)
@@ -137,6 +146,9 @@ LOCAL_C_INCLUDES:=$(LOCAL_PATH) \
 	$(GLSLANG_GENERATED_INCLUDEDIR) \
 	$(GLSLANG_OUT_PATH)
 LOCAL_STATIC_LIBRARIES:=OSDependent OGLCompiler HLSL
+LOCAL_LICENSE_KINDS := SPDX-license-identifier-Apache-2.0 SPDX-license-identifier-BSD SPDX-license-identifier-GPL SPDX-license-identifier-GPL-3.0 SPDX-license-identifier-MIT
+LOCAL_LICENSE_CONDITIONS := notice restricted
+LOCAL_NOTICE_FILE := $(LOCAL_PATH)/LICENSE.txt $(LOCAL_PATH)/license-checker.cfg
 include $(BUILD_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)
@@ -162,4 +174,7 @@ LOCAL_C_INCLUDES:=$(LOCAL_PATH) \
 	$(GLSLANG_GENERATED_INCLUDEDIR)
 LOCAL_EXPORT_C_INCLUDES:=$(LOCAL_PATH)/glslang/SPIRV
 LOCAL_STATIC_LIBRARIES:=glslang
+LOCAL_LICENSE_KINDS := SPDX-license-identifier-Apache-2.0 SPDX-license-identifier-BSD SPDX-license-identifier-GPL SPDX-license-identifier-GPL-3.0 SPDX-license-identifier-MIT
+LOCAL_LICENSE_CONDITIONS := notice restricted
+LOCAL_NOTICE_FILE := $(LOCAL_PATH)/LICENSE.txt $(LOCAL_PATH)/license-checker.cfg
 include $(BUILD_STATIC_LIBRARY)
