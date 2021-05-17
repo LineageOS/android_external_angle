@@ -7,6 +7,7 @@
 
 #include "libGLESv2/cl_stubs_autogen.h"
 
+#include "libANGLE/CLDevice.h"
 #include "libANGLE/CLPlatform.h"
 #include "libGLESv2/cl_dispatch_table.h"
 #include "libGLESv2/proc_table_cl.h"
@@ -19,8 +20,6 @@
 #endif
 
 #include "libANGLE/Debug.h"
-
-#include <cstring>
 
 #define WARN_NOT_SUPPORTED(command)                                         \
     do                                                                      \
@@ -39,7 +38,7 @@ namespace cl
 namespace
 {
 
-const Platform::List &InitializePlatforms(bool isIcd)
+const Platform::PtrList &InitializePlatforms(bool isIcd)
 {
     static bool initialized = false;
     if (!initialized)
@@ -47,20 +46,20 @@ const Platform::List &InitializePlatforms(bool isIcd)
         initialized = true;
 
 #ifdef ANGLE_ENABLE_CL_PASSTHROUGH
-        rx::CLPlatformImpl::ImplList implListCL = rx::CLPlatformCL::GetPlatforms(isIcd);
-        while (!implListCL.empty())
+        rx::CLPlatformImpl::InitList initListCL = rx::CLPlatformCL::GetPlatforms(isIcd);
+        while (!initListCL.empty())
         {
-            Platform::CreatePlatform(gCLIcdDispatchTable, std::move(implListCL.front()));
-            implListCL.pop_front();
+            Platform::CreatePlatform(gCLIcdDispatchTable, initListCL.front());
+            initListCL.pop_front();
         }
 #endif
 
 #ifdef ANGLE_ENABLE_VULKAN
-        rx::CLPlatformImpl::ImplList implListVk = rx::CLPlatformVk::GetPlatforms();
-        while (!implListVk.empty())
+        rx::CLPlatformImpl::InitList initListVk = rx::CLPlatformVk::GetPlatforms();
+        while (!initListVk.empty())
         {
-            Platform::CreatePlatform(gCLIcdDispatchTable, std::move(implListVk.front()));
-            implListVk.pop_front();
+            Platform::CreatePlatform(gCLIcdDispatchTable, initListVk.front());
+            initListVk.pop_front();
         }
 #endif
     }
@@ -69,7 +68,7 @@ const Platform::List &InitializePlatforms(bool isIcd)
 
 cl_int GetPlatforms(cl_uint num_entries, Platform **platforms, cl_uint *num_platforms, bool isIcd)
 {
-    const Platform::List &platformList = InitializePlatforms(isIcd);
+    const Platform::PtrList &platformList = InitializePlatforms(isIcd);
     if (num_platforms != nullptr)
     {
         *num_platforms = static_cast<cl_uint>(platformList.size());
@@ -84,6 +83,41 @@ cl_int GetPlatforms(cl_uint num_entries, Platform **platforms, cl_uint *num_plat
         }
     }
     return CL_SUCCESS;
+}
+
+Context::PropArray ParseContextProperties(const cl_context_properties *properties,
+                                          Platform *&platform,
+                                          bool &userSync)
+{
+    Context::PropArray propArray;
+    if (properties != nullptr)
+    {
+        // Count the trailing zero
+        size_t propSize                     = 1u;
+        const cl_context_properties *propIt = properties;
+        while (*propIt != 0)
+        {
+            ++propSize;
+            switch (*propIt++)
+            {
+                case CL_CONTEXT_PLATFORM:
+                    platform = reinterpret_cast<Platform *>(*propIt++);
+                    ++propSize;
+                    break;
+                case CL_CONTEXT_INTEROP_USER_SYNC:
+                    userSync = *propIt++ != CL_FALSE;
+                    ++propSize;
+                    break;
+            }
+        }
+        propArray.reserve(propSize);
+        propArray.insert(propArray.cend(), properties, properties + propSize);
+    }
+    if (platform == nullptr)
+    {
+        platform = Platform::GetDefault();
+    }
+    return propArray;
 }
 
 }  // anonymous namespace
@@ -104,73 +138,8 @@ cl_int GetPlatformInfo(Platform *platform,
                        void *param_value,
                        size_t *param_value_size_ret)
 {
-    cl_version version    = 0u;
-    cl_ulong hostTimerRes = 0u;
-    const void *value     = nullptr;
-    size_t value_size     = 0u;
-    switch (param_name)
-    {
-        case PlatformInfo::Profile:
-            value      = platform->getProfile();
-            value_size = std::strlen(platform->getProfile()) + 1u;
-            break;
-        case PlatformInfo::Version:
-            value      = platform->getVersionString();
-            value_size = std::strlen(platform->getVersionString()) + 1u;
-            break;
-        case PlatformInfo::NumericVersion:
-            version    = platform->getVersion();
-            value      = &version;
-            value_size = sizeof(version);
-            break;
-        case PlatformInfo::Name:
-            value      = platform->getName();
-            value_size = std::strlen(platform->getName()) + 1u;
-            break;
-        case PlatformInfo::Vendor:
-            value      = Platform::GetVendor();
-            value_size = std::strlen(Platform::GetVendor()) + 1u;
-            break;
-        case PlatformInfo::Extensions:
-            value      = platform->getExtensions();
-            value_size = std::strlen(platform->getExtensions()) + 1u;
-            break;
-        case PlatformInfo::ExtensionsWithVersion:
-            if (platform->getExtensionsWithVersion().empty())
-            {
-                return CL_INVALID_VALUE;
-            }
-            value      = platform->getExtensionsWithVersion().data();
-            value_size = platform->getExtensionsWithVersion().size() * sizeof(cl_name_version);
-            break;
-        case PlatformInfo::HostTimerResolution:
-            hostTimerRes = platform->getHostTimerResolution();
-            value        = &hostTimerRes;
-            value_size   = sizeof(hostTimerRes);
-            break;
-        case PlatformInfo::IcdSuffix:
-            value      = Platform::GetIcdSuffix();
-            value_size = std::strlen(Platform::GetIcdSuffix()) + 1u;
-            break;
-        default:
-            return CL_INVALID_VALUE;
-    }
-    if (param_value != nullptr)
-    {
-        if (param_value_size < value_size)
-        {
-            return CL_INVALID_VALUE;
-        }
-        if (value != nullptr)
-        {
-            std::memcpy(param_value, value, value_size);
-        }
-    }
-    if (param_value_size_ret != nullptr)
-    {
-        *param_value_size_ret = value_size;
-    }
-    return CL_SUCCESS;
+    return (platform != nullptr ? platform : Platform::GetDefault())
+        ->getInfo(param_name, param_value_size, param_value, param_value_size_ret);
 }
 
 cl_int GetDeviceIDs(Platform *platform,
@@ -179,8 +148,8 @@ cl_int GetDeviceIDs(Platform *platform,
                     Device **devices,
                     cl_uint *num_devices)
 {
-    WARN_NOT_SUPPORTED(GetDeviceIDs);
-    return 0;
+    return (platform != nullptr ? platform : Platform::GetDefault())
+        ->getDeviceIDs(device_type, num_entries, devices, num_devices);
 }
 
 cl_int GetDeviceInfo(Device *device,
@@ -189,8 +158,7 @@ cl_int GetDeviceInfo(Device *device,
                      void *param_value,
                      size_t *param_value_size_ret)
 {
-    WARN_NOT_SUPPORTED(GetDeviceInfo);
-    return 0;
+    return device->getInfo(param_name, param_value_size, param_value, param_value_size_ret);
 }
 
 cl_int CreateSubDevices(Device *in_device,
@@ -199,20 +167,19 @@ cl_int CreateSubDevices(Device *in_device,
                         Device **out_devices,
                         cl_uint *num_devices_ret)
 {
-    WARN_NOT_SUPPORTED(CreateSubDevices);
-    return 0;
+    return in_device->createSubDevices(properties, num_devices, out_devices, num_devices_ret);
 }
 
 cl_int RetainDevice(Device *device)
 {
-    WARN_NOT_SUPPORTED(RetainDevice);
-    return 0;
+    device->retain();
+    return CL_SUCCESS;
 }
 
 cl_int ReleaseDevice(Device *device)
 {
-    WARN_NOT_SUPPORTED(ReleaseDevice);
-    return 0;
+    device->release();
+    return CL_SUCCESS;
 }
 
 cl_int SetDefaultDeviceCommandQueue(Context *context, Device *device, CommandQueue *command_queue)
@@ -243,8 +210,15 @@ Context *CreateContext(const cl_context_properties *properties,
                        void *user_data,
                        cl_int *errcode_ret)
 {
-    WARN_NOT_SUPPORTED(CreateContext);
-    return 0;
+    Platform *platform           = nullptr;
+    bool userSync                = false;
+    Context::PropArray propArray = ParseContextProperties(properties, platform, userSync);
+    if (platform == nullptr)
+    {
+        return nullptr;
+    }
+    return platform->createContext(std::move(propArray), num_devices, devices, pfn_notify,
+                                   user_data, userSync, errcode_ret);
 }
 
 Context *CreateContextFromType(const cl_context_properties *properties,
@@ -256,20 +230,27 @@ Context *CreateContextFromType(const cl_context_properties *properties,
                                void *user_data,
                                cl_int *errcode_ret)
 {
-    WARN_NOT_SUPPORTED(CreateContextFromType);
-    return 0;
+    Platform *platform           = nullptr;
+    bool userSync                = false;
+    Context::PropArray propArray = ParseContextProperties(properties, platform, userSync);
+    if (platform == nullptr)
+    {
+        return nullptr;
+    }
+    return platform->createContextFromType(std::move(propArray), device_type, pfn_notify, user_data,
+                                           userSync, errcode_ret);
 }
 
 cl_int RetainContext(Context *context)
 {
-    WARN_NOT_SUPPORTED(RetainContext);
-    return 0;
+    context->retain();
+    return CL_SUCCESS;
 }
 
 cl_int ReleaseContext(Context *context)
 {
-    WARN_NOT_SUPPORTED(ReleaseContext);
-    return 0;
+    context->release();
+    return CL_SUCCESS;
 }
 
 cl_int GetContextInfo(Context *context,
@@ -278,8 +259,7 @@ cl_int GetContextInfo(Context *context,
                       void *param_value,
                       size_t *param_value_size_ret)
 {
-    WARN_NOT_SUPPORTED(GetContextInfo);
-    return 0;
+    return context->getInfo(param_name, param_value_size, param_value, param_value_size_ret);
 }
 
 cl_int SetContextDestructorCallback(Context *context,

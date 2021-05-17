@@ -3,37 +3,94 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-
 // validationCL.cpp: Validation functions for generic CL entry point parameters
 
 #include "libANGLE/validationCL_autogen.h"
 
+#define ANGLE_ERROR_RETURN(error, ret) \
+    if (errcode_ret != nullptr)        \
+    {                                  \
+        *errcode_ret = error;          \
+    }                                  \
+    return ret
+
 namespace cl
 {
+
+namespace
+{
+
+Platform *ValidateContextProperties(const cl_context_properties *properties, cl_int *errcode_ret)
+{
+    Platform *platform = nullptr;
+    bool hasUserSync   = false;
+    if (properties != nullptr)
+    {
+        while (*properties != 0)
+        {
+            switch (*properties++)
+            {
+                case CL_CONTEXT_PLATFORM:
+                    if (platform != nullptr)
+                    {
+                        ANGLE_ERROR_RETURN(CL_INVALID_PROPERTY, nullptr);
+                    }
+                    platform = reinterpret_cast<Platform *>(*properties++);
+                    if (!Platform::IsValid(platform))
+                    {
+                        ANGLE_ERROR_RETURN(CL_INVALID_PLATFORM, nullptr);
+                    }
+                    break;
+                case CL_CONTEXT_INTEROP_USER_SYNC:
+                    if (hasUserSync || (*properties != CL_FALSE && *properties != CL_TRUE))
+                    {
+                        ANGLE_ERROR_RETURN(CL_INVALID_PROPERTY, nullptr);
+                    }
+                    ++properties;
+                    hasUserSync = true;
+                    break;
+                default:
+                    ANGLE_ERROR_RETURN(CL_INVALID_PROPERTY, nullptr);
+            }
+        }
+    }
+    if (platform == nullptr)
+    {
+        platform = Platform::GetDefault();
+        if (platform == nullptr)
+        {
+            ANGLE_ERROR_RETURN(CL_INVALID_PLATFORM, nullptr);
+        }
+    }
+    return platform;
+}
+
+}  // namespace
+
 // CL 1.0
 cl_int ValidateGetPlatformIDs(cl_uint num_entries,
-                              Platform *const *platformsPacked,
+                              Platform *const *platforms,
                               const cl_uint *num_platforms)
 {
-    if ((num_entries == 0u && platformsPacked != nullptr) ||
-        (platformsPacked == nullptr && num_platforms == nullptr))
+    if ((num_entries == 0u && platforms != nullptr) ||
+        (platforms == nullptr && num_platforms == nullptr))
     {
         return CL_INVALID_VALUE;
     }
     return CL_SUCCESS;
 }
 
-cl_int ValidateGetPlatformInfo(const Platform *platformPacked,
-                               PlatformInfo param_namePacked,
+cl_int ValidateGetPlatformInfo(const Platform *platform,
+                               PlatformInfo param_name,
                                size_t param_value_size,
                                const void *param_value,
                                const size_t *param_value_size_ret)
 {
-    if (!Platform::IsValid(platformPacked))
+    if (!Platform::IsValid(platform))
     {
         return CL_INVALID_PLATFORM;
     }
-    if (param_namePacked == PlatformInfo::InvalidEnum ||
+    if (param_name == PlatformInfo::InvalidEnum ||
         (param_value_size == 0u && param_value != nullptr))
     {
         return CL_INVALID_VALUE;
@@ -41,27 +98,47 @@ cl_int ValidateGetPlatformInfo(const Platform *platformPacked,
     return CL_SUCCESS;
 }
 
-cl_int ValidateGetDeviceIDs(const Platform *platformPacked,
+cl_int ValidateGetDeviceIDs(const Platform *platform,
                             cl_device_type device_type,
                             cl_uint num_entries,
-                            Device *const *devicesPacked,
+                            Device *const *devices,
                             const cl_uint *num_devices)
 {
+    if (!Platform::IsValidOrDefault(platform))
+    {
+        return CL_INVALID_PLATFORM;
+    }
+    if (!Device::IsValidType(device_type))
+    {
+        return CL_INVALID_DEVICE_TYPE;
+    }
+    if ((num_entries == 0u && devices != nullptr) || (devices == nullptr && num_devices == nullptr))
+    {
+        return CL_INVALID_VALUE;
+    }
     return CL_SUCCESS;
 }
 
-cl_int ValidateGetDeviceInfo(const Device *devicePacked,
-                             DeviceInfo param_namePacked,
+cl_int ValidateGetDeviceInfo(const Device *device,
+                             DeviceInfo param_name,
                              size_t param_value_size,
                              const void *param_value,
                              const size_t *param_value_size_ret)
 {
+    if (!Device::IsValid(device))
+    {
+        return CL_INVALID_DEVICE;
+    }
+    if (param_name == DeviceInfo::InvalidEnum || (param_value_size == 0u && param_value != nullptr))
+    {
+        return CL_INVALID_VALUE;
+    }
     return CL_SUCCESS;
 }
 
 bool ValidateCreateContext(const cl_context_properties *properties,
                            cl_uint num_devices,
-                           Device *const *devicesPacked,
+                           Device *const *devices,
                            void(CL_CALLBACK *pfn_notify)(const char *errinfo,
                                                          const void *private_info,
                                                          size_t cb,
@@ -69,6 +146,23 @@ bool ValidateCreateContext(const cl_context_properties *properties,
                            const void *user_data,
                            cl_int *errcode_ret)
 {
+    Platform *platform = ValidateContextProperties(properties, errcode_ret);
+    if (platform == nullptr)
+    {
+        return false;
+    }
+
+    if (num_devices == 0u || devices == nullptr || (pfn_notify == nullptr && user_data != nullptr))
+    {
+        ANGLE_ERROR_RETURN(CL_INVALID_VALUE, false);
+    }
+    while (num_devices-- > 0u)
+    {
+        if (!platform->hasDevice(*devices++))
+        {
+            ANGLE_ERROR_RETURN(CL_INVALID_DEVICE, false);
+        }
+    }
     return true;
 }
 
@@ -81,25 +175,47 @@ bool ValidateCreateContextFromType(const cl_context_properties *properties,
                                    const void *user_data,
                                    cl_int *errcode_ret)
 {
+    Platform *platform = ValidateContextProperties(properties, errcode_ret);
+    if (platform == nullptr)
+    {
+        return false;
+    }
+    if (!Device::IsValidType(device_type))
+    {
+        ANGLE_ERROR_RETURN(CL_INVALID_DEVICE_TYPE, false);
+    }
+    if (pfn_notify == nullptr && user_data != nullptr)
+    {
+        ANGLE_ERROR_RETURN(CL_INVALID_VALUE, false);
+    }
     return true;
 }
 
-cl_int ValidateRetainContext(const Context *contextPacked)
+cl_int ValidateRetainContext(const Context *context)
 {
-    return CL_SUCCESS;
+    return Context::IsValid(context) ? CL_SUCCESS : CL_INVALID_CONTEXT;
 }
 
-cl_int ValidateReleaseContext(const Context *contextPacked)
+cl_int ValidateReleaseContext(const Context *context)
 {
-    return CL_SUCCESS;
+    return Context::IsValid(context) ? CL_SUCCESS : CL_INVALID_CONTEXT;
 }
 
-cl_int ValidateGetContextInfo(const Context *contextPacked,
-                              ContextInfo param_namePacked,
+cl_int ValidateGetContextInfo(const Context *context,
+                              ContextInfo param_name,
                               size_t param_value_size,
                               const void *param_value,
                               const size_t *param_value_size_ret)
 {
+    if (!Context::IsValid(context))
+    {
+        return CL_INVALID_CONTEXT;
+    }
+    if (param_name == ContextInfo::InvalidEnum ||
+        (param_value_size == 0u && param_value != nullptr))
+    {
+        return CL_INVALID_VALUE;
+    }
     return CL_SUCCESS;
 }
 
@@ -696,23 +812,33 @@ cl_int ValidateEnqueueCopyBufferRect(const CommandQueue *command_queuePacked,
 }
 
 // CL 1.2
-cl_int ValidateCreateSubDevices(const Device *in_devicePacked,
+cl_int ValidateCreateSubDevices(const Device *in_device,
                                 const cl_device_partition_property *properties,
                                 cl_uint num_devices,
-                                Device *const *out_devicesPacked,
+                                Device *const *out_devices,
                                 const cl_uint *num_devices_ret)
 {
+    if (!Device::IsValid(in_device))
+    {
+        return CL_INVALID_DEVICE;
+    }
+    if (properties == nullptr || (*properties != CL_DEVICE_PARTITION_EQUALLY &&
+                                  *properties != CL_DEVICE_PARTITION_BY_COUNTS &&
+                                  *properties != CL_DEVICE_PARTITION_BY_AFFINITY_DOMAIN))
+    {
+        return CL_INVALID_VALUE;
+    }
     return CL_SUCCESS;
 }
 
-cl_int ValidateRetainDevice(const Device *devicePacked)
+cl_int ValidateRetainDevice(const Device *device)
 {
-    return CL_SUCCESS;
+    return Device::IsValid(device) ? CL_SUCCESS : CL_INVALID_DEVICE;
 }
 
-cl_int ValidateReleaseDevice(const Device *devicePacked)
+cl_int ValidateReleaseDevice(const Device *device)
 {
-    return CL_SUCCESS;
+    return Device::IsValid(device) ? CL_SUCCESS : CL_INVALID_DEVICE;
 }
 
 bool ValidateCreateImage(const Context *contextPacked,

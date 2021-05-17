@@ -214,7 +214,7 @@ def angle_standalone_builder(name, debug, cpu, toolchain = "clang", uwp = False,
         properties["test_mode"] = "trace_tests"
     elif toolchain == "gcc":
         properties["test_mode"] = "checkout_only"
-    elif debug or toolchain == "msvc" or config_os.category == os_category.ANDROID:
+    elif debug or toolchain == "msvc" or (config_os.category == os_category.ANDROID and cpu == "arm"):
         properties["test_mode"] = "compile_only"
     else:
         properties["test_mode"] = "compile_and_test"
@@ -419,28 +419,16 @@ luci.cq_group(
             builder = "chromium:try/linux-angle-chromium-try",
         ),
         luci.cq_tryjob_verifier(
-            builder = "chromium:try/linux-angle-try",
-        ),
-        luci.cq_tryjob_verifier(
             builder = "chromium:try/linux-swangle-try-tot-angle-x64",
         ),
         luci.cq_tryjob_verifier(
             builder = "chromium:try/mac-angle-chromium-try",
         ),
         luci.cq_tryjob_verifier(
-            builder = "chromium:try/mac-angle-try",
-        ),
-        luci.cq_tryjob_verifier(
             builder = "chromium:try/win-angle-chromium-x64-try",
         ),
         luci.cq_tryjob_verifier(
             builder = "chromium:try/win-angle-chromium-x86-try",
-        ),
-        luci.cq_tryjob_verifier(
-            builder = "chromium:try/win-angle-x64-try",
-        ),
-        luci.cq_tryjob_verifier(
-            builder = "chromium:try/win-angle-x86-try",
         ),
         luci.cq_tryjob_verifier(
             builder = "chromium:try/win-swangle-try-tot-angle-x86",
