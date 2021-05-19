@@ -1388,30 +1388,6 @@ void CommandBufferHelper::finalizeDepthStencilImageLayout(Context *context)
         VkImageAspectFlags aspectFlags = GetDepthStencilAspectFlags(format);
         updateImageLayoutAndBarrier(context, mDepthStencilImage, aspectFlags, imageLayout);
     }
-
-    if (!mDepthStencilImage->hasRenderPassUsageFlag(RenderPassUsage::ReadOnlyAttachment))
-    {
-        ASSERT(mDepthStencilAttachmentIndex != kAttachmentIndexInvalid);
-        const PackedAttachmentOpsDesc &dsOps = mAttachmentOps[mDepthStencilAttachmentIndex];
-
-        // If the image is being written to, mark its contents defined.
-        VkImageAspectFlags definedAspects = 0;
-        if (dsOps.storeOp == VK_ATTACHMENT_STORE_OP_STORE)
-        {
-            definedAspects |= VK_IMAGE_ASPECT_DEPTH_BIT;
-        }
-        if (dsOps.stencilStoreOp == VK_ATTACHMENT_STORE_OP_STORE)
-        {
-            definedAspects |= VK_IMAGE_ASPECT_STENCIL_BIT;
-        }
-        if (definedAspects != 0)
-        {
-            mDepthStencilImage->onWrite(mDepthStencilLevelIndex, 1, mDepthStencilLayerIndex,
-                                        mDepthStencilLayerCount, definedAspects);
-        }
-    }
-
-    mDepthStencilImage->resetRenderPassUsageFlags();
 }
 
 void CommandBufferHelper::finalizeDepthStencilResolveImageLayout(Context *context)
@@ -1475,7 +1451,7 @@ void CommandBufferHelper::finalizeImageLayout(Context *context, const ImageHelpe
 
     if (mDepthStencilImage == image)
     {
-        finalizeDepthStencilImageLayout(context);
+        finalizeDepthStencilImageLayoutAndLoadStore(context);
         mDepthStencilImage = nullptr;
     }
 
@@ -1484,6 +1460,106 @@ void CommandBufferHelper::finalizeImageLayout(Context *context, const ImageHelpe
         finalizeDepthStencilResolveImageLayout(context);
         mDepthStencilResolveImage = nullptr;
     }
+}
+
+void CommandBufferHelper::finalizeDepthStencilLoadStore(Context *context)
+{
+    ASSERT(mDepthStencilAttachmentIndex != kAttachmentIndexInvalid);
+
+    PackedAttachmentOpsDesc &dsOps = mAttachmentOps[mDepthStencilAttachmentIndex];
+
+    // This has to be called after layout been finalized
+    ASSERT(dsOps.initialLayout != static_cast<uint16_t>(ImageLayout::Undefined));
+
+    // Ensure we don't write to a read-only RenderPass. (ReadOnly -> !Write)
+    ASSERT(dsOps.initialLayout != static_cast<uint16_t>(ImageLayout::DepthStencilReadOnly) ||
+           (mDepthAccess != ResourceAccess::Write && mStencilAccess != ResourceAccess::Write));
+
+    // If the attachment is invalidated, skip the store op.  If we are not loading or clearing the
+    // attachment and the attachment has not been used, auto-invalidate it.
+    const bool depthNotLoaded = dsOps.loadOp == VK_ATTACHMENT_LOAD_OP_DONT_CARE &&
+                                !mRenderPassDesc.hasDepthUnresolveAttachment();
+    if (isInvalidated(mDepthCmdSizeInvalidated, mDepthCmdSizeDisabled) ||
+        (depthNotLoaded && mDepthAccess != ResourceAccess::Write))
+    {
+        dsOps.storeOp       = RenderPassStoreOp::DontCare;
+        dsOps.isInvalidated = true;
+    }
+    else if (hasWriteAfterInvalidate(mDepthCmdSizeInvalidated, mDepthCmdSizeDisabled))
+    {
+        // The depth attachment was invalidated, but is now valid.  Let the image know the contents
+        // are now defined so a future render pass would use loadOp=LOAD.
+        restoreDepthContent();
+    }
+    const bool stencilNotLoaded = dsOps.stencilLoadOp == VK_ATTACHMENT_LOAD_OP_DONT_CARE &&
+                                  !mRenderPassDesc.hasStencilUnresolveAttachment();
+    if (isInvalidated(mStencilCmdSizeInvalidated, mStencilCmdSizeDisabled) ||
+        (stencilNotLoaded && mStencilAccess != ResourceAccess::Write))
+    {
+        dsOps.stencilStoreOp       = RenderPassStoreOp::DontCare;
+        dsOps.isStencilInvalidated = true;
+    }
+    else if (hasWriteAfterInvalidate(mStencilCmdSizeInvalidated, mStencilCmdSizeDisabled))
+    {
+        // The stencil attachment was invalidated, but is now valid.  Let the image know the
+        // contents are now defined so a future render pass would use loadOp=LOAD.
+        restoreStencilContent();
+    }
+
+    // For read only depth stencil, we can use StoreOpNone if available. DONT_CARE is still
+    // preferred, so do this after finish the DONT_CARE handling.
+    if (dsOps.initialLayout == static_cast<uint16_t>(ImageLayout::DepthStencilReadOnly) &&
+        context->getRenderer()->getFeatures().supportsRenderPassStoreOpNoneQCOM.enabled)
+    {
+        if (dsOps.storeOp == RenderPassStoreOp::Store)
+        {
+            dsOps.storeOp = RenderPassStoreOp::NoneQCOM;
+        }
+        if (dsOps.stencilStoreOp == RenderPassStoreOp::Store)
+        {
+            dsOps.stencilStoreOp = RenderPassStoreOp::NoneQCOM;
+        }
+    }
+
+    // If we are loading or clearing the attachment, but the attachment has not been used, and the
+    // data has also not been stored back into attachment, then just skip the load/clear op.
+    if (mDepthAccess == ResourceAccess::Unused && dsOps.storeOp == VK_ATTACHMENT_STORE_OP_DONT_CARE)
+    {
+        dsOps.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    }
+
+    if (mStencilAccess == ResourceAccess::Unused &&
+        dsOps.stencilStoreOp == RenderPassStoreOp::DontCare)
+    {
+        dsOps.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    }
+
+    // This has to be done after storeOp has been finalized.
+    if (!mDepthStencilImage->hasRenderPassUsageFlag(RenderPassUsage::ReadOnlyAttachment))
+    {
+        // If the image is being written to, mark its contents defined.
+        VkImageAspectFlags definedAspects = 0;
+        if (dsOps.storeOp == VK_ATTACHMENT_STORE_OP_STORE)
+        {
+            definedAspects |= VK_IMAGE_ASPECT_DEPTH_BIT;
+        }
+        if (dsOps.stencilStoreOp == VK_ATTACHMENT_STORE_OP_STORE)
+        {
+            definedAspects |= VK_IMAGE_ASPECT_STENCIL_BIT;
+        }
+        if (definedAspects != 0)
+        {
+            mDepthStencilImage->onWrite(mDepthStencilLevelIndex, 1, mDepthStencilLayerIndex,
+                                        mDepthStencilLayerCount, definedAspects);
+        }
+    }
+}
+
+void CommandBufferHelper::finalizeDepthStencilImageLayoutAndLoadStore(Context *context)
+{
+    finalizeDepthStencilImageLayout(context);
+    finalizeDepthStencilLoadStore(context);
+    mDepthStencilImage->resetRenderPassUsageFlags();
 }
 
 void CommandBufferHelper::beginRenderPass(const Framebuffer &framebuffer,
@@ -1530,76 +1606,10 @@ void CommandBufferHelper::endRenderPass(ContextVk *contextVk)
         return;
     }
 
-    PackedAttachmentOpsDesc &dsOps = mAttachmentOps[mDepthStencilAttachmentIndex];
-    // Depth/Stencil buffer optimizations:
-
-    // If the attachment is invalidated, skip the store op.  If we are not loading or clearing the
-    // attachment and the attachment has not been used, auto-invalidate it.
-    const bool depthNotLoaded = dsOps.loadOp == VK_ATTACHMENT_LOAD_OP_DONT_CARE &&
-                                !mRenderPassDesc.hasDepthUnresolveAttachment();
-    if (isInvalidated(mDepthCmdSizeInvalidated, mDepthCmdSizeDisabled) ||
-        (depthNotLoaded && mDepthAccess != ResourceAccess::Write))
-    {
-        dsOps.storeOp       = RenderPassStoreOp::DontCare;
-        dsOps.isInvalidated = true;
-    }
-    else if (hasWriteAfterInvalidate(mDepthCmdSizeInvalidated, mDepthCmdSizeDisabled))
-    {
-        // The depth attachment was invalidated, but is now valid.  Let the image know the contents
-        // are now defined so a future render pass would use loadOp=LOAD.
-        restoreDepthContent();
-    }
-    const bool stencilNotLoaded = dsOps.stencilLoadOp == VK_ATTACHMENT_LOAD_OP_DONT_CARE &&
-                                  !mRenderPassDesc.hasStencilUnresolveAttachment();
-    if (isInvalidated(mStencilCmdSizeInvalidated, mStencilCmdSizeDisabled) ||
-        (stencilNotLoaded && mStencilAccess != ResourceAccess::Write))
-    {
-        dsOps.stencilStoreOp       = RenderPassStoreOp::DontCare;
-        dsOps.isStencilInvalidated = true;
-    }
-    else if (hasWriteAfterInvalidate(mStencilCmdSizeInvalidated, mStencilCmdSizeDisabled))
-    {
-        // The stencil attachment was invalidated, but is now valid.  Let the image know the
-        // contents are now defined so a future render pass would use loadOp=LOAD.
-        restoreStencilContent();
-    }
-
-    // For read only depth stencil, we can use StoreOpNone if available. DONT_CARE is still
-    // preferred, so do this after finish the DONT_CARE handling.
-    if (dsOps.initialLayout == static_cast<uint16_t>(ImageLayout::DepthStencilReadOnly) &&
-        contextVk->getFeatures().supportsRenderPassStoreOpNoneQCOM.enabled)
-    {
-        if (dsOps.storeOp == RenderPassStoreOp::Store)
-        {
-            dsOps.storeOp = RenderPassStoreOp::NoneQCOM;
-        }
-        if (dsOps.stencilStoreOp == RenderPassStoreOp::Store)
-        {
-            dsOps.stencilStoreOp = RenderPassStoreOp::NoneQCOM;
-        }
-    }
-
-    // If we are loading or clearing the attachment, but the attachment has not been used, and the
-    // data has also not been stored back into attachment, then just skip the load/clear op.
-    if (mDepthAccess == ResourceAccess::Unused && dsOps.storeOp == VK_ATTACHMENT_STORE_OP_DONT_CARE)
-    {
-        dsOps.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    }
-
-    if (mStencilAccess == ResourceAccess::Unused &&
-        dsOps.stencilStoreOp == RenderPassStoreOp::DontCare)
-    {
-        dsOps.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    }
-
-    // Ensure we don't write to a read-only RenderPass. (ReadOnly -> !Write)
-    ASSERT(dsOps.initialLayout != static_cast<uint16_t>(ImageLayout::DepthStencilReadOnly) ||
-           (mDepthAccess != ResourceAccess::Write && mStencilAccess != ResourceAccess::Write));
-
-    // Do depth stencil layout change.
+    // Do depth stencil layout change and load store optimization.
     if (mDepthStencilImage)
     {
-        finalizeDepthStencilImageLayout(contextVk);
+        finalizeDepthStencilImageLayoutAndLoadStore(contextVk);
     }
     if (mDepthStencilResolveImage)
     {
@@ -3071,8 +3081,11 @@ angle::Result LineLoopHelper::getIndexBufferForElementArrayBuffer(ContextVk *con
                                            bufferOffsetOut, nullptr));
     *bufferOut = mDynamicIndexBuffer.getCurrentBuffer();
 
-    VkDeviceSize sourceOffset                  = static_cast<VkDeviceSize>(elementArrayOffset);
-    uint64_t unitCount                         = static_cast<VkDeviceSize>(indexCount);
+    VkDeviceSize sourceBufferOffset = 0;
+    BufferHelper *sourceBuffer = &elementArrayBufferVk->getBufferAndOffset(&sourceBufferOffset);
+
+    VkDeviceSize sourceOffset = static_cast<VkDeviceSize>(elementArrayOffset) + sourceBufferOffset;
+    uint64_t unitCount        = static_cast<VkDeviceSize>(indexCount);
     angle::FixedVector<VkBufferCopy, 3> copies = {
         {sourceOffset, *bufferOffsetOut, unitCount * unitSize},
         {sourceOffset, *bufferOffsetOut + unitCount * unitSize, unitSize},
@@ -3080,8 +3093,16 @@ angle::Result LineLoopHelper::getIndexBufferForElementArrayBuffer(ContextVk *con
     if (contextVk->getRenderer()->getFeatures().extraCopyBufferRegion.enabled)
         copies.push_back({sourceOffset, *bufferOffsetOut + (unitCount + 1) * unitSize, 1});
 
-    ANGLE_TRY(elementArrayBufferVk->copyToBufferImpl(
-        contextVk, *bufferOut, static_cast<uint32_t>(copies.size()), copies.data()));
+    vk::CommandBufferAccess access;
+    access.onBufferTransferWrite(*bufferOut);
+    access.onBufferTransferRead(sourceBuffer);
+
+    vk::CommandBuffer *commandBuffer;
+    ANGLE_TRY(contextVk->getOutsideRenderPassCommandBuffer(access, &commandBuffer));
+
+    commandBuffer->copyBuffer(sourceBuffer->getBuffer(), (*bufferOut)->getBuffer(),
+                              static_cast<uint32_t>(copies.size()), copies.data());
+
     ANGLE_TRY(mDynamicIndexBuffer.flush(contextVk));
     return angle::Result::Continue;
 }
@@ -3143,6 +3164,7 @@ angle::Result LineLoopHelper::streamIndices(ContextVk *contextVk,
 angle::Result LineLoopHelper::streamIndicesIndirect(ContextVk *contextVk,
                                                     gl::DrawElementsType glIndexType,
                                                     BufferHelper *indexBuffer,
+                                                    VkDeviceSize indexBufferOffset,
                                                     BufferHelper *indirectBuffer,
                                                     VkDeviceSize indirectBufferOffset,
                                                     BufferHelper **indexBufferOut,
@@ -3186,6 +3208,7 @@ angle::Result LineLoopHelper::streamIndicesIndirect(ContextVk *contextVk,
     UtilsVk::ConvertLineLoopIndexIndirectParameters params = {};
     params.indirectBufferOffset    = static_cast<uint32_t>(indirectBufferOffset);
     params.dstIndirectBufferOffset = static_cast<uint32_t>(*indirectBufferOffsetOut);
+    params.srcIndexBufferOffset    = static_cast<uint32_t>(indexBufferOffset);
     params.dstIndexBufferOffset    = static_cast<uint32_t>(*indexBufferOffsetOut);
     params.indicesBitsWidth        = static_cast<uint32_t>(unitSize * 8);
 
@@ -3492,8 +3515,6 @@ angle::Result BufferHelper::initExternal(ContextVk *contextVk,
 
     ANGLE_TRY(mMemory.initExternal(clientBuffer));
 
-    // Set local variables
-    mMemoryPropertyFlags     = memoryProperties;
     mCurrentQueueFamilyIndex = renderer->getQueueFamilyIndex();
 
     return angle::Result::Continue;
@@ -3555,9 +3576,17 @@ angle::Result BufferHelper::copyFromBuffer(ContextVk *contextVk,
                                            uint32_t regionCount,
                                            const VkBufferCopy *copyRegions)
 {
-    CommandBufferAccess access;
-    access.onBufferTransferRead(srcBuffer);
-    access.onBufferTransferWrite(this);
+    // Check for self-dependency.
+    vk::CommandBufferAccess access;
+    if (srcBuffer->getBufferSerial() == getBufferSerial())
+    {
+        access.onBufferSelfCopy(this);
+    }
+    else
+    {
+        access.onBufferTransferRead(srcBuffer);
+        access.onBufferTransferWrite(this);
+    }
 
     CommandBuffer *commandBuffer;
     ANGLE_TRY(contextVk->getOutsideRenderPassCommandBuffer(access, &commandBuffer));
@@ -6655,7 +6684,9 @@ angle::Result ImageHelper::readPixels(ContextVk *contextVk,
     if (packPixelsParams.packBuffer &&
         CanCopyWithTransformForReadPixels(packPixelsParams, mFormat, readFormat))
     {
-        BufferHelper &packBuffer = GetImpl(packPixelsParams.packBuffer)->getBuffer();
+        VkDeviceSize packBufferOffset = 0;
+        BufferHelper &packBuffer =
+            GetImpl(packPixelsParams.packBuffer)->getBufferAndOffset(&packBufferOffset);
 
         CommandBufferAccess copyAccess;
         copyAccess.onBufferTransferWrite(&packBuffer);
@@ -6668,11 +6699,12 @@ angle::Result ImageHelper::readPixels(ContextVk *contextVk,
 
         VkBufferImageCopy region = {};
         region.bufferImageHeight = srcExtent.height;
-        region.bufferOffset      = packPixelsParams.offset + reinterpret_cast<ptrdiff_t>(pixels);
-        region.bufferRowLength   = packPixelsParams.outputPitch / readFormat->pixelBytes;
-        region.imageExtent       = srcExtent;
-        region.imageOffset       = srcOffset;
-        region.imageSubresource  = srcSubresource;
+        region.bufferOffset =
+            packBufferOffset + packPixelsParams.offset + reinterpret_cast<ptrdiff_t>(pixels);
+        region.bufferRowLength  = packPixelsParams.outputPitch / readFormat->pixelBytes;
+        region.imageExtent      = srcExtent;
+        region.imageOffset      = srcOffset;
+        region.imageSubresource = srcSubresource;
 
         copyCommandBuffer->copyImageToBuffer(src->getImage(), src->getCurrentLayout(),
                                              packBuffer.getBuffer().getHandle(), 1, &region);
@@ -7496,6 +7528,7 @@ void BufferViewHelper::destroy(VkDevice device)
 
 angle::Result BufferViewHelper::getView(ContextVk *contextVk,
                                         const BufferHelper &buffer,
+                                        VkDeviceSize bufferOffset,
                                         const Format &format,
                                         const BufferView **viewOut)
 {
@@ -7521,7 +7554,7 @@ angle::Result BufferViewHelper::getView(ContextVk *contextVk,
     viewCreateInfo.sType                  = VK_STRUCTURE_TYPE_BUFFER_VIEW_CREATE_INFO;
     viewCreateInfo.buffer                 = buffer.getBuffer().getHandle();
     viewCreateInfo.format                 = viewVkFormat;
-    viewCreateInfo.offset                 = mOffset;
+    viewCreateInfo.offset                 = mOffset + bufferOffset;
     viewCreateInfo.range                  = size;
 
     BufferView view;

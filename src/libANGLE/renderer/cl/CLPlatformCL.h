@@ -3,16 +3,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// CLPlatformCL.h:
-//    Defines the class interface for CLPlatformCL, implementing CLPlatformImpl.
-//
+// CLPlatformCL.h: Defines the class interface for CLPlatformCL, implementing CLPlatformImpl.
 
 #ifndef LIBANGLE_RENDERER_CL_CLPLATFORMCL_H_
 #define LIBANGLE_RENDERER_CL_CLPLATFORMCL_H_
 
 #include "libANGLE/renderer/CLPlatformImpl.h"
-
-#include <string>
 
 namespace rx
 {
@@ -24,14 +20,29 @@ class CLPlatformCL : public CLPlatformImpl
 
     cl_platform_id getNative();
 
-    static ImplList GetPlatforms(bool isIcd);
+    CLContextImpl::Ptr createContext(CLDeviceImpl::List &&deviceImplList,
+                                     cl::ContextErrorCB notify,
+                                     void *userData,
+                                     bool userSync,
+                                     cl_int *errcodeRet) override;
+
+    CLContextImpl::Ptr createContextFromType(cl_device_type deviceType,
+                                             cl::ContextErrorCB notify,
+                                             void *userData,
+                                             bool userSync,
+                                             cl_int *errcodeRet) override;
+
+    static InitList GetPlatforms(bool isIcd);
 
   private:
-    CLPlatformCL(cl_platform_id platform, Info &&info);
+    CLPlatformCL(cl_platform_id platform, cl_version version, CLDeviceImpl::PtrList &devices);
 
-    static std::unique_ptr<CLPlatformCL> Create(cl_platform_id platform);
+    static Info GetInfo(cl_platform_id platform);
 
     const cl_platform_id mPlatform;
+    const cl_version mVersion;
+
+    friend class CLContextCL;
 };
 
 inline cl_platform_id CLPlatformCL::getNative()

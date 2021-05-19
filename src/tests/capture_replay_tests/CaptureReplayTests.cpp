@@ -62,6 +62,13 @@ class CaptureReplayTests
         mOSWindow->disableErrorMessageDialog();
         mOSWindow->setVisible(true);
 
+        if (mEGLWindow && !mEGLWindow->isContextVersion(testTraceInfo.replayContextMajorVersion,
+                                                        testTraceInfo.replayContextMinorVersion))
+        {
+            EGLWindow::Delete(&mEGLWindow);
+            mEGLWindow = nullptr;
+        }
+
         if (!mEGLWindow)
         {
             mEGLWindow = EGLWindow::New(testTraceInfo.replayContextMajorVersion,
@@ -79,6 +86,7 @@ class CaptureReplayTests
         configParams.clientArraysEnabled   = testTraceInfo.areClientArraysEnabled;
         configParams.bindGeneratesResource = testTraceInfo.bindGeneratesResources;
         configParams.webGLCompatibility    = testTraceInfo.webGLCompatibility;
+        configParams.robustResourceInit    = testTraceInfo.robustResourceInit;
 
         mPlatformParams.renderer   = testTraceInfo.replayPlatformType;
         mPlatformParams.deviceType = testTraceInfo.replayDeviceType;
@@ -96,6 +104,8 @@ class CaptureReplayTests
             cleanupTest();
             return false;
         }
+
+        mStartingDirectory = angle::GetCWD().value();
 
         // Load trace
         mTraceLibrary.reset(new angle::TraceLibrary(testTraceInfo.testName.c_str()));
@@ -119,6 +129,7 @@ class CaptureReplayTests
 
     void cleanupTest()
     {
+        angle::SetCWD(mStartingDirectory.c_str());
         mTraceLibrary.reset(nullptr);
         mEGLWindow->destroyGL();
         mOSWindow->destroy();
@@ -184,6 +195,7 @@ class CaptureReplayTests
                        mTraceLibrary->getSerializedContextState(frame));
     }
 
+    std::string mStartingDirectory;
     OSWindow *mOSWindow   = nullptr;
     EGLWindow *mEGLWindow = nullptr;
     EGLPlatformParameters mPlatformParams;

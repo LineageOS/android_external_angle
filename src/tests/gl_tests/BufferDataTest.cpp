@@ -616,7 +616,11 @@ TEST_P(BufferDataTestES3, MapBufferRangeUnsynchronizedBit)
     EXPECT_GL_NO_ERROR();
     for (size_t i = 0; i < numElements; ++i)
     {
-        EXPECT_EQ(dstData[i], data[i]);
+        // Allow for the possibility that data matches either "dstData" or "srcData"
+        if (dstData[i] != data[i])
+        {
+            EXPECT_EQ(srcData[i], data[i]);
+        }
     }
     glUnmapBuffer(GL_COPY_WRITE_BUFFER);
     EXPECT_GL_NO_ERROR();
@@ -983,11 +987,6 @@ class BufferDataOverflowTest : public ANGLETest
 // See description above.
 TEST_P(BufferDataOverflowTest, VertexBufferIntegerOverflow)
 {
-    // http://anglebug.com/3786: flaky timeout on Win10 FYI x64 Release (NVIDIA GeForce GTX 1660)
-    ANGLE_SKIP_TEST_IF(IsWindows() && IsNVIDIA() && IsD3D11());
-    // http://anglebug.com/4092
-    ANGLE_SKIP_TEST_IF(IsWindows() && (IsVulkan() || IsOpenGL()));
-
     // These values are special, to trigger the rounding bug.
     unsigned int numItems       = 0x7FFFFFE;
     constexpr GLsizei bufferCnt = 8;

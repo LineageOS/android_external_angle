@@ -119,15 +119,19 @@ declare_args() {
 
   angle_enable_d3d9 = is_win && !angle_is_winuwp
   angle_enable_d3d11 = is_win
-  angle_enable_gl = (ozone_platform_gbm || (!is_linux && !is_chromeos) ||
-                     (angle_use_x11 && !is_chromeos)) && !is_fuchsia &&
-                    !angle_is_winuwp && !is_ggp && !is_win_arm64
+  angle_enable_gl =
+      (ozone_platform_gbm || !is_linux || (angle_use_x11 && !is_chromeos)) &&
+      !is_fuchsia && !angle_is_winuwp && !is_ggp && !is_win_arm64
 
   angle_enable_vulkan =
       angle_has_build &&
       ((is_win && !angle_is_winuwp) ||
        (is_linux && (angle_use_x11 || angle_use_vulkan_display) &&
         !is_chromeos) || is_android || is_fuchsia || is_ggp || is_mac)
+
+  # When set to true, ANGLE will not use VK_KHR_surface and VK_KHR_swapchain
+  # extensions. Content can be rendered only off-screen.
+  angle_use_vulkan_null_display = build_with_chromium && is_fuchsia
 
   # Disable null backend to save space for official build.
   angle_enable_null = !is_official_build
@@ -286,7 +290,7 @@ template("angle_executable") {
     configs += invoker.configs
     configs -= invoker.suppressed_configs
 
-    if (is_win) {
+    if (angle_has_build && is_win) {
       data_deps += [ "//build/win:runtime_libs" ]
     }
   }
@@ -404,8 +408,9 @@ if (angle_standalone || build_with_chromium) {
       public_deps = invoker.public_deps + [
                       "$angle_root:angle_common",
                       "$angle_root:includes",
-                      "$angle_root/util:angle_test_utils",
+                      "$angle_root/src/tests:angle_test_expectations",
                       "$angle_root/third_party/rapidjson:rapidjson",
+                      "$angle_root/util:angle_test_utils",
                       "//testing/gmock",
                       "//testing/gtest",
                       "//third_party/googletest:gmock",
@@ -469,7 +474,7 @@ if (angle_standalone || build_with_chromium) {
         sources += [ "$angle_root/util/ios/ios_main.mm" ]
       }
 
-      if (is_win) {
+      if (angle_has_build && is_win) {
         data_deps += [ "//build/win:runtime_libs" ]
       }
     }
