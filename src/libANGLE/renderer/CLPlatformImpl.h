@@ -3,16 +3,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-
 // CLPlatformImpl.h: Defines the abstract rx::CLPlatformImpl class.
 
 #ifndef LIBANGLE_RENDERER_CLPLATFORMIMPL_H_
 #define LIBANGLE_RENDERER_CLPLATFORMIMPL_H_
 
-#include "libANGLE/renderer/CLtypes.h"
+#include "libANGLE/renderer/CLContextImpl.h"
+#include "libANGLE/renderer/CLDeviceImpl.h"
 
-#include <list>
-#include <vector>
+#include <tuple>
 
 namespace rx
 {
@@ -20,10 +19,6 @@ namespace rx
 class CLPlatformImpl : angle::NonCopyable
 {
   public:
-    using Ptr           = std::unique_ptr<CLPlatformImpl>;
-    using ImplList      = std::list<Ptr>;
-    using ExtensionList = std::vector<cl_name_version>;
-
     struct Info
     {
         Info();
@@ -35,35 +30,49 @@ class CLPlatformImpl : angle::NonCopyable
         Info(Info &&);
         Info &operator=(Info &&);
 
-        Info(std::string &&profile,
-             std::string &&versionStr,
-             cl_version version,
-             std::string &&name,
-             std::string &&extensions,
-             rx::CLPlatformImpl::ExtensionList &&extensionList,
-             cl_ulong hostTimerRes);
+        bool isValid() const { return mVersion != 0u; }
 
         std::string mProfile;
         std::string mVersionStr;
-        cl_version mVersion;
+        cl_version mVersion = 0u;
         std::string mName;
         std::string mExtensions;
-        rx::CLPlatformImpl::ExtensionList mExtensionList;
-        cl_ulong mHostTimerRes;
+        NameVersionVector mExtensionsWithVersion;
+        cl_ulong mHostTimerRes = 0u;
     };
 
-    explicit CLPlatformImpl(Info &&info);
+    using Ptr      = std::unique_ptr<CLPlatformImpl>;
+    using InitData = std::tuple<Ptr, Info, CLDeviceImpl::PtrList>;
+    using InitList = std::list<InitData>;
+
+    explicit CLPlatformImpl(CLDeviceImpl::List &&devices);
     virtual ~CLPlatformImpl();
 
-    const Info &getInfo();
+    const CLDeviceImpl::List &getDevices() const;
+
+    virtual CLContextImpl::Ptr createContext(CLDeviceImpl::List &&devices,
+                                             cl::ContextErrorCB notify,
+                                             void *userData,
+                                             bool userSync,
+                                             cl_int *errcodeRet) = 0;
+
+    virtual CLContextImpl::Ptr createContextFromType(cl_device_type deviceType,
+                                                     cl::ContextErrorCB notify,
+                                                     void *userData,
+                                                     bool userSync,
+                                                     cl_int *errcodeRet) = 0;
 
   protected:
-    const Info mInfo;
+    const CLDeviceImpl::List mDevices;
+
+    CLContextImpl::List mContexts;
+
+    friend class CLContextImpl;
 };
 
-inline const CLPlatformImpl::Info &CLPlatformImpl::getInfo()
+inline const CLDeviceImpl::List &CLPlatformImpl::getDevices() const
 {
-    return mInfo;
+    return mDevices;
 }
 
 }  // namespace rx

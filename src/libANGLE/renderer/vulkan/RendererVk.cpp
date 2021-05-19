@@ -36,12 +36,6 @@
 #include "libANGLE/trace.h"
 #include "platform/PlatformMethods.h"
 
-// TODO(ynovikov): http://anglebug.com/5905 remove once vulkan headers 1.2.177 roll into Chrome
-#ifndef VK_QCOM_RENDER_PASS_STORE_OPS_EXTENSION_NAME
-#    define VK_QCOM_RENDER_PASS_STORE_OPS_EXTENSION_NAME \
-        VK_QCOM_render_pass_store_ops_EXTENSION_NAME
-#endif  // VK_QCOM_RENDER_PASS_STORE_OPS_EXTENSION_NAME
-
 // Consts
 namespace
 {
@@ -932,8 +926,15 @@ angle::Result RendererVk::initialize(DisplayVk *displayVk,
     }
 
     vk::ExtensionNameList enabledInstanceExtensions;
-    enabledInstanceExtensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
-    enabledInstanceExtensions.push_back(wsiExtension);
+    if (displayVk->isUsingSwapchain())
+    {
+        enabledInstanceExtensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+    }
+
+    if (wsiExtension)
+    {
+        enabledInstanceExtensions.push_back(wsiExtension);
+    }
     mEnableDebugUtils = mEnableValidationLayers &&
                         ExtensionFound(VK_EXT_DEBUG_UTILS_EXTENSION_NAME, instanceExtensionNames);
 
@@ -1431,7 +1432,10 @@ angle::Result RendererVk::initializeDevice(DisplayVk *displayVk, uint32_t queueF
     }
 
     vk::ExtensionNameList enabledDeviceExtensions;
-    enabledDeviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+    if (displayVk->isUsingSwapchain())
+    {
+        enabledDeviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+    }
 
     // Queues: map low, med, high priority to whatever is supported up to 3 queues
     uint32_t queueCount = std::min(mQueueFamilyProperties[queueFamilyIndex].queueCount,
@@ -2443,6 +2447,11 @@ void RendererVk::initFeatures(DisplayVk *displayVk,
     // Disabled by default. Only enable it for experimental purpose, as this will cause various
     // tests to fail.
     ANGLE_FEATURE_CONDITION(&mFeatures, forceFragmentShaderPrecisionHighpToMediump, false);
+
+    // Testing shows that on ARM GPU, doing implicit flush at framebuffer boundary improves
+    // performance. Most app traces shows frame time reduced and manhattan 3.1 offscreen score
+    // improves 7%.
+    ANGLE_FEATURE_CONDITION(&mFeatures, preferSubmitAtFBOBoundary, isARM);
 
     angle::PlatformMethods *platform = ANGLEPlatformCurrent();
     platform->overrideFeaturesVk(platform, &mFeatures);

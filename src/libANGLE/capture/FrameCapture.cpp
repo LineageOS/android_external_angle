@@ -31,6 +31,7 @@
 #include "libANGLE/Shader.h"
 #include "libANGLE/Surface.h"
 #include "libANGLE/VertexArray.h"
+#include "libANGLE/capture/capture_gles_1_0_autogen.h"
 #include "libANGLE/capture/capture_gles_2_0_autogen.h"
 #include "libANGLE/capture/capture_gles_3_0_autogen.h"
 #include "libANGLE/capture/capture_gles_3_1_autogen.h"
@@ -1228,6 +1229,8 @@ void WriteCppReplayIndexFiles(bool compression,
            << (context->getState().isBindGeneratesResourceEnabled() ? "true" : "false") << ";\n";
     header << "constexpr bool kWebGLCompatibility = "
            << (context->getState().getExtensions().webglCompatibility ? "true" : "false") << ";\n";
+    header << "constexpr bool kRobustResourceInit = "
+           << (context->getState().isRobustResourceInitEnabled() ? "true" : "false") << ";\n";
 
     header << "// End Trace Metadata\n";
     header << "\n";
@@ -1870,6 +1873,46 @@ void CaptureUpdateUniformValues(const gl::State &replayState,
     }
 }
 
+void CaptureVertexPointerES1(std::vector<CallCapture> *setupCalls,
+                             gl::State *replayState,
+                             GLuint attribIndex,
+                             const gl::VertexAttribute &attrib,
+                             const gl::VertexBinding &binding)
+{
+    switch (gl::GLES1Renderer::VertexArrayType(attribIndex))
+    {
+        case gl::ClientVertexArrayType::Vertex:
+            Capture(setupCalls,
+                    CaptureVertexPointer(*replayState, true, attrib.format->channelCount,
+                                         attrib.format->vertexAttribType, binding.getStride(),
+                                         attrib.pointer));
+            break;
+        case gl::ClientVertexArrayType::Normal:
+            Capture(setupCalls,
+                    CaptureNormalPointer(*replayState, true, attrib.format->vertexAttribType,
+                                         binding.getStride(), attrib.pointer));
+            break;
+        case gl::ClientVertexArrayType::Color:
+            Capture(setupCalls, CaptureColorPointer(*replayState, true, attrib.format->channelCount,
+                                                    attrib.format->vertexAttribType,
+                                                    binding.getStride(), attrib.pointer));
+            break;
+        case gl::ClientVertexArrayType::PointSize:
+            Capture(setupCalls,
+                    CapturePointSizePointerOES(*replayState, true, attrib.format->vertexAttribType,
+                                               binding.getStride(), attrib.pointer));
+            break;
+        case gl::ClientVertexArrayType::TextureCoord:
+            Capture(setupCalls,
+                    CaptureTexCoordPointer(*replayState, true, attrib.format->channelCount,
+                                           attrib.format->vertexAttribType, binding.getStride(),
+                                           attrib.pointer));
+            break;
+        default:
+            UNREACHABLE();
+    }
+}
+
 void CaptureVertexArrayData(std::vector<CallCapture> *setupCalls,
                             const gl::Context *context,
                             const gl::VertexArray *vertexArray,
@@ -1888,7 +1931,17 @@ void CaptureVertexArrayData(std::vector<CallCapture> *setupCalls,
 
         if (attrib.enabled != defaultAttrib.enabled)
         {
-            Capture(setupCalls, CaptureEnableVertexAttribArray(*replayState, false, attribIndex));
+            if (context->isGLES1())
+            {
+                Capture(setupCalls,
+                        CaptureEnableClientState(*replayState, false,
+                                                 gl::GLES1Renderer::VertexArrayType(attribIndex)));
+            }
+            else
+            {
+                Capture(setupCalls,
+                        CaptureEnableVertexAttribArray(*replayState, false, attribIndex));
+            }
         }
 
         if (attrib.format != defaultAttrib.format || attrib.pointer != defaultAttrib.pointer ||
@@ -1906,10 +1959,18 @@ void CaptureVertexArrayData(std::vector<CallCapture> *setupCalls,
             }
 
             // Establish the relationship between currently bound buffer and the VAO
-            Capture(setupCalls, CaptureVertexAttribPointer(
-                                    *replayState, true, attribIndex, attrib.format->channelCount,
-                                    attrib.format->vertexAttribType, attrib.format->isNorm(),
-                                    binding.getStride(), attrib.pointer));
+            if (context->isGLES1())
+            {
+                CaptureVertexPointerES1(setupCalls, replayState, attribIndex, attrib, binding);
+            }
+            else
+            {
+                Capture(setupCalls,
+                        CaptureVertexAttribPointer(
+                            *replayState, true, attribIndex, attrib.format->channelCount,
+                            attrib.format->vertexAttribType, attrib.format->isNorm(),
+                            binding.getStride(), attrib.pointer));
+            }
         }
 
         if (binding.getDivisor() != 0)
@@ -2192,6 +2253,24 @@ void CaptureIndexedBuffers(const gl::State &glState,
     }
 }
 
+void CaptureDefaultVertexAttribs(const gl::State &replayState,
+                                 const gl::State &apiState,
+                                 std::vector<CallCapture> *setupCalls)
+{
+    const std::vector<gl::VertexAttribCurrentValueData> &currentValues =
+        apiState.getVertexAttribCurrentValues();
+
+    for (GLuint attribIndex = 0; attribIndex < gl::MAX_VERTEX_ATTRIBS; ++attribIndex)
+    {
+        const gl::VertexAttribCurrentValueData &defaultValue = currentValues[attribIndex];
+        if (!IsDefaultCurrentValue(defaultValue))
+        {
+            Capture(setupCalls, CaptureVertexAttrib4fv(replayState, true, attribIndex,
+                                                       defaultValue.Values.FloatValues));
+        }
+    }
+}
+
 void CaptureMidExecutionSetup(const gl::Context *context,
                               std::vector<CallCapture> *setupCalls,
                               ResourceTracker *resourceTracker,
@@ -2298,18 +2377,10 @@ void CaptureMidExecutionSetup(const gl::Context *context,
     // Must happen after buffer data initialization.
     // TODO(http://anglebug.com/3662): Complete state capture.
 
-    // Capture default vertex attribs
-    const std::vector<gl::VertexAttribCurrentValueData> &currentValues =
-        apiState.getVertexAttribCurrentValues();
-
-    for (GLuint attribIndex = 0; attribIndex < gl::MAX_VERTEX_ATTRIBS; ++attribIndex)
+    // Capture default vertex attribs. Do not capture on GLES1.
+    if (!context->isGLES1())
     {
-        const gl::VertexAttribCurrentValueData &defaultValue = currentValues[attribIndex];
-        if (!IsDefaultCurrentValue(defaultValue))
-        {
-            Capture(setupCalls, CaptureVertexAttrib4fv(replayState, true, attribIndex,
-                                                       defaultValue.Values.FloatValues));
-        }
+        CaptureDefaultVertexAttribs(replayState, apiState, setupCalls);
     }
 
     // Capture vertex array objects
@@ -2935,7 +3006,7 @@ void CaptureMidExecutionSetup(const gl::Context *context,
 
     // For now we assume the installed program executable is the same as the current program.
     // TODO(jmadill): Handle installed program executable. http://anglebug.com/3662
-    if (apiState.getProgram())
+    if (apiState.getProgram() && !context->isGLES1())
     {
         cap(CaptureUseProgram(replayState, true, apiState.getProgram()->id()));
         CaptureUpdateCurrentProgram(setupCalls->back(), setupCalls);
@@ -3155,6 +3226,17 @@ void CaptureMidExecutionSetup(const gl::Context *context,
         }
     };
 
+    // Capture GLES1 context states.
+    if (context->isGLES1())
+    {
+        const bool currentTextureState = apiState.getEnableFeature(GL_TEXTURE_2D);
+        const bool defaultTextureState = replayState.getEnableFeature(GL_TEXTURE_2D);
+        if (currentTextureState != defaultTextureState)
+        {
+            capCap(GL_TEXTURE_2D, currentTextureState);
+        }
+    }
+
     // Rasterizer state. Missing ES 3.x features.
     const gl::RasterizerState &defaultRasterState = replayState.getRasterizerState();
     const gl::RasterizerState &currentRasterState = apiState.getRasterizerState();
@@ -3220,50 +3302,97 @@ void CaptureMidExecutionSetup(const gl::Context *context,
         capCap(GL_STENCIL_TEST, currentDSState.stencilTest);
     }
 
-    if (defaultDSState.stencilFunc != currentDSState.stencilFunc ||
-        defaultDSState.stencilMask != currentDSState.stencilMask || apiState.getStencilRef() != 0)
+    if (currentDSState.stencilFunc == currentDSState.stencilBackFunc &&
+        currentDSState.stencilMask == currentDSState.stencilBackMask)
     {
-        cap(CaptureStencilFuncSeparate(replayState, true, GL_FRONT, currentDSState.stencilFunc,
-                                       apiState.getStencilRef(), currentDSState.stencilMask));
+        // Front and back are equal
+        if (defaultDSState.stencilFunc != currentDSState.stencilFunc ||
+            defaultDSState.stencilMask != currentDSState.stencilMask ||
+            apiState.getStencilRef() != 0)
+        {
+            cap(CaptureStencilFunc(replayState, true, currentDSState.stencilFunc,
+                                   apiState.getStencilRef(), currentDSState.stencilMask));
+        }
+    }
+    else
+    {
+        // Front and back are separate
+        if (defaultDSState.stencilFunc != currentDSState.stencilFunc ||
+            defaultDSState.stencilMask != currentDSState.stencilMask ||
+            apiState.getStencilRef() != 0)
+        {
+            cap(CaptureStencilFuncSeparate(replayState, true, GL_FRONT, currentDSState.stencilFunc,
+                                           apiState.getStencilRef(), currentDSState.stencilMask));
+        }
+
+        if (defaultDSState.stencilBackFunc != currentDSState.stencilBackFunc ||
+            defaultDSState.stencilBackMask != currentDSState.stencilBackMask ||
+            apiState.getStencilBackRef() != 0)
+        {
+            cap(CaptureStencilFuncSeparate(
+                replayState, true, GL_BACK, currentDSState.stencilBackFunc,
+                apiState.getStencilBackRef(), currentDSState.stencilBackMask));
+        }
     }
 
-    if (defaultDSState.stencilBackFunc != currentDSState.stencilBackFunc ||
-        defaultDSState.stencilBackMask != currentDSState.stencilBackMask ||
-        apiState.getStencilBackRef() != 0)
+    if (currentDSState.stencilFail == currentDSState.stencilBackFail &&
+        currentDSState.stencilPassDepthFail == currentDSState.stencilBackPassDepthFail &&
+        currentDSState.stencilPassDepthPass == currentDSState.stencilBackPassDepthPass)
     {
-        cap(CaptureStencilFuncSeparate(replayState, true, GL_BACK, currentDSState.stencilBackFunc,
-                                       apiState.getStencilBackRef(),
-                                       currentDSState.stencilBackMask));
+        // Front and back are equal
+        if (defaultDSState.stencilFail != currentDSState.stencilFail ||
+            defaultDSState.stencilPassDepthFail != currentDSState.stencilPassDepthFail ||
+            defaultDSState.stencilPassDepthPass != currentDSState.stencilPassDepthPass)
+        {
+            cap(CaptureStencilOp(replayState, true, currentDSState.stencilFail,
+                                 currentDSState.stencilPassDepthFail,
+                                 currentDSState.stencilPassDepthPass));
+        }
+    }
+    else
+    {
+        // Front and back are separate
+        if (defaultDSState.stencilFail != currentDSState.stencilFail ||
+            defaultDSState.stencilPassDepthFail != currentDSState.stencilPassDepthFail ||
+            defaultDSState.stencilPassDepthPass != currentDSState.stencilPassDepthPass)
+        {
+            cap(CaptureStencilOpSeparate(replayState, true, GL_FRONT, currentDSState.stencilFail,
+                                         currentDSState.stencilPassDepthFail,
+                                         currentDSState.stencilPassDepthPass));
+        }
+
+        if (defaultDSState.stencilBackFail != currentDSState.stencilBackFail ||
+            defaultDSState.stencilBackPassDepthFail != currentDSState.stencilBackPassDepthFail ||
+            defaultDSState.stencilBackPassDepthPass != currentDSState.stencilBackPassDepthPass)
+        {
+            cap(CaptureStencilOpSeparate(replayState, true, GL_BACK, currentDSState.stencilBackFail,
+                                         currentDSState.stencilBackPassDepthFail,
+                                         currentDSState.stencilBackPassDepthPass));
+        }
     }
 
-    if (defaultDSState.stencilFail != currentDSState.stencilFail ||
-        defaultDSState.stencilPassDepthFail != currentDSState.stencilPassDepthFail ||
-        defaultDSState.stencilPassDepthPass != currentDSState.stencilPassDepthPass)
+    if (currentDSState.stencilWritemask == currentDSState.stencilBackWritemask)
     {
-        cap(CaptureStencilOpSeparate(replayState, true, GL_FRONT, currentDSState.stencilFail,
-                                     currentDSState.stencilPassDepthFail,
-                                     currentDSState.stencilPassDepthPass));
+        // Front and back are equal
+        if (defaultDSState.stencilWritemask != currentDSState.stencilWritemask)
+        {
+            cap(CaptureStencilMask(replayState, true, currentDSState.stencilWritemask));
+        }
     }
-
-    if (defaultDSState.stencilBackFail != currentDSState.stencilBackFail ||
-        defaultDSState.stencilBackPassDepthFail != currentDSState.stencilBackPassDepthFail ||
-        defaultDSState.stencilBackPassDepthPass != currentDSState.stencilBackPassDepthPass)
+    else
     {
-        cap(CaptureStencilOpSeparate(replayState, true, GL_BACK, currentDSState.stencilBackFail,
-                                     currentDSState.stencilBackPassDepthFail,
-                                     currentDSState.stencilBackPassDepthPass));
-    }
+        // Front and back are separate
+        if (defaultDSState.stencilWritemask != currentDSState.stencilWritemask)
+        {
+            cap(CaptureStencilMaskSeparate(replayState, true, GL_FRONT,
+                                           currentDSState.stencilWritemask));
+        }
 
-    if (defaultDSState.stencilWritemask != currentDSState.stencilWritemask)
-    {
-        cap(CaptureStencilMaskSeparate(replayState, true, GL_FRONT,
-                                       currentDSState.stencilWritemask));
-    }
-
-    if (defaultDSState.stencilBackWritemask != currentDSState.stencilBackWritemask)
-    {
-        cap(CaptureStencilMaskSeparate(replayState, true, GL_BACK,
-                                       currentDSState.stencilBackWritemask));
+        if (defaultDSState.stencilBackWritemask != currentDSState.stencilBackWritemask)
+        {
+            cap(CaptureStencilMaskSeparate(replayState, true, GL_BACK,
+                                           currentDSState.stencilBackWritemask));
+        }
     }
 
     // Blend state.
@@ -3280,9 +3409,20 @@ void CaptureMidExecutionSetup(const gl::Context *context,
         currentBlendState.sourceBlendAlpha != defaultBlendState.sourceBlendAlpha ||
         currentBlendState.destBlendAlpha != defaultBlendState.destBlendAlpha)
     {
-        cap(CaptureBlendFuncSeparate(
-            replayState, true, currentBlendState.sourceBlendRGB, currentBlendState.destBlendRGB,
-            currentBlendState.sourceBlendAlpha, currentBlendState.destBlendAlpha));
+        if (currentBlendState.sourceBlendRGB == currentBlendState.sourceBlendAlpha &&
+            currentBlendState.destBlendRGB == currentBlendState.destBlendAlpha)
+        {
+            // Color and alpha are equal
+            cap(CaptureBlendFunc(replayState, true, currentBlendState.sourceBlendRGB,
+                                 currentBlendState.destBlendRGB));
+        }
+        else
+        {
+            // Color and alpha are separate
+            cap(CaptureBlendFuncSeparate(
+                replayState, true, currentBlendState.sourceBlendRGB, currentBlendState.destBlendRGB,
+                currentBlendState.sourceBlendAlpha, currentBlendState.destBlendAlpha));
+        }
     }
 
     if (currentBlendState.blendEquationRGB != defaultBlendState.blendEquationRGB ||
@@ -4068,7 +4208,29 @@ void FrameCapture::maybeCapturePreCallUpdates(const gl::Context *context, CallCa
             }
             else
             {
-                index = call.params.getClientArrayPointerParameter().arrayClientPointerIndex;
+                gl::ClientVertexArrayType type;
+                switch (call.entryPoint)
+                {
+                    case EntryPoint::GLVertexPointer:
+                        type = gl::ClientVertexArrayType::Vertex;
+                        break;
+                    case EntryPoint::GLColorPointer:
+                        type = gl::ClientVertexArrayType::Color;
+                        break;
+                    case EntryPoint::GLTexCoordPointer:
+                        type = gl::ClientVertexArrayType::TextureCoord;
+                        break;
+                    case EntryPoint::GLNormalPointer:
+                        type = gl::ClientVertexArrayType::Normal;
+                        break;
+                    case EntryPoint::GLPointSizePointerOES:
+                        type = gl::ClientVertexArrayType::PointSize;
+                        break;
+                    default:
+                        UNREACHABLE();
+                        type = gl::ClientVertexArrayType::InvalidEnum;
+                }
+                index = gl::GLES1Renderer::VertexArrayIndex(type, context->getState().gles1());
             }
 
             if (call.params.hasClientArrayData())
@@ -5062,8 +5224,11 @@ void CaptureVertexPointerGLES1(const gl::State &glState,
                                ParamCapture *paramCapture)
 {
     paramCapture->value.voidConstPointerVal = pointer;
-    paramCapture->arrayClientPointerIndex =
-        gl::GLES1Renderer::VertexArrayIndex(type, glState.gles1());
+    if (!glState.getTargetBuffer(gl::BufferBinding::Array))
+    {
+        paramCapture->arrayClientPointerIndex =
+            gl::GLES1Renderer::VertexArrayIndex(type, glState.gles1());
+    }
 }
 
 gl::Program *GetProgramForCapture(const gl::State &glState, gl::ShaderProgramID handle)
