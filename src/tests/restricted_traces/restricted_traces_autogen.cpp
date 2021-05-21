@@ -69,6 +69,7 @@
 #include "nba2k20_800/nba2k20_800_capture_context1.h"
 #include "one_punch_man/one_punch_man_capture_context1.h"
 #include "plants_vs_zombies_2/plants_vs_zombies_2_capture_context1.h"
+#include "pokemon_go/pokemon_go_capture_context2.h"
 #include "professional_baseball_spirits/professional_baseball_spirits_capture_context1.h"
 #include "pubg_mobile_lite/pubg_mobile_lite_capture_context1.h"
 #include "ragnarok_m_eternal_love/ragnarok_m_eternal_love_capture_context1.h"
@@ -80,6 +81,7 @@
 #include "romancing_saga/romancing_saga_capture_context1.h"
 #include "rope_hero_vice_town/rope_hero_vice_town_capture_context1.h"
 #include "saint_seiya_awakening/saint_seiya_awakening_capture_context1.h"
+#include "sakura_school_simulator/sakura_school_simulator_capture_context2.h"
 #include "shadow_fight_2/shadow_fight_2_capture_context1.h"
 #include "slingshot_test1/slingshot_test1_capture_context2.h"
 #include "slingshot_test2/slingshot_test2_capture_context2.h"
@@ -373,6 +375,10 @@ constexpr angle::PackedEnumMap<RestrictedTraceID, TraceInfo> kTraceInfos = {
       plants_vs_zombies_2::kReplayContextClientMinorVersion, plants_vs_zombies_2::kReplayFrameStart,
       plants_vs_zombies_2::kReplayFrameEnd, plants_vs_zombies_2::kReplayDrawSurfaceWidth,
       plants_vs_zombies_2::kReplayDrawSurfaceHeight, "plants_vs_zombies_2"}},
+    {RestrictedTraceID::pokemon_go,
+     {pokemon_go::kReplayContextClientMajorVersion, pokemon_go::kReplayContextClientMinorVersion,
+      pokemon_go::kReplayFrameStart, pokemon_go::kReplayFrameEnd,
+      pokemon_go::kReplayDrawSurfaceWidth, pokemon_go::kReplayDrawSurfaceHeight, "pokemon_go"}},
     {RestrictedTraceID::professional_baseball_spirits,
      {professional_baseball_spirits::kReplayContextClientMajorVersion,
       professional_baseball_spirits::kReplayContextClientMinorVersion,
@@ -434,6 +440,12 @@ constexpr angle::PackedEnumMap<RestrictedTraceID, TraceInfo> kTraceInfos = {
       saint_seiya_awakening::kReplayFrameStart, saint_seiya_awakening::kReplayFrameEnd,
       saint_seiya_awakening::kReplayDrawSurfaceWidth,
       saint_seiya_awakening::kReplayDrawSurfaceHeight, "saint_seiya_awakening"}},
+    {RestrictedTraceID::sakura_school_simulator,
+     {sakura_school_simulator::kReplayContextClientMajorVersion,
+      sakura_school_simulator::kReplayContextClientMinorVersion,
+      sakura_school_simulator::kReplayFrameStart, sakura_school_simulator::kReplayFrameEnd,
+      sakura_school_simulator::kReplayDrawSurfaceWidth,
+      sakura_school_simulator::kReplayDrawSurfaceHeight, "sakura_school_simulator"}},
     {RestrictedTraceID::shadow_fight_2,
      {shadow_fight_2::kReplayContextClientMajorVersion,
       shadow_fight_2::kReplayContextClientMinorVersion, shadow_fight_2::kReplayFrameStart,

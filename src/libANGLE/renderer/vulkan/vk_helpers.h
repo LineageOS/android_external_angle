@@ -1512,6 +1512,19 @@ class ImageHelper final : public Resource, public angle::Subject
                                 const Format &format,
                                 VkImageUsageFlags usage,
                                 uint32_t layerCount);
+    // Create an image for staging purposes.  Used by:
+    //
+    // - TextureVk::copyAndStageImageData
+    //
+    angle::Result initStaging(Context *context,
+                              const MemoryProperties &memoryProperties,
+                              VkImageType imageType,
+                              const VkExtent3D &extents,
+                              const Format &format,
+                              GLint samples,
+                              VkImageUsageFlags usage,
+                              uint32_t mipLevels,
+                              uint32_t layerCount);
     // Create a multisampled image for use as the implicit image in multisampled render to texture
     // rendering.  If LAZILY_ALLOCATED memory is available, it will prefer that.
     angle::Result initImplicitMultisampledRenderToTexture(Context *context,
@@ -1665,18 +1678,6 @@ class ImageHelper final : public Resource, public angle::Subject
                                                    uint8_t **destData,
                                                    DynamicBuffer *stagingBufferOverride);
 
-    angle::Result stageSubresourceUpdateFromBuffer(ContextVk *contextVk,
-                                                   size_t allocationSize,
-                                                   gl::LevelIndex mipLevelGL,
-                                                   uint32_t baseArrayLayer,
-                                                   uint32_t layerCount,
-                                                   uint32_t bufferRowLength,
-                                                   uint32_t bufferImageHeight,
-                                                   const VkExtent3D &extent,
-                                                   const VkOffset3D &offset,
-                                                   BufferHelper *stagingBuffer,
-                                                   StagingBufferOffsetArray stagingOffsets);
-
     angle::Result stageSubresourceUpdateFromFramebuffer(const gl::Context *context,
                                                         const gl::ImageIndex &index,
                                                         const gl::Rectangle &sourceArea,
@@ -1686,11 +1687,17 @@ class ImageHelper final : public Resource, public angle::Subject
                                                         FramebufferVk *framebufferVk,
                                                         DynamicBuffer *stagingBufferOverride);
 
-    void stageSubresourceUpdateFromImage(ImageHelper *image,
+    void stageSubresourceUpdateFromImage(RefCounted<ImageHelper> *image,
                                          const gl::ImageIndex &index,
+                                         LevelIndex srcMipLevel,
                                          const gl::Offset &destOffset,
                                          const gl::Extents &glExtents,
                                          const VkImageType imageType);
+
+    // Takes an image and stages a subresource update for each level of it, including its full
+    // extent and all its layers, at the specified GL level.
+    void stageSubresourceUpdatesFromAllImageLevels(RefCounted<ImageHelper> *image,
+                                                   gl::LevelIndex baseLevel);
 
     // Stage a clear to an arbitrary value.
     void stageClear(const gl::ImageIndex &index,
@@ -1704,9 +1711,14 @@ class ImageHelper final : public Resource, public angle::Subject
                                                      const Format &format);
     void stageRobustResourceClear(const gl::ImageIndex &index);
 
-    // Stage the currently allocated image as an update to base level, making this !valid().  This
-    // is used for mipmap generation.
-    void stageSelfForBaseLevel(ContextVk *contextVk);
+    // Stage the currently allocated image as updates to base level and on, making this !valid().
+    // This is used for:
+    //
+    // - Mipmap generation, where levelCount is 1 so only the base level is retained
+    // - Image respecification, where every level (other than those explicitly skipped) is staged
+    void stageSelfAsSubresourceUpdates(ContextVk *contextVk,
+                                       uint32_t levelCount,
+                                       gl::TexLevelMask skipLevelsMask);
 
     // Flush staged updates for a single subresource. Can optionally take a parameter to defer
     // clears to a subsequent RenderPass load op.
@@ -1908,7 +1920,6 @@ class ImageHelper final : public Resource, public angle::Subject
     };
     struct ImageUpdate
     {
-        ImageHelper *image;
         VkImageCopy copyRegion;
     };
 
@@ -1917,7 +1928,7 @@ class ImageHelper final : public Resource, public angle::Subject
         SubresourceUpdate();
         ~SubresourceUpdate();
         SubresourceUpdate(BufferHelper *bufferHelperIn, const VkBufferImageCopy &copyRegion);
-        SubresourceUpdate(ImageHelper *image, const VkImageCopy &copyRegion);
+        SubresourceUpdate(RefCounted<ImageHelper> *imageIn, const VkImageCopy &copyRegion);
         SubresourceUpdate(VkImageAspectFlags aspectFlags,
                           const VkClearValue &clearValue,
                           const gl::ImageIndex &imageIndex);
@@ -1939,7 +1950,8 @@ class ImageHelper final : public Resource, public angle::Subject
             ClearUpdate clear;
             BufferUpdate buffer;
             ImageUpdate image;
-        };
+        } data;
+        RefCounted<ImageHelper> *image;
     };
 
     // Called from flushStagedUpdates, removes updates that are later superseded by another.  This
@@ -1988,6 +2000,11 @@ class ImageHelper final : public Resource, public angle::Subject
     void prependSubresourceUpdate(gl::LevelIndex level, SubresourceUpdate &&update);
     // Whether there are any updates in [start, end).
     bool hasStagedUpdatesInLevels(gl::LevelIndex levelStart, gl::LevelIndex levelEnd) const;
+
+    // Used only for assertions, these functions verify that SubresourceUpdate::image references
+    // have the correct ref count.  This is to prevent accidental leaks.
+    bool validateSubresourceUpdateImageRefConsistent(RefCounted<ImageHelper> *image) const;
+    bool validateSubresourceUpdateImageRefsConsistent() const;
 
     void resetCachedProperties();
     void setEntireContentDefined();
