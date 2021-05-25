@@ -27,7 +27,7 @@ vars = {
   'checkout_android_native_support': 'checkout_android or checkout_chromeos',
 
   # Version of Chromium our Chromium-based DEPS are mirrored from.
-  'chromium_revision': '9b886afc6e7921e41d47194179785146555ec879',
+  'chromium_revision': '2b00cebcd5b524c429778a461d78163b1ee5a964',
   # We never want to checkout chromium,
   # but need a dummy DEPS entry for the autoroller
   'dummy_checkout_chromium': False,
@@ -72,7 +72,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling catapult
   # and whatever else without interference from each other.
-  'catapult_revision': 'a532699d20b76c97dbb0b00e60849dc1e4b2e935',
+  'catapult_revision': 'c1e1d559b46476584ec0eb1d83bd7f43fa5a1b36',
 
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling luci-go
@@ -112,7 +112,7 @@ vars = {
 deps = {
 
   'build': {
-    'url': '{chromium_git}/chromium/src/build.git@c81ea932910009ab8b785ff4a2728a2b3952a5f3',
+    'url': '{chromium_git}/chromium/src/build.git@d23e13a4cf8ac48189cf1e16a4fcb6a28b78bee6',
     'condition': 'not build_with_chromium',
   },
 
@@ -170,7 +170,7 @@ deps = {
   },
 
   'testing': {
-    'url': '{chromium_git}/chromium/src/testing@31a90015ddd2082b1ce8269962603fa244da9c7a',
+    'url': '{chromium_git}/chromium/src/testing@d7dc6149dd036a9e09c2626f1f0e106a8270b488',
     'condition': 'not build_with_chromium',
   },
 
@@ -218,7 +218,7 @@ deps = {
   },
 
   'third_party/android_deps': {
-    'url': '{chromium_git}/chromium/src/third_party/android_deps@2000d0a880f9e4bba0799e815137e2034fdca66d',
+    'url': '{chromium_git}/chromium/src/third_party/android_deps@c65e9394fddd53cdd66ca63eea4074d14a7d9364',
     'condition': 'checkout_android and not build_with_chromium',
   },
 
@@ -320,7 +320,7 @@ deps = {
   },
 
   'third_party/depot_tools': {
-    'url': '{chromium_git}/chromium/tools/depot_tools.git@cd152033d0a33281e28848a551c7a39e93e91e49',
+    'url': '{chromium_git}/chromium/tools/depot_tools.git@fe7d709f053dc0d0fe7e577a0236c6cfc2c27908',
     'condition': 'not build_with_chromium',
   },
 
@@ -473,13 +473,18 @@ deps = {
     'url': '{chromium_git}/external/github.com/Tencent/rapidjson@7484e06c589873e1ed80382d262087e4fa80fb63',
   },
 
+  'third_party/requests/src': {
+    'url': '{chromium_git}/external/github.com/kennethreitz/requests@refs/tags/v2.23.0',
+    'condition': 'checkout_android and not build_with_chromium',
+  },
+
   'third_party/six': {
     'url': '{chromium_git}/chromium/src/third_party/six@c96255caa80a7e0e45de07ce9af088a2ce984b68',
     'condition': 'checkout_android and not build_with_chromium',
   },
 
   'third_party/SwiftShader': {
-    'url': '{swiftshader_git}/SwiftShader@af907708adb3f728b2a28afaa12acbdd7c6d5cc2',
+    'url': '{swiftshader_git}/SwiftShader@0ca03fb2907c0dce78f01f0e9774ed7c832a8883',
     'condition': 'not build_with_chromium',
   },
 
@@ -499,7 +504,7 @@ deps = {
   },
 
   'third_party/vulkan-deps': {
-    'url': '{chromium_git}/vulkan-deps@055e71b2a36738fa4c49bb126222844f67b3bfd6',
+    'url': '{chromium_git}/vulkan-deps@3d799e0e9b08dc14a3efa2e130d288f6ca33d3d0',
     'condition': 'not build_with_chromium',
   },
 
@@ -509,7 +514,7 @@ deps = {
   },
 
   'third_party/zlib': {
-    'url': '{chromium_git}/chromium/src/third_party/zlib@5ce08a7f2e45fd8e38bbfb7fa3d1e83495187b86',
+    'url': '{chromium_git}/chromium/src/third_party/zlib@5b8d433953beb2a75a755ba321a3076b95f7cdb9',
     'condition': 'not build_with_chromium',
   },
 
@@ -519,7 +524,7 @@ deps = {
   },
 
   'tools/clang': {
-    'url': '{chromium_git}/chromium/src/tools/clang.git@f6e0cbe7b7efe0ba94157937d701077aeaab2d5b',
+    'url': '{chromium_git}/chromium/src/tools/clang.git@209b045b46c0cb8893cc9ab9ac3ff54f14a8f359',
     'condition': 'not build_with_chromium',
   },
 
@@ -1187,6 +1192,16 @@ deps = {
       'dep_type': 'cipd',
       'condition': 'checkout_angle_restricted_traces',
   },
+  'src/tests/restricted_traces/pokemon_go': {
+      'packages': [
+        {
+            'package': 'angle/traces/pokemon_go',
+            'version': 'version:1',
+        },
+      ],
+      'dep_type': 'cipd',
+      'condition': 'checkout_angle_restricted_traces',
+  },
   'src/tests/restricted_traces/professional_baseball_spirits': {
       'packages': [
         {
@@ -1291,6 +1306,16 @@ deps = {
       'packages': [
         {
             'package': 'angle/traces/saint_seiya_awakening',
+            'version': 'version:1',
+        },
+      ],
+      'dep_type': 'cipd',
+      'condition': 'checkout_angle_restricted_traces',
+  },
+  'src/tests/restricted_traces/sakura_school_simulator': {
+      'packages': [
+        {
+            'package': 'angle/traces/sakura_school_simulator',
             'version': 'version:1',
         },
       ],

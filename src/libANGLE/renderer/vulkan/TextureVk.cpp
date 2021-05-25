@@ -250,58 +250,6 @@ void Set3DBaseArrayLayerAndLayerCount(VkImageSubresourceLayers *Subresource)
     Subresource->layerCount     = 1;
 }
 
-// Used when the image is being redefined (for example to add mips or change base level) to copy
-// each subresource of the image and stage it for another subresource.  When all subresources
-// are taken care of, the image is recreated.
-angle::Result CopyAndStageImageSubresource(ContextVk *contextVk,
-                                           gl::TextureType textureType,
-                                           bool ignoreLayerCount,
-                                           uint32_t currentLayer,
-                                           vk::LevelIndex srcLevelVk,
-                                           gl::LevelIndex dstLevelGL,
-                                           vk::ImageHelper *srcImage,
-                                           vk::ImageHelper *dstImage)
-{
-    const gl::Extents &baseLevelExtents = srcImage->getLevelExtents(srcLevelVk);
-
-    VkExtent3D updatedExtents;
-    VkOffset3D offset = {};
-    uint32_t layerCount;
-    gl_vk::GetExtentsAndLayerCount(textureType, baseLevelExtents, &updatedExtents, &layerCount);
-    gl::Box area(offset.x, offset.y, offset.z, updatedExtents.width, updatedExtents.height,
-                 updatedExtents.depth);
-    // TODO: Refactor TextureVk::respecifyImageAttributesAndLevels() to avoid this workaround.
-    if (ignoreLayerCount)
-    {
-        layerCount = 1;
-    }
-
-    // Copy from the base level image to the staging buffer
-    vk::BufferHelper *stagingBuffer                   = nullptr;
-    vk::StagingBufferOffsetArray stagingBufferOffsets = {0, 0};
-    size_t bufferSize                                 = 0;
-    ANGLE_TRY(srcImage->copyImageDataToBuffer(contextVk, srcImage->toGLLevel(srcLevelVk),
-                                              layerCount, currentLayer, area, &stagingBuffer,
-                                              &bufferSize, &stagingBufferOffsets, nullptr));
-
-    // Stage an update to the new image
-    ASSERT(stagingBuffer);
-    const gl::InternalFormat &formatInfo =
-        gl::GetSizedInternalFormatInfo(dstImage->getFormat().intendedGLFormat);
-    uint32_t bufferRowLength;
-    uint32_t bufferImageHeight;
-    ANGLE_VK_CHECK_MATH(contextVk,
-                        formatInfo.computeBufferRowLength(updatedExtents.width, &bufferRowLength));
-    ANGLE_VK_CHECK_MATH(
-        contextVk, formatInfo.computeBufferImageHeight(updatedExtents.height, &bufferImageHeight));
-
-    ANGLE_TRY(dstImage->stageSubresourceUpdateFromBuffer(
-        contextVk, bufferSize, dstLevelGL, currentLayer, layerCount, bufferRowLength,
-        bufferImageHeight, updatedExtents, offset, stagingBuffer, stagingBufferOffsets));
-
-    return angle::Result::Continue;
-}
-
 const vk::Format *AdjustStorageViewFormatPerWorkarounds(ContextVk *contextVk,
                                                         const vk::Format *intended)
 {
@@ -1051,17 +999,17 @@ angle::Result TextureVk::copySubImageImplWithTransfer(ContextVk *contextVk,
     }
     else
     {
-        std::unique_ptr<vk::ImageHelper> stagingImage;
-
         // Create a temporary image to stage the copy
-        stagingImage = std::make_unique<vk::ImageHelper>();
+        std::unique_ptr<vk::RefCounted<vk::ImageHelper>> stagingImage;
+        stagingImage = std::make_unique<vk::RefCounted<vk::ImageHelper>>();
 
-        ANGLE_TRY(stagingImage->init2DStaging(contextVk, renderer->getMemoryProperties(),
+        ANGLE_TRY(
+            stagingImage->get().init2DStaging(contextVk, renderer->getMemoryProperties(),
                                               gl::Extents(sourceBox.width, sourceBox.height, 1),
                                               destFormat, kTransferStagingImageFlags, layerCount));
 
         access.onImageTransferWrite(gl::LevelIndex(0), 1, 0, layerCount, VK_IMAGE_ASPECT_COLOR_BIT,
-                                    stagingImage.get());
+                                    &stagingImage->get());
 
         vk::CommandBuffer *commandBuffer;
         ANGLE_TRY(contextVk->getOutsideRenderPassCommandBuffer(access, &commandBuffer));
@@ -1078,7 +1026,7 @@ angle::Result TextureVk::copySubImageImplWithTransfer(ContextVk *contextVk,
             extents.depth = 1;
         }
 
-        vk::ImageHelper::Copy(srcImage, stagingImage.get(), srcOffset, gl::kOffsetZero, extents,
+        vk::ImageHelper::Copy(srcImage, &stagingImage->get(), srcOffset, gl::kOffsetZero, extents,
                               srcSubresource, destSubresource, commandBuffer);
 
         // Stage the copy for when the image storage is actually created.
@@ -1086,7 +1034,8 @@ angle::Result TextureVk::copySubImageImplWithTransfer(ContextVk *contextVk,
         const gl::ImageIndex stagingIndex =
             gl::ImageIndex::Make2DArrayRange(level.get(), baseLayer, layerCount);
         mImage->stageSubresourceUpdateFromImage(stagingImage.release(), stagingIndex,
-                                                destOffsetModified, extents, imageType);
+                                                vk::LevelIndex(0), destOffsetModified, extents,
+                                                imageType);
     }
 
     return angle::Result::Continue;
@@ -1201,15 +1150,15 @@ angle::Result TextureVk::copySubImageImplWithDraw(ContextVk *contextVk,
     }
     else
     {
-        std::unique_ptr<vk::ImageHelper> stagingImage;
-
         GLint samples                      = srcImage->getSamples();
         gl::TextureType stagingTextureType = vk::Get2DTextureType(layerCount, samples);
 
         // Create a temporary image to stage the copy
-        stagingImage = std::make_unique<vk::ImageHelper>();
+        std::unique_ptr<vk::RefCounted<vk::ImageHelper>> stagingImage;
+        stagingImage = std::make_unique<vk::RefCounted<vk::ImageHelper>>();
 
-        ANGLE_TRY(stagingImage->init2DStaging(contextVk, renderer->getMemoryProperties(),
+        ANGLE_TRY(
+            stagingImage->get().init2DStaging(contextVk, renderer->getMemoryProperties(),
                                               gl::Extents(sourceBox.width, sourceBox.height, 1),
                                               destFormat, kDrawStagingImageFlags, layerCount));
 
@@ -1223,12 +1172,12 @@ angle::Result TextureVk::copySubImageImplWithDraw(ContextVk *contextVk,
 
             // Create a temporary view for this layer.
             vk::ImageView stagingView;
-            ANGLE_TRY(stagingImage->initLayerImageView(
+            ANGLE_TRY(stagingImage->get().initLayerImageView(
                 contextVk, stagingTextureType, VK_IMAGE_ASPECT_COLOR_BIT, gl::SwizzleState(),
                 &stagingView, vk::LevelIndex(0), 1, layerIndex, 1,
                 gl::SrgbWriteControlMode::Default));
 
-            ANGLE_TRY(utilsVk.copyImage(contextVk, stagingImage.get(), &stagingView, srcImage,
+            ANGLE_TRY(utilsVk.copyImage(contextVk, &stagingImage->get(), &stagingView, srcImage,
                                         srcView, params));
 
             // Queue the resource for cleanup as soon as the copy above is finished.  There's no
@@ -1255,7 +1204,8 @@ angle::Result TextureVk::copySubImageImplWithDraw(ContextVk *contextVk,
         const gl::ImageIndex stagingIndex =
             gl::ImageIndex::Make2DArrayRange(level.get(), baseLayer, layerCount);
         mImage->stageSubresourceUpdateFromImage(stagingImage.release(), stagingIndex,
-                                                destOffsetModified, extents, imageType);
+                                                vk::LevelIndex(0), destOffsetModified, extents,
+                                                imageType);
     }
 
     return angle::Result::Continue;
@@ -1985,33 +1935,56 @@ angle::Result TextureVk::copyAndStageImageData(ContextVk *contextVk,
 {
     // Preserve the data in the Vulkan image.  GL texture's staged updates that correspond to
     // levels outside the range of the Vulkan image will remain intact.
+    RendererVk *renderer = contextVk->getRenderer();
 
-    // The staged updates won't be applied until the image has the requisite mip levels
-    for (uint32_t layer = 0; layer < srcImage->getLayerCount(); layer++)
+    // This path is only called when switching from !owned to owned, in which case if any level was
+    // redefined it's already released and deleted by TextureVk::redefineLevel().
+    ASSERT(!mRedefinedLevels.any());
+
+    // Create a temp copy of srcImage for staging.
+    std::unique_ptr<vk::RefCounted<vk::ImageHelper>> stagingImage;
+    stagingImage = std::make_unique<vk::RefCounted<vk::ImageHelper>>();
+
+    const uint32_t levelCount = srcImage->getLevelCount();
+    const uint32_t layerCount = srcImage->getLayerCount();
+
+    ANGLE_TRY(stagingImage->get().initStaging(contextVk, renderer->getMemoryProperties(),
+                                              srcImage->getType(), srcImage->getExtents(),
+                                              srcImage->getFormat(), srcImage->getSamples(),
+                                              kTransferStagingImageFlags, levelCount, layerCount));
+
+    // Copy the src image wholly into the staging image
+    const VkImageAspectFlags aspectFlags = srcImage->getAspectFlags();
+
+    vk::CommandBufferAccess access;
+    access.onImageTransferWrite(gl::LevelIndex(0), levelCount, 0, layerCount, aspectFlags,
+                                &stagingImage->get());
+    access.onImageTransferRead(aspectFlags, srcImage);
+
+    vk::CommandBuffer *commandBuffer;
+    ANGLE_TRY(contextVk->getOutsideRenderPassCommandBuffer(access, &commandBuffer));
+
+    VkImageCopy copyRegion               = {};
+    copyRegion.srcSubresource.aspectMask = aspectFlags;
+    copyRegion.srcSubresource.layerCount = layerCount;
+    copyRegion.dstSubresource            = copyRegion.srcSubresource;
+
+    for (vk::LevelIndex levelVk(0); levelVk < vk::LevelIndex(levelCount); ++levelVk)
     {
-        for (vk::LevelIndex levelVk(0); levelVk < vk::LevelIndex(srcImage->getLevelCount());
-             ++levelVk)
-        {
-            // Vulkan level 0 previously aligned with whatever the base level was.
-            gl::LevelIndex levelGL = vk_gl::GetLevelIndex(levelVk, previousFirstAllocateLevel);
+        gl::Extents levelExtents = srcImage->getLevelExtents(levelVk);
 
-            if (mRedefinedLevels.test(levelVk.get()))
-            {
-                // Note: if this level is incompatibly redefined, there will necessarily be a
-                // staged update, and the contents of the image are to be thrown away.
-                ASSERT(srcImage->hasStagedUpdatesForSubresource(levelGL, layer, 1));
-                continue;
-            }
+        copyRegion.srcSubresource.mipLevel = levelVk.get();
+        copyRegion.dstSubresource.mipLevel = levelVk.get();
+        gl_vk::GetExtent(levelExtents, &copyRegion.extent);
 
-            ASSERT(!srcImage->hasStagedUpdatesForSubresource(levelGL, layer, 1));
-
-            // Pull data from the current image and stage it as an update for the new image
-
-            // First we populate the staging buffer with current level data
-            ANGLE_TRY(CopyAndStageImageSubresource(contextVk, mState.getType(), true, layer,
-                                                   levelVk, levelGL, srcImage, dstImage));
-        }
+        commandBuffer->copyImage(srcImage->getImage(), srcImage->getCurrentLayout(),
+                                 stagingImage->get().getImage(),
+                                 stagingImage->get().getCurrentLayout(), 1, &copyRegion);
     }
+
+    // Stage the staging image in the destination
+    dstImage->stageSubresourceUpdatesFromAllImageLevels(stagingImage.release(),
+                                                        previousFirstAllocateLevel);
 
     return angle::Result::Continue;
 }
@@ -2044,19 +2017,17 @@ angle::Result TextureVk::respecifyImageStorageAndLevels(ContextVk *contextVk,
         ANGLE_TRY(flushImageStagedUpdates(contextVk));
     }
 
-    // Cache values needed for copy and stage operations
-    bool ownsCurrentImage     = mOwnsImage;
-    const vk::Format &format  = mImage->getFormat();
-    vk::ImageHelper *srcImage = mImage;
-    vk::ImageHelper *dstImage = mImage;
-
-    if (!ownsCurrentImage)
+    if (!mOwnsImage)
     {
+        // Cache values needed for copy and stage operations
+        vk::ImageHelper *srcImage = mImage;
+        const vk::Format &format  = mImage->getFormat();
+
         // If any level was redefined but the image was not owned by the Texture, it's already
         // released and deleted by TextureVk::redefineLevel().
         ASSERT(!mRedefinedLevels.any());
 
-        // If we din't own the image, release the current and create a new one
+        // If we didn't own the image, release the current and create a new one
         releaseImage(contextVk);
 
         // Create the image helper
@@ -2083,23 +2054,22 @@ angle::Result TextureVk::respecifyImageStorageAndLevels(ContextVk *contextVk,
                                 baseLevelExtents, mState.getEffectiveBaseLevel(), levelCount));
         }
 
-        // Set the newly created mImage as the destination for the staging operation
-        dstImage = mImage;
+        // Make a copy of the old image (that's being released) and stage that as an update to the
+        // new image.
+        ANGLE_TRY(copyAndStageImageData(contextVk, previousFirstAllocateLevel, srcImage, mImage));
     }
-
-    // Transfer the entire contents of the source image into the destination image.
-    ANGLE_TRY(copyAndStageImageData(contextVk, previousFirstAllocateLevel, srcImage, dstImage));
-
-    // Now that we've staged all the updates, release the current image so that it will be
-    // recreated with the correct number of mip levels, base level, and max level.
-    // Do this iff we owned the image and didn't create a new one.
-    if (ownsCurrentImage)
+    else
     {
+        // Make the image stage itself as updates to its levels.
+        mImage->stageSelfAsSubresourceUpdates(contextVk, mImage->getLevelCount(), mRedefinedLevels);
+
+        // Release the current image so that it will be recreated with the correct number of mip
+        // levels, base level, and max level.
         releaseImage(contextVk);
 
         if (!mState.getImmutableFormat())
         {
-            dstImage->setFirstAllocatedLevel(baseLevel);
+            mImage->setFirstAllocatedLevel(baseLevel);
         }
     }
 
@@ -2445,8 +2415,8 @@ angle::Result TextureVk::syncState(const gl::Context *context,
     // For immutable texture, base level does not affect allocation. Only usage flags are. If usage
     // flag changed, we respecify image storage early on. This makes the code more reliable and also
     // better performance wise. Otherwise, we will try to preserve base level by calling
-    // stageSelfForBaseLevel and then later on find out the mImageUsageFlags changed and the whole
-    // thing has to be respecified.
+    // stageSelfAsSubresourceUpdates and then later on find out the mImageUsageFlags changed and the
+    // whole thing has to be respecified.
     if (mState.getImmutableFormat() &&
         (oldUsageFlags != mImageUsageFlags || oldCreateFlags != mImageCreateFlags))
     {
@@ -2485,14 +2455,14 @@ angle::Result TextureVk::syncState(const gl::Context *context,
     {
         ASSERT(mOwnsImage);
         // Immutable texture is not expected to reach here. The usage flag change should have
-        // handled earlier and level count change should not need to reallocate
+        // been handled earlier and level count change should not need to reallocate
         ASSERT(!mState.getImmutableFormat());
 
         // Flush staged updates to the base level of the image.  Note that updates to the rest of
         // the levels have already been discarded through the |removeStagedUpdates| call above.
         ANGLE_TRY(flushImageStagedUpdates(contextVk));
 
-        mImage->stageSelfForBaseLevel(contextVk);
+        mImage->stageSelfAsSubresourceUpdates(contextVk, 1, {});
 
         // Release views and render targets created for the old image.
         releaseImage(contextVk);

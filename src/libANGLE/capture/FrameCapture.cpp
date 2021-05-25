@@ -398,7 +398,7 @@ void WriteStringPointerParamReplay(DataTracker *dataTracker,
         counter = dataTracker->getCounters().getAndIncrement(call.entryPoint, param.name);
         dataTracker->getStringCounters().setStringCounter(strings, counter);
 
-        header << "const char *";
+        header << "const char* const ";
         WriteParamStaticVarName(call, param, counter, header);
         header << "[] = { \n";
 
@@ -926,6 +926,21 @@ void MaybeResetResources(std::stringstream &out,
 
             break;
         }
+        case ResourceIDType::ShaderProgram:
+        {
+            ProgramSet &newPrograms = resourceTracker->getNewPrograms();
+
+            // If we have any new programs created and not deleted during the run, delete them now
+            for (const auto &newProgram : newPrograms)
+            {
+                out << "    glDeleteProgram(gShaderProgramMap[" << newProgram.value << "]);\n";
+            }
+
+            // TODO (http://anglebug.com/5968): Handle programs that need regen
+            // This would only happen if a starting program was deleted during the run
+            ASSERT(resourceTracker->getProgramsToRegen().empty());
+            break;
+        }
         default:
             // TODO (http://anglebug.com/4599): Reset more than just buffers
             break;
@@ -1154,196 +1169,6 @@ void WriteCppReplay(bool compression,
 
         SaveFileHelper saveCpp(cppFilePath);
         saveCpp << headerString << "\n" << outString;
-    }
-}
-
-void WriteCppReplayIndexFiles(bool compression,
-                              const std::string &outDir,
-                              const gl::Context *context,
-                              const std::string &captureLabel,
-                              uint32_t frameCount,
-                              const SurfaceDimensions &drawSurfaceDimensions,
-                              const HasResourceTypeMap &hasResourceType,
-                              bool serializeStateEnabled,
-                              bool writeResetContextCall,
-                              std::vector<uint8_t> &binaryData)
-{
-    const gl::ContextID contextId       = context->id();
-    const egl::Config *config           = context->getConfig();
-    const egl::AttributeMap &attributes = context->getDisplay()->getAttributeMap();
-
-    std::stringstream header;
-    std::stringstream source;
-
-    header << "#pragma once\n";
-    header << "\n";
-    header << "#include <EGL/egl.h>\n";
-    header << "#include <cstdint>\n";
-    header << "\n";
-
-    if (!captureLabel.empty())
-    {
-        header << "namespace " << captureLabel << "\n";
-        header << "{\n";
-    }
-    header << "// Begin Trace Metadata\n";
-    header << "#define ANGLE_REPLAY_VERSION";
-    if (!captureLabel.empty())
-    {
-        std::string captureLabelUpper = captureLabel;
-        angle::ToUpper(&captureLabelUpper);
-        header << "_" << captureLabelUpper;
-    }
-    header << " " << ANGLE_REVISION << "\n";
-    header << "constexpr uint32_t kReplayContextClientMajorVersion = "
-           << context->getClientMajorVersion() << ";\n";
-    header << "constexpr uint32_t kReplayContextClientMinorVersion = "
-           << context->getClientMinorVersion() << ";\n";
-    header << "constexpr EGLint kReplayPlatformType = "
-           << attributes.getAsInt(EGL_PLATFORM_ANGLE_TYPE_ANGLE) << ";\n";
-    header << "constexpr EGLint kReplayDeviceType = "
-           << attributes.getAsInt(EGL_PLATFORM_ANGLE_DEVICE_TYPE_ANGLE) << ";\n";
-    header << "constexpr uint32_t kReplayFrameStart = 1;\n";
-    header << "constexpr uint32_t kReplayFrameEnd = " << frameCount << ";\n";
-    header << "constexpr EGLint kReplayDrawSurfaceWidth = "
-           << drawSurfaceDimensions.at(contextId).width << ";\n";
-    header << "constexpr EGLint kReplayDrawSurfaceHeight = "
-           << drawSurfaceDimensions.at(contextId).height << ";\n";
-    header << "constexpr EGLint kDefaultFramebufferRedBits = "
-           << (config ? std::to_string(config->redSize) : "EGL_DONT_CARE") << ";\n";
-    header << "constexpr EGLint kDefaultFramebufferGreenBits = "
-           << (config ? std::to_string(config->greenSize) : "EGL_DONT_CARE") << ";\n";
-    header << "constexpr EGLint kDefaultFramebufferBlueBits = "
-           << (config ? std::to_string(config->blueSize) : "EGL_DONT_CARE") << ";\n";
-    header << "constexpr EGLint kDefaultFramebufferAlphaBits = "
-           << (config ? std::to_string(config->alphaSize) : "EGL_DONT_CARE") << ";\n";
-    header << "constexpr EGLint kDefaultFramebufferDepthBits = "
-           << (config ? std::to_string(config->depthSize) : "EGL_DONT_CARE") << ";\n";
-    header << "constexpr EGLint kDefaultFramebufferStencilBits = "
-           << (config ? std::to_string(config->stencilSize) : "EGL_DONT_CARE") << ";\n";
-    header << "constexpr bool kIsBinaryDataCompressed = " << (compression ? "true" : "false")
-           << ";\n";
-    header << "constexpr bool kAreClientArraysEnabled = "
-           << (context->getState().areClientArraysEnabled() ? "true" : "false") << ";\n";
-    header << "constexpr bool kbindGeneratesResources = "
-           << (context->getState().isBindGeneratesResourceEnabled() ? "true" : "false") << ";\n";
-    header << "constexpr bool kWebGLCompatibility = "
-           << (context->getState().getExtensions().webglCompatibility ? "true" : "false") << ";\n";
-    header << "constexpr bool kRobustResourceInit = "
-           << (context->getState().isRobustResourceInitEnabled() ? "true" : "false") << ";\n";
-
-    header << "// End Trace Metadata\n";
-    header << "\n";
-    for (uint32_t frameIndex = 1; frameIndex <= frameCount; ++frameIndex)
-    {
-        header << "void " << FmtReplayFunction(contextId, frameIndex) << ";\n";
-    }
-    header << "\n";
-    if (serializeStateEnabled)
-    {
-        for (uint32_t frameIndex = 1; frameIndex <= frameCount; ++frameIndex)
-        {
-            header << "const char *" << FmtGetSerializedContextStateFunction(contextId, frameIndex)
-                   << ";\n";
-        }
-        header << "\n";
-    }
-
-    source << "#include \"" << FmtCapturePrefix(contextId, captureLabel) << ".h\"\n";
-    source << "#include \"trace_fixture.h\"\n";
-    source << "\n";
-
-    if (!captureLabel.empty())
-    {
-        source << "using namespace " << captureLabel << ";\n";
-        source << "\n";
-    }
-
-    source << "extern \"C\" {\n";
-    source << "void ReplayFrame(uint32_t frameIndex)\n";
-    source << "{\n";
-    source << "    switch (frameIndex)\n";
-    source << "    {\n";
-    for (uint32_t frameIndex = 1; frameIndex <= frameCount; ++frameIndex)
-    {
-        source << "        case " << frameIndex << ":\n";
-        source << "            " << FmtReplayFunction(contextId, frameIndex) << ";\n";
-        source << "            break;\n";
-    }
-    source << "        default:\n";
-    source << "            break;\n";
-    source << "    }\n";
-    source << "}\n";
-    source << "\n";
-
-    if (writeResetContextCall)
-    {
-        source << "void ResetReplay()\n";
-        source << "{\n";
-        source << "    // Reset context is empty because context is destroyed before end "
-                  "frame is reached\n";
-        source << "}\n";
-        source << "\n";
-    }
-
-    if (serializeStateEnabled)
-    {
-        source << "const char *GetSerializedContextState(uint32_t frameIndex)\n";
-        source << "{\n";
-        source << "    switch (frameIndex)\n";
-        source << "    {\n";
-        for (uint32_t frameIndex = 1; frameIndex <= frameCount; ++frameIndex)
-        {
-            source << "        case " << frameIndex << ":\n";
-            source << "            return "
-                   << FmtGetSerializedContextStateFunction(contextId, frameIndex) << ";\n";
-        }
-        source << "        default:\n";
-        source << "            return \"\";\n";
-        source << "    }\n";
-        source << "}\n";
-        source << "\n";
-    }
-
-    source << "}  // extern \"C\"\n";
-
-    if (!captureLabel.empty())
-    {
-        header << "} // namespace " << captureLabel << "\n";
-    }
-
-    {
-        std::string headerContents = header.str();
-
-        std::stringstream headerPathStream;
-        headerPathStream << outDir << FmtCapturePrefix(contextId, captureLabel) << ".h";
-        std::string headerPath = headerPathStream.str();
-
-        SaveFileHelper saveHeader(headerPath);
-        saveHeader << headerContents;
-    }
-
-    {
-        std::string sourceContents = source.str();
-
-        std::stringstream sourcePathStream;
-        sourcePathStream << outDir << FmtCapturePrefix(contextId, captureLabel) << ".cpp";
-        std::string sourcePath = sourcePathStream.str();
-
-        SaveFileHelper saveSource(sourcePath);
-        saveSource << sourceContents;
-    }
-
-    {
-        std::stringstream indexPathStream;
-        indexPathStream << outDir << FmtCapturePrefix(contextId, captureLabel) << "_files.txt";
-        std::string indexPath = indexPathStream.str();
-
-        SaveFileHelper saveIndex(indexPath);
-        for (uint32_t frameIndex = 1; frameIndex <= frameCount; ++frameIndex)
-        {
-            saveIndex << GetCaptureFileName(contextId, captureLabel, frameIndex, ".cpp") << "\n";
-        }
     }
 }
 
@@ -2932,6 +2757,7 @@ void CaptureMidExecutionSetup(const gl::Context *context,
         }
 
         resourceTracker->onShaderProgramAccess(id);
+        resourceTracker->getStartingPrograms().insert(id);
     }
 
     for (const auto &ppoIterator : *programPipelineManager)
@@ -3592,6 +3418,13 @@ bool SkipCall(EntryPoint entryPoint)
             // - EXT_debug_label
             // - EXT_debug_marker
             // There is no need to capture these for replaying a trace in our harness
+            return true;
+
+        case EntryPoint::GLGetActiveUniform:
+            // Skip this call because:
+            // - We don't use the return values from this call.
+            // - Active uniform counts can vary between platforms due to cross stage optimizations
+            //   and asking about uniforms above GL_ACTIVE_UNIFORMS triggers errors.
             return true;
 
         default:
@@ -4347,6 +4180,35 @@ void FrameCapture::maybeCapturePreCallUpdates(const gl::Context *context, CallCa
                 context->getShareGroup()->getFrameCaptureShared();
             frameCaptureShared->setShaderSource(shader->getHandle(), shader->getSourceString());
             frameCaptureShared->setProgramSources(programID, GetAttachedProgramSources(program));
+
+            if (isCaptureActive())
+            {
+                mResourceTracker.setCreatedProgram(programID);
+            }
+            break;
+        }
+
+        case EntryPoint::GLCreateProgram:
+        {
+            // If we're capturing, track which programs have been created
+            if (isCaptureActive())
+            {
+                gl::ShaderProgramID programID = {call.params.getReturnValue().value.GLuintVal};
+                mResourceTracker.setCreatedProgram(programID);
+            }
+            break;
+        }
+
+        case EntryPoint::GLDeleteProgram:
+        {
+            // If we're capturing, track which programs have been deleted
+            if (isCaptureActive())
+            {
+                const ParamCapture &param =
+                    call.params.getParam("programPacked", ParamType::TShaderProgramID, 0);
+
+                mResourceTracker.setDeletedProgram(param.value.ShaderProgramIDVal);
+            }
             break;
         }
 
@@ -4758,9 +4620,7 @@ void FrameCapture::onEndFrame(const gl::Context *context)
         if (mFrameIndex == mCaptureEndFrame)
         {
             // Save the index files after the last frame.
-            WriteCppReplayIndexFiles(mCompression, mOutDirectory, context, mCaptureLabel,
-                                     getFrameCount(), mDrawSurfaceDimensions, mHasResourceType,
-                                     mSerializeStateEnabled, false, mBinaryData);
+            writeCppReplayIndexFiles(context, false);
             if (!mBinaryData.empty())
             {
                 SaveBinaryData(mCompression, mOutDirectory, context->id(), mCaptureLabel,
@@ -4808,9 +4668,7 @@ void FrameCapture::onDestroyContext(const gl::Context *context)
         // It doesnt make sense to write the index files when no frame has been recorded
         mFrameIndex -= 1;
         mCaptureEndFrame = mFrameIndex;
-        WriteCppReplayIndexFiles(mCompression, mOutDirectory, context, mCaptureLabel,
-                                 getFrameCount(), mDrawSurfaceDimensions, mHasResourceType,
-                                 mSerializeStateEnabled, true, mBinaryData);
+        writeCppReplayIndexFiles(context, true);
         if (!mBinaryData.empty())
         {
             SaveBinaryData(mCompression, mOutDirectory, context->id(), mCaptureLabel, mBinaryData);
@@ -4887,13 +4745,16 @@ void ResourceTracker::setDeletedBuffer(gl::BufferID id)
         return;
     }
 
-    // Ensure this buffer was in our starting set
-    // It's possible this could fire if the app deletes buffers that were never generated
-    ASSERT(mStartingBuffers.empty() || (mStartingBuffers.find(id) != mStartingBuffers.end()));
+    if (mStartingBuffers.find(id) != mStartingBuffers.end())
+    {
+        // The app is deleting a buffer we started with, we need to regen on loop
+        mBuffersToRegen.insert(id);
+        mBuffersToRestore.insert(id);
+    }
 
-    // In this case, the app is deleting a buffer we started with, we need to regen on loop
-    mBuffersToRegen.insert(id);
-    mBuffersToRestore.insert(id);
+    // If none of the above is true, the app is deleting a buffer that was never genned.
+    // This is allowed by the spec for DeleteBuffers:
+    //    Unused names in buffers are silently ignored, as is the value zero.
 }
 
 void ResourceTracker::setDeletedFenceSync(GLsync sync)
@@ -4907,6 +4768,40 @@ void ResourceTracker::setDeletedFenceSync(GLsync sync)
 
     // In this case, the app is deleting a fence sync we started with, we need to regen on loop.
     mFenceSyncsToRegen.insert(sync);
+}
+
+void ResourceTracker::setCreatedProgram(gl::ShaderProgramID id)
+{
+    if (mStartingPrograms.find(id) == mStartingPrograms.end())
+    {
+        // This is a program created after MEC was initialized, track it
+        mNewPrograms.insert(id);
+        return;
+    }
+}
+
+void ResourceTracker::setDeletedProgram(gl::ShaderProgramID id)
+{
+    if (id.value == 0)
+    {
+        // Ignore program ID 0
+        return;
+    }
+
+    if (mNewPrograms.find(id) != mNewPrograms.end())
+    {
+        // This is a program created after MEC was initialized, just clear it, since there will be
+        // no actions required for it to return to starting state.
+        mNewPrograms.erase(id);
+        return;
+    }
+
+    // Ensure this program was in our starting set
+    // It's possible this could fire if the app deletes programs that were never generated
+    ASSERT(mStartingPrograms.empty() || (mStartingPrograms.find(id) != mStartingPrograms.end()));
+
+    // In this case, the app is deleting a program we started with, we need to regen on loop
+    mProgramsToRegen.insert(id);
 }
 
 void ResourceTracker::setGennedBuffer(gl::BufferID id)
@@ -5003,6 +4898,190 @@ void FrameCapture::replay(gl::Context *context)
         }
 
         ReplayCall(context, &replayContext, call);
+    }
+}
+
+void FrameCapture::writeCppReplayIndexFiles(const gl::Context *context, bool writeResetContextCall)
+{
+    const gl::ContextID contextId       = context->id();
+    const egl::Config *config           = context->getConfig();
+    const egl::AttributeMap &attributes = context->getDisplay()->getAttributeMap();
+
+    unsigned frameCount = getFrameCount();
+
+    std::stringstream header;
+    std::stringstream source;
+
+    header << "#pragma once\n";
+    header << "\n";
+    header << "#include <EGL/egl.h>\n";
+    header << "#include <cstdint>\n";
+    header << "\n";
+
+    if (!mCaptureLabel.empty())
+    {
+        header << "namespace " << mCaptureLabel << "\n";
+        header << "{\n";
+    }
+    header << "// Begin Trace Metadata\n";
+    header << "#define ANGLE_REPLAY_VERSION";
+    if (!mCaptureLabel.empty())
+    {
+        std::string captureLabelUpper = mCaptureLabel;
+        angle::ToUpper(&captureLabelUpper);
+        header << "_" << captureLabelUpper;
+    }
+    header << " " << ANGLE_REVISION << "\n";
+    header << "constexpr uint32_t kReplayContextClientMajorVersion = "
+           << context->getClientMajorVersion() << ";\n";
+    header << "constexpr uint32_t kReplayContextClientMinorVersion = "
+           << context->getClientMinorVersion() << ";\n";
+    header << "constexpr EGLint kReplayPlatformType = "
+           << attributes.getAsInt(EGL_PLATFORM_ANGLE_TYPE_ANGLE) << ";\n";
+    header << "constexpr EGLint kReplayDeviceType = "
+           << attributes.getAsInt(EGL_PLATFORM_ANGLE_DEVICE_TYPE_ANGLE) << ";\n";
+    header << "constexpr uint32_t kReplayFrameStart = 1;\n";
+    header << "constexpr uint32_t kReplayFrameEnd = " << frameCount << ";\n";
+    header << "constexpr EGLint kReplayDrawSurfaceWidth = "
+           << mDrawSurfaceDimensions.at(contextId).width << ";\n";
+    header << "constexpr EGLint kReplayDrawSurfaceHeight = "
+           << mDrawSurfaceDimensions.at(contextId).height << ";\n";
+    header << "constexpr EGLint kDefaultFramebufferRedBits = "
+           << (config ? std::to_string(config->redSize) : "EGL_DONT_CARE") << ";\n";
+    header << "constexpr EGLint kDefaultFramebufferGreenBits = "
+           << (config ? std::to_string(config->greenSize) : "EGL_DONT_CARE") << ";\n";
+    header << "constexpr EGLint kDefaultFramebufferBlueBits = "
+           << (config ? std::to_string(config->blueSize) : "EGL_DONT_CARE") << ";\n";
+    header << "constexpr EGLint kDefaultFramebufferAlphaBits = "
+           << (config ? std::to_string(config->alphaSize) : "EGL_DONT_CARE") << ";\n";
+    header << "constexpr EGLint kDefaultFramebufferDepthBits = "
+           << (config ? std::to_string(config->depthSize) : "EGL_DONT_CARE") << ";\n";
+    header << "constexpr EGLint kDefaultFramebufferStencilBits = "
+           << (config ? std::to_string(config->stencilSize) : "EGL_DONT_CARE") << ";\n";
+    header << "constexpr bool kIsBinaryDataCompressed = " << (mCompression ? "true" : "false")
+           << ";\n";
+    header << "constexpr bool kAreClientArraysEnabled = "
+           << (context->getState().areClientArraysEnabled() ? "true" : "false") << ";\n";
+    header << "constexpr bool kbindGeneratesResources = "
+           << (context->getState().isBindGeneratesResourceEnabled() ? "true" : "false") << ";\n";
+    header << "constexpr bool kWebGLCompatibility = "
+           << (context->getState().getExtensions().webglCompatibility ? "true" : "false") << ";\n";
+    header << "constexpr bool kRobustResourceInit = "
+           << (context->getState().isRobustResourceInitEnabled() ? "true" : "false") << ";\n";
+
+    header << "// End Trace Metadata\n";
+    header << "\n";
+    for (uint32_t frameIndex = 1; frameIndex <= frameCount; ++frameIndex)
+    {
+        header << "void " << FmtReplayFunction(contextId, frameIndex) << ";\n";
+    }
+    header << "\n";
+    if (mSerializeStateEnabled)
+    {
+        for (uint32_t frameIndex = 1; frameIndex <= frameCount; ++frameIndex)
+        {
+            header << "const char *" << FmtGetSerializedContextStateFunction(contextId, frameIndex)
+                   << ";\n";
+        }
+        header << "\n";
+    }
+
+    source << "#include \"" << FmtCapturePrefix(contextId, mCaptureLabel) << ".h\"\n";
+    source << "#include \"trace_fixture.h\"\n";
+    source << "\n";
+
+    if (!mCaptureLabel.empty())
+    {
+        source << "using namespace " << mCaptureLabel << ";\n";
+        source << "\n";
+    }
+
+    source << "extern \"C\" {\n";
+    source << "void ReplayFrame(uint32_t frameIndex)\n";
+    source << "{\n";
+    source << "    switch (frameIndex)\n";
+    source << "    {\n";
+    for (uint32_t frameIndex = 1; frameIndex <= frameCount; ++frameIndex)
+    {
+        source << "        case " << frameIndex << ":\n";
+        source << "            " << FmtReplayFunction(contextId, frameIndex) << ";\n";
+        source << "            break;\n";
+    }
+    source << "        default:\n";
+    source << "            break;\n";
+    source << "    }\n";
+    source << "}\n";
+    source << "\n";
+
+    if (writeResetContextCall)
+    {
+        source << "void ResetReplay()\n";
+        source << "{\n";
+        source << "    // Reset context is empty because context is destroyed before end "
+                  "frame is reached\n";
+        source << "}\n";
+        source << "\n";
+    }
+
+    if (mSerializeStateEnabled)
+    {
+        source << "const char *GetSerializedContextState(uint32_t frameIndex)\n";
+        source << "{\n";
+        source << "    switch (frameIndex)\n";
+        source << "    {\n";
+        for (uint32_t frameIndex = 1; frameIndex <= frameCount; ++frameIndex)
+        {
+            source << "        case " << frameIndex << ":\n";
+            source << "            return "
+                   << FmtGetSerializedContextStateFunction(contextId, frameIndex) << ";\n";
+        }
+        source << "        default:\n";
+        source << "            return \"\";\n";
+        source << "    }\n";
+        source << "}\n";
+        source << "\n";
+    }
+
+    source << "}  // extern \"C\"\n";
+
+    if (!mCaptureLabel.empty())
+    {
+        header << "} // namespace " << mCaptureLabel << "\n";
+    }
+
+    {
+        std::string headerContents = header.str();
+
+        std::stringstream headerPathStream;
+        headerPathStream << mOutDirectory << FmtCapturePrefix(contextId, mCaptureLabel) << ".h";
+        std::string headerPath = headerPathStream.str();
+
+        SaveFileHelper saveHeader(headerPath);
+        saveHeader << headerContents;
+    }
+
+    {
+        std::string sourceContents = source.str();
+
+        std::stringstream sourcePathStream;
+        sourcePathStream << mOutDirectory << FmtCapturePrefix(contextId, mCaptureLabel) << ".cpp";
+        std::string sourcePath = sourcePathStream.str();
+
+        SaveFileHelper saveSource(sourcePath);
+        saveSource << sourceContents;
+    }
+
+    {
+        std::stringstream indexPathStream;
+        indexPathStream << mOutDirectory << FmtCapturePrefix(contextId, mCaptureLabel)
+                        << "_files.txt";
+        std::string indexPath = indexPathStream.str();
+
+        SaveFileHelper saveIndex(indexPath);
+        for (uint32_t frameIndex = 1; frameIndex <= frameCount; ++frameIndex)
+        {
+            saveIndex << GetCaptureFileName(contextId, mCaptureLabel, frameIndex, ".cpp") << "\n";
+        }
     }
 }
 

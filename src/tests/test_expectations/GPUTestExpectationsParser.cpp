@@ -74,6 +74,7 @@ enum Token
     // Android devices
     kConfigNexus5X,
     kConfigPixel2,
+    kConfigPixel4,
     // GPU devices
     kConfigNVIDIAQuadroP400,
     // PreRotation
@@ -171,6 +172,7 @@ constexpr TokenInfo kTokenData[kNumberOfTokens] = {
     {"metal", GPUTestConfig::kConditionMetal},
     {"nexus5x", GPUTestConfig::kConditionNexus5X},
     {"pixel2orxl", GPUTestConfig::kConditionPixel2OrXL},
+    {"pixel4orxl", GPUTestConfig::kConditionPixel4OrXL},
     {"quadrop400", GPUTestConfig::kConditionNVIDIAQuadroP400},
     {"prerotation", GPUTestConfig::kConditionPreRotation},
     {"prerotation90", GPUTestConfig::kConditionPreRotation90},
@@ -235,6 +237,38 @@ inline Token ParseToken(const std::string &word)
             return static_cast<Token>(i);
     }
     return kTokenWord;
+}
+
+bool ConditionArrayIsSubset(const GPUTestConfig::ConditionArray &subset,
+                            const GPUTestConfig::ConditionArray &superset)
+{
+    for (size_t subsetCondition : subset)
+    {
+        bool foundCondition = false;
+        for (size_t supersetCondition : superset)
+        {
+            if (subsetCondition == supersetCondition)
+            {
+                foundCondition = true;
+                break;
+            }
+        }
+
+        if (!foundCondition)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+// If one array is completely contained within the other, then we say the conditions overlap.
+bool ConditionsOverlap(const GPUTestConfig::ConditionArray &conditionsI,
+                       const GPUTestConfig::ConditionArray &conditionsJ)
+{
+    return ConditionArrayIsSubset(conditionsI, conditionsJ) ||
+           ConditionArrayIsSubset(conditionsJ, conditionsI);
 }
 }  // anonymous namespace
 
@@ -455,6 +489,7 @@ bool GPUTestExpectationsParser::parseLine(const GPUTestConfig *config,
             case kConfigMetal:
             case kConfigNexus5X:
             case kConfigPixel2:
+            case kConfigPixel4:
             case kConfigNVIDIAQuadroP400:
             case kConfigPreRotation:
             case kConfigPreRotation90:
@@ -601,10 +636,13 @@ bool GPUTestExpectationsParser::detectConflictsBetweenEntries()
     {
         for (size_t j = i + 1; j < mEntries.size(); ++j)
         {
-            if (mEntries[i].testName == mEntries[j].testName)
+            const GPUTestExpectationEntry &entryI = mEntries[i];
+            const GPUTestExpectationEntry &entryJ = mEntries[j];
+            if (entryI.testName == entryJ.testName &&
+                ConditionsOverlap(entryI.conditions, entryJ.conditions))
             {
-                pushErrorMessage(kErrorMessage[kErrorEntriesOverlap], mEntries[i].lineNumber,
-                                 mEntries[j].lineNumber);
+                pushErrorMessage(kErrorMessage[kErrorEntriesOverlap], entryI.lineNumber,
+                                 entryJ.lineNumber);
                 rt = true;
             }
         }
