@@ -32,26 +32,23 @@ Context::PropArray ParseContextProperties(const cl_context_properties *propertie
     Context::PropArray propArray;
     if (properties != nullptr)
     {
-        // Count the trailing zero
-        size_t propSize                     = 1u;
         const cl_context_properties *propIt = properties;
         while (*propIt != 0)
         {
-            ++propSize;
             switch (*propIt++)
             {
                 case CL_CONTEXT_PLATFORM:
                     platform = reinterpret_cast<Platform *>(*propIt++);
-                    ++propSize;
                     break;
                 case CL_CONTEXT_INTEROP_USER_SYNC:
                     userSync = *propIt++ != CL_FALSE;
-                    ++propSize;
                     break;
             }
         }
-        propArray.reserve(propSize);
-        propArray.insert(propArray.cend(), properties, properties + propSize);
+        // Include the trailing zero
+        ++propIt;
+        propArray.reserve(propIt - properties);
+        propArray.insert(propArray.cend(), properties, propIt);
     }
     if (platform == nullptr)
     {
@@ -67,7 +64,10 @@ Platform::~Platform()
     removeRef();
 }
 
-cl_int Platform::getInfo(PlatformInfo name, size_t valueSize, void *value, size_t *valueSizeRet)
+cl_int Platform::getInfo(PlatformInfo name,
+                         size_t valueSize,
+                         void *value,
+                         size_t *valueSizeRet) const
 {
     const void *copyValue = nullptr;
     size_t copySize       = 0u;
@@ -83,10 +83,6 @@ cl_int Platform::getInfo(PlatformInfo name, size_t valueSize, void *value, size_
             copySize  = mInfo.mVersionStr.length() + 1u;
             break;
         case PlatformInfo::NumericVersion:
-            if (mInfo.mVersion < CL_MAKE_VERSION(3, 0, 0))
-            {
-                return CL_INVALID_VALUE;
-            }
             copyValue = &mInfo.mVersion;
             copySize  = sizeof(mInfo.mVersion);
             break;
@@ -103,19 +99,11 @@ cl_int Platform::getInfo(PlatformInfo name, size_t valueSize, void *value, size_
             copySize  = mInfo.mExtensions.length() + 1u;
             break;
         case PlatformInfo::ExtensionsWithVersion:
-            if (mInfo.mVersion < CL_MAKE_VERSION(3, 0, 0))
-            {
-                return CL_INVALID_VALUE;
-            }
             copyValue = mInfo.mExtensionsWithVersion.data();
             copySize  = mInfo.mExtensionsWithVersion.size() *
                        sizeof(decltype(mInfo.mExtensionsWithVersion)::value_type);
             break;
         case PlatformInfo::HostTimerResolution:
-            if (mInfo.mVersion < CL_MAKE_VERSION(2, 1, 0))
-            {
-                return CL_INVALID_VALUE;
-            }
             copyValue = &mInfo.mHostTimerRes;
             copySize  = sizeof(mInfo.mHostTimerRes);
             break;
@@ -153,9 +141,7 @@ cl_int Platform::getDeviceIDs(cl_device_type deviceType,
     cl_uint found = 0u;
     for (const DevicePtr &device : mDevices)
     {
-        cl_device_type type = 0u;
-        if (device->getInfoULong(DeviceInfo::Type, &type) == CL_SUCCESS &&
-            IsDeviceTypeMatch(deviceType, type))
+        if (IsDeviceTypeMatch(deviceType, device->getInfo().mType))
         {
             if (devices != nullptr && found < numEntries)
             {
@@ -217,16 +203,10 @@ cl_context Platform::CreateContext(const cl_context_properties *properties,
     {
         refDevices.emplace_back(static_cast<Device *>(*devices++));
     }
-
-    platform->mContexts.emplace_back(new Context(*platform, std::move(propArray),
-                                                 std::move(refDevices), notify, userData, userSync,
-                                                 errcodeRet));
-    if (!platform->mContexts.back()->mImpl)
-    {
-        platform->mContexts.back()->release();
-        return nullptr;
-    }
-    return platform->mContexts.back().get();
+    return platform->createContext(
+        new Context(*platform, std::move(propArray), std::move(refDevices), notify, userData,
+                    userSync, errcodeRet),
+        errcodeRet);
 }
 
 cl_context Platform::CreateContextFromType(const cl_context_properties *properties,
@@ -239,15 +219,9 @@ cl_context Platform::CreateContextFromType(const cl_context_properties *properti
     bool userSync                = false;
     Context::PropArray propArray = ParseContextProperties(properties, platform, userSync);
     ASSERT(platform != nullptr);
-
-    platform->mContexts.emplace_back(new Context(*platform, std::move(propArray), deviceType,
-                                                 notify, userData, userSync, errcodeRet));
-    if (!platform->mContexts.back()->mImpl || platform->mContexts.back()->mDevices.empty())
-    {
-        platform->mContexts.back()->release();
-        return nullptr;
-    }
-    return platform->mContexts.back().get();
+    return platform->createContext(new Context(*platform, std::move(propArray), deviceType, notify,
+                                               userData, userSync, errcodeRet),
+                                   errcodeRet);
 }
 
 Platform::Platform(const cl_icd_dispatch &dispatch, const CreateImplFunc &createImplFunc)
@@ -256,6 +230,21 @@ Platform::Platform(const cl_icd_dispatch &dispatch, const CreateImplFunc &create
       mInfo(mImpl->createInfo()),
       mDevices(mImpl->createDevices(*this))
 {}
+
+cl_context Platform::createContext(Context *context, cl_int *errcodeRet)
+{
+    mContexts.emplace_back(context);
+    if (!mContexts.back()->mImpl)
+    {
+        mContexts.back()->release();
+        return nullptr;
+    }
+    if (errcodeRet != nullptr)
+    {
+        *errcodeRet = CL_SUCCESS;
+    }
+    return mContexts.back().get();
+}
 
 void Platform::destroyContext(Context *context)
 {

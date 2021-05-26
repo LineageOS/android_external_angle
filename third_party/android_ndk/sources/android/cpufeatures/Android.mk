@@ -6,7 +6,4 @@ LOCAL_SRC_FILES := cpu-features.c
 LOCAL_CFLAGS := -Wall -Wextra -Werror
 LOCAL_EXPORT_C_INCLUDES := $(LOCAL_PATH)
 LOCAL_EXPORT_LDLIBS := -ldl
-LOCAL_LICENSE_KINDS := SPDX-license-identifier-Apache-2.0 SPDX-license-identifier-BSD
-LOCAL_LICENSE_CONDITIONS := notice
-LOCAL_NOTICE_FILE := $(LOCAL_PATH)/NOTICE
 include $(BUILD_STATIC_LIBRARY)

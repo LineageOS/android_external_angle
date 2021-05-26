@@ -107,6 +107,9 @@ config("internal_config") {
 
   if (is_win) {
     defines += [ "ANGLE_IS_WIN" ]
+    if (angle_is_winuwp) {
+      defines += [ "ANGLE_IS_WINUWP" ]
+    }
   } else if (is_linux || is_chromeos) {
     defines += [ "ANGLE_IS_LINUX" ]
   }
@@ -132,9 +135,7 @@ config("internal_config") {
     defines += [ "__ggp__" ]
   }
 
-  if (angle_use_vulkan_null_display) {
-    defines += [ "ANGLE_USE_VULKAN_NULL_DISPLAY" ]
-  } else if (angle_use_vulkan_display) {
+  if (angle_use_vulkan_display) {
     defines += [
       "ANGLE_USE_VULKAN_DISPLAY",
       "EGL_NO_X11",
@@ -545,6 +546,12 @@ template("translator_lib") {
 
         # This translator is needed by metal backend also.
         sources += angle_translator_lib_vulkan_sources
+
+        # Enable direct SPIR-V generation conditionally to avoid increasing binary size of ANGLE on
+        # official builds until that's the only path.
+        if (dcheck_always_on || is_debug) {
+          defines += [ "ANGLE_ENABLE_DIRECT_SPIRV_GENERATION" ]
+        }
       }
 
       if (angle_enable_vulkan || use_fuzzing_engine) {
@@ -575,8 +582,10 @@ template("translator_lib") {
     if (_uses_spirv) {
       deps += [
         "$angle_root/src/common/spirv:angle_spirv_base",
+        "$angle_root/src/common/spirv:angle_spirv_builder",
         "${angle_glslang_dir}:glslang_default_resource_limits_sources",
         "${angle_glslang_dir}:glslang_lib_sources",
+        "${angle_spirv_headers_dir}:spv_headers",
         "${angle_spirv_tools_dir}:spvtools_headers",
         "${angle_spirv_tools_dir}:spvtools_val",
       ]

@@ -23,10 +23,12 @@
 namespace cl
 {
 
+class Buffer;
 class CommandQueue;
 class Context;
 class Device;
 class Event;
+class Image;
 class Kernel;
 class Memory;
 class Object;
@@ -45,9 +47,28 @@ using PlatformPtr     = std::unique_ptr<Platform>;
 using ProgramPtr      = std::unique_ptr<Program>;
 using SamplerPtr      = std::unique_ptr<Sampler>;
 
-using DevicePtrList = std::list<DevicePtr>;
+using ContextRefPtr = RefPointer<Context>;
 using DeviceRefPtr  = RefPointer<Device>;
+using MemoryRefPtr  = RefPointer<Memory>;
+
+using DevicePtrList = std::list<DevicePtr>;
 using DeviceRefList = std::vector<DeviceRefPtr>;
+
+using Binary   = std::vector<unsigned char>;
+using Binaries = std::vector<Binary>;
+
+struct ImageDescriptor
+{
+    cl_mem_object_type type;
+    size_t width;
+    size_t height;
+    size_t depth;
+    size_t arraySize;
+    size_t rowPitch;
+    size_t slicePitch;
+    cl_uint numMipLevels;
+    cl_uint numSamples;
+};
 
 }  // namespace cl
 

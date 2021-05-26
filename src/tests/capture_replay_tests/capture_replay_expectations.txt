@@ -28,15 +28,26 @@ IndexBufferOffsetTest.UInt32IndexSmallUpdates/*
 IndexBufferOffsetTest.UInt8Index/*
 IndexBufferOffsetTest.UInt8IndexSmallUpdates/*
 
+# Flanky tests, pass standalone, but fail in a group
+ColorMaskTest.AMDZeroColorMaskBug/ES3_OpenGL
+
 # Has undefined framebuffer pixels. This fails comparison checks.
 SimpleOperationTest.ClearAndSwap/*
 SimpleOperationTest.DrawQuadAndSwap/*
 
+
+# Tests that fail randomly when run in groups but pass when run standalone
+BufferDataTest.ZeroNonNULLData/ES2_Vulkan
+BufferDataTest.ZeroNonNULLData/ES2_Vulkan_AsyncQueue
+BufferDataTest.NULLResolvedData/ES2_Vulkan
+BufferDataTest.NULLResolvedData/ES2_Vulkan_AsyncQueue
+BufferDataTest.ExtensionDependency/ES2_Vulkan_AsyncQueue
+BufferDataTest.RepeatedDrawWithDynamic/ES2_Vulkan
+BufferDataTest.MapBufferOES/ES2_Vulkan_AsyncQueue
+
 # Crashed tests
 BlitFramebufferANGLETest.*
-BufferDataTest.*
 ClipDistanceTest.*
-ColorMaskTest.*
 CopyCompressedTextureTest.InternalFormat/*
 DebugMarkerTest.*
 DebugTest.*
@@ -88,9 +99,6 @@ EGLProgramCacheControlTest.NegativeAPI/*
 EGLProgramCacheControlTest.SaveAndReload/*
 LineLoopTest.DISABLED_DrawArraysWithLargeCount/*
 MipmapTest.DISABLED_ThreeLevelsInitData/*
-
-# Compile failed tests
-RobustResourceInitTest.SurfaceInitializedAfterSwap/*
 
 # ES1 crashed tests
 FramebufferObjectTest.FramebufferObject/*
