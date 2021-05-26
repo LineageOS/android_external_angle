@@ -42,6 +42,19 @@ bool GetDeviceInfo(cl_device_id device, cl::DeviceInfo name, std::vector<T> &vec
     return false;
 }
 
+// This queries the OpenCL device info for value types with known size
+template <typename T>
+bool GetDeviceInfo(cl_device_id device, cl::DeviceInfo name, T &value)
+{
+    if (device->getDispatch().clGetDeviceInfo(device, cl::ToCLenum(name), sizeof(T), &value,
+                                              nullptr) != CL_SUCCESS)
+    {
+        ERR() << "Failed to query CL device info for " << name;
+        return false;
+    }
+    return true;
+}
+
 }  // namespace
 
 CLDeviceCL::~CLDeviceCL()
@@ -52,27 +65,10 @@ CLDeviceCL::~CLDeviceCL()
     }
 }
 
-CLDeviceImpl::Info CLDeviceCL::createInfo() const
+CLDeviceImpl::Info CLDeviceCL::createInfo(cl_device_type type) const
 {
-    Info info;
-
+    Info info(type);
     std::vector<char> valString;
-    if (!GetDeviceInfo(mNative, cl::DeviceInfo::Version, valString))
-    {
-        return Info{};
-    }
-    info.mVersion = ExtractCLVersion(valString.data());
-    if (info.mVersion == 0u)
-    {
-        return Info{};
-    }
-
-    if (!GetDeviceInfo(mNative, cl::DeviceInfo::Extensions, valString))
-    {
-        return Info{};
-    }
-    info.mExtensions.assign(valString.data());
-    RemoveUnsupportedCLExtensions(info.mExtensions);
 
     if (!GetDeviceInfo(mNative, cl::DeviceInfo::MaxWorkItemSizes, info.mMaxWorkItemSizes))
     {
@@ -89,11 +85,67 @@ CLDeviceImpl::Info CLDeviceCL::createInfo() const
         return Info{};
     }
 
-    if (info.mVersion >= CL_MAKE_VERSION(1, 2, 0) &&
-        (!GetDeviceInfo(mNative, cl::DeviceInfo::PartitionProperties, info.mPartitionProperties) ||
-         !GetDeviceInfo(mNative, cl::DeviceInfo::PartitionType, info.mPartitionType)))
+    if (!GetDeviceInfo(mNative, cl::DeviceInfo::MaxMemAllocSize, info.mMaxMemAllocSize) ||
+        !GetDeviceInfo(mNative, cl::DeviceInfo::ImageSupport, info.mImageSupport) ||
+        !GetDeviceInfo(mNative, cl::DeviceInfo::Image2D_MaxWidth, info.mImage2D_MaxWidth) ||
+        !GetDeviceInfo(mNative, cl::DeviceInfo::Image2D_MaxHeight, info.mImage2D_MaxHeight) ||
+        !GetDeviceInfo(mNative, cl::DeviceInfo::Image3D_MaxWidth, info.mImage3D_MaxWidth) ||
+        !GetDeviceInfo(mNative, cl::DeviceInfo::Image3D_MaxHeight, info.mImage3D_MaxHeight) ||
+        !GetDeviceInfo(mNative, cl::DeviceInfo::Image3D_MaxDepth, info.mImage3D_MaxDepth))
     {
         return Info{};
+    }
+
+    if (!GetDeviceInfo(mNative, cl::DeviceInfo::Version, valString))
+    {
+        return Info{};
+    }
+    info.mVersionStr.assign(valString.data());
+    info.mVersion = ExtractCLVersion(info.mVersionStr);
+    if (info.mVersion == 0u)
+    {
+        return Info{};
+    }
+
+    if (!GetDeviceInfo(mNative, cl::DeviceInfo::Extensions, valString))
+    {
+        return Info{};
+    }
+    info.mExtensions.assign(valString.data());
+    RemoveUnsupportedCLExtensions(info.mExtensions);
+
+    if (info.mVersion >= CL_MAKE_VERSION(1, 2, 0))
+    {
+        if (!GetDeviceInfo(mNative, cl::DeviceInfo::ImageMaxBufferSize, info.mImageMaxBufferSize) ||
+            !GetDeviceInfo(mNative, cl::DeviceInfo::ImageMaxArraySize, info.mImageMaxArraySize) ||
+            !GetDeviceInfo(mNative, cl::DeviceInfo::BuiltInKernels, valString))
+        {
+            return Info{};
+        }
+        info.mBuiltInKernels.assign(valString.data());
+        if (!GetDeviceInfo(mNative, cl::DeviceInfo::PartitionProperties,
+                           info.mPartitionProperties) ||
+            !GetDeviceInfo(mNative, cl::DeviceInfo::PartitionType, info.mPartitionType))
+        {
+            return Info{};
+        }
+    }
+
+    if (info.mVersion >= CL_MAKE_VERSION(2, 0, 0) &&
+        (!GetDeviceInfo(mNative, cl::DeviceInfo::ImagePitchAlignment, info.mImagePitchAlignment) ||
+         !GetDeviceInfo(mNative, cl::DeviceInfo::ImageBaseAddressAlignment,
+                        info.mImageBaseAddressAlignment)))
+    {
+        return Info{};
+    }
+
+    if (info.mVersion >= CL_MAKE_VERSION(2, 1, 0))
+    {
+        if (!GetDeviceInfo(mNative, cl::DeviceInfo::IL_Version, valString))
+        {
+            return Info{};
+        }
+        info.mIL_Version.assign(valString.data());
     }
 
     if (info.mVersion >= CL_MAKE_VERSION(3, 0, 0) &&
@@ -165,7 +217,8 @@ cl_int CLDeviceCL::createSubDevices(cl::Device &device,
                 return Ptr(new CLDeviceCL(device, nativeSubDevice));
             };
             subDeviceList.emplace_back(cl::Device::CreateDevice(
-                device.getPlatform(), cl::DeviceRefPtr(&device), createImplFunc));
+                device.getPlatform(), &device, device.getInfo().mType & ~CL_DEVICE_TYPE_DEFAULT,
+                createImplFunc));
             if (!subDeviceList.back())
             {
                 subDeviceList.clear();

@@ -77,6 +77,24 @@ def write_blueprint_key_value(output, name, value, indent=1):
 
 
 def write_blueprint(output, target_type, values):
+    if target_type == 'license':
+        comment = """
+// Added automatically by a large-scale-change that took the approach of
+// 'apply every license found to every target'. While this makes sure we respect
+// every license restriction, it may not be entirely correct.
+//
+// e.g. GPL in an MIT project might only apply to the contrib/ directory.
+//
+// Please consider splitting the single license below into multiple licenses,
+// taking care not to lose any license_kind information, and overriding the
+// default license using the 'licenses: [...]' property on targets as needed.
+//
+// For unused files, consider creating a 'fileGroup' with "//visibility:private"
+// to attach the license to, and including a comment whether the files may be
+// used in the current project.
+// See: http://go/android-license-faq"""
+        output.append(comment)
+
     output.append('%s {' % target_type)
     for (key, value) in values.items():
         write_blueprint_key_value(output, key, value)
@@ -256,6 +274,10 @@ def gn_cflags_to_blueprint_cflags(target_info):
     # Chrome and Android use different versions of Clang which support differnt warning options.
     # Ignore errors about unrecognized warning flags.
     result.append('-Wno-unknown-warning-option')
+
+    # Override AOSP build flags to match ANGLE's CQ testing and reduce binary size
+    result.append('-Oz')
+    result.append('-fno-unwind-tables')
 
     if 'defines' in target_info:
         for define in target_info['defines']:
@@ -503,7 +525,36 @@ def main():
     for target in targets_to_write:
         blueprint_targets.append(gn_target_to_blueprint(target, build_info))
 
+    # Add license build rules
+    blueprint_targets.append(('package', {
+        'default_applicable_licenses': ['external_angle_license'],
+    }))
+    blueprint_targets.append(('license', {
+        'name': 'external_angle_license',
+        'visibility': [':__subpackages__'],
+        'license_kinds': [
+            'SPDX-license-identifier-Apache-2.0',
+            'SPDX-license-identifier-BSD',
+            'SPDX-license-identifier-GPL',
+            'SPDX-license-identifier-GPL-2.0',
+            'SPDX-license-identifier-GPL-3.0',
+            'SPDX-license-identifier-LGPL',
+            'SPDX-license-identifier-MIT',
+            'SPDX-license-identifier-Zlib',
+            'legacy_unencumbered',
+        ],
+        'license_text': ['LICENSE'],
+    }))
+
     # Add APKs with all of the root libraries
+    blueprint_targets.append((
+        'filegroup',
+        {
+            'name': 'ANGLE_srcs',
+            # Only add EmptyMainActivity.java since we just need to be able to reply to the intent
+            # android.app.action.ANGLE_FOR_ANDROID to indicate ANGLE is present on the device.
+            'srcs': ['src/android_system_settings/src/com/android/angle/EmptyMainActivity.java'],
+        }))
     blueprint_targets.append((
         'java_defaults',
         {
@@ -521,6 +572,7 @@ def main():
                 # Don't compress *.json files
                 '-0 .json',
             ],
+            'srcs': [':ANGLE_srcs'],
             'plugins': ['java_api_finder',],
             'privileged': True,
             'product_specific': True,
@@ -531,6 +583,7 @@ def main():
         'name': 'ANGLE',
         'defaults': ['ANGLE_java_defaults'],
         'manifest': 'android/AndroidManifest.xml',
+        'asset_dirs': ['src/android_system_settings/assets',],
     }))
 
     output = [

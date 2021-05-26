@@ -9,7 +9,12 @@
 
 #include "libGLESv2/proc_table_cl.h"
 
+#include "libANGLE/CLBuffer.h"
+#include "libANGLE/CLCommandQueue.h"
+#include "libANGLE/CLContext.h"
 #include "libANGLE/CLDevice.h"
+#include "libANGLE/CLImage.h"
+#include "libANGLE/CLMemory.h"
 #include "libANGLE/CLPlatform.h"
 
 #define WARN_NOT_SUPPORTED(command)                                         \
@@ -173,20 +178,20 @@ cl_command_queue CreateCommandQueueWithProperties(cl_context context,
                                                   const cl_queue_properties *properties,
                                                   cl_int *errcode_ret)
 {
-    WARN_NOT_SUPPORTED(CreateCommandQueueWithProperties);
-    return 0;
+    return static_cast<Context *>(context)->createCommandQueueWithProperties(device, properties,
+                                                                             errcode_ret);
 }
 
 cl_int RetainCommandQueue(cl_command_queue command_queue)
 {
-    WARN_NOT_SUPPORTED(RetainCommandQueue);
-    return 0;
+    static_cast<CommandQueue *>(command_queue)->retain();
+    return CL_SUCCESS;
 }
 
 cl_int ReleaseCommandQueue(cl_command_queue command_queue)
 {
-    WARN_NOT_SUPPORTED(ReleaseCommandQueue);
-    return 0;
+    static_cast<CommandQueue *>(command_queue)->release();
+    return CL_SUCCESS;
 }
 
 cl_int GetCommandQueueInfo(cl_command_queue command_queue,
@@ -195,8 +200,8 @@ cl_int GetCommandQueueInfo(cl_command_queue command_queue,
                            void *param_value,
                            size_t *param_value_size_ret)
 {
-    WARN_NOT_SUPPORTED(GetCommandQueueInfo);
-    return 0;
+    return static_cast<CommandQueue *>(command_queue)
+        ->getInfo(param_name, param_value_size, param_value, param_value_size_ret);
 }
 
 cl_mem CreateBuffer(cl_context context,
@@ -205,8 +210,8 @@ cl_mem CreateBuffer(cl_context context,
                     void *host_ptr,
                     cl_int *errcode_ret)
 {
-    WARN_NOT_SUPPORTED(CreateBuffer);
-    return 0;
+    return static_cast<Context *>(context)->createBuffer(nullptr, flags, size, host_ptr,
+                                                         errcode_ret);
 }
 
 cl_mem CreateBufferWithProperties(cl_context context,
@@ -216,8 +221,8 @@ cl_mem CreateBufferWithProperties(cl_context context,
                                   void *host_ptr,
                                   cl_int *errcode_ret)
 {
-    WARN_NOT_SUPPORTED(CreateBufferWithProperties);
-    return 0;
+    return static_cast<Context *>(context)->createBuffer(properties, flags, size, host_ptr,
+                                                         errcode_ret);
 }
 
 cl_mem CreateSubBuffer(cl_mem buffer,
@@ -226,8 +231,8 @@ cl_mem CreateSubBuffer(cl_mem buffer,
                        const void *buffer_create_info,
                        cl_int *errcode_ret)
 {
-    WARN_NOT_SUPPORTED(CreateSubBuffer);
-    return 0;
+    return static_cast<Buffer *>(buffer)->createSubBuffer(flags, buffer_create_type,
+                                                          buffer_create_info, errcode_ret);
 }
 
 cl_mem CreateImage(cl_context context,
@@ -237,8 +242,8 @@ cl_mem CreateImage(cl_context context,
                    void *host_ptr,
                    cl_int *errcode_ret)
 {
-    WARN_NOT_SUPPORTED(CreateImage);
-    return 0;
+    return static_cast<Context *>(context)->createImage(nullptr, flags, image_format, image_desc,
+                                                        host_ptr, errcode_ret);
 }
 
 cl_mem CreateImageWithProperties(cl_context context,
@@ -249,8 +254,8 @@ cl_mem CreateImageWithProperties(cl_context context,
                                  void *host_ptr,
                                  cl_int *errcode_ret)
 {
-    WARN_NOT_SUPPORTED(CreateImageWithProperties);
-    return 0;
+    return static_cast<Context *>(context)->createImage(properties, flags, image_format, image_desc,
+                                                        host_ptr, errcode_ret);
 }
 
 cl_mem CreatePipe(cl_context context,
@@ -266,14 +271,14 @@ cl_mem CreatePipe(cl_context context,
 
 cl_int RetainMemObject(cl_mem memobj)
 {
-    WARN_NOT_SUPPORTED(RetainMemObject);
-    return 0;
+    static_cast<Memory *>(memobj)->retain();
+    return CL_SUCCESS;
 }
 
 cl_int ReleaseMemObject(cl_mem memobj)
 {
-    WARN_NOT_SUPPORTED(ReleaseMemObject);
-    return 0;
+    static_cast<Memory *>(memobj)->release();
+    return CL_SUCCESS;
 }
 
 cl_int GetSupportedImageFormats(cl_context context,
@@ -293,8 +298,8 @@ cl_int GetMemObjectInfo(cl_mem memobj,
                         void *param_value,
                         size_t *param_value_size_ret)
 {
-    WARN_NOT_SUPPORTED(GetMemObjectInfo);
-    return 0;
+    return static_cast<Memory *>(memobj)->getInfo(param_name, param_value_size, param_value,
+                                                  param_value_size_ret);
 }
 
 cl_int GetImageInfo(cl_mem image,
@@ -303,8 +308,8 @@ cl_int GetImageInfo(cl_mem image,
                     void *param_value,
                     size_t *param_value_size_ret)
 {
-    WARN_NOT_SUPPORTED(GetImageInfo);
-    return 0;
+    return static_cast<Image *>(image)->getInfo(param_name, param_value_size, param_value,
+                                                param_value_size_ret);
 }
 
 cl_int GetPipeInfo(cl_mem pipe,
@@ -340,20 +345,20 @@ cl_sampler CreateSamplerWithProperties(cl_context context,
                                        const cl_sampler_properties *sampler_properties,
                                        cl_int *errcode_ret)
 {
-    WARN_NOT_SUPPORTED(CreateSamplerWithProperties);
-    return 0;
+    return static_cast<Context *>(context)->createSamplerWithProperties(sampler_properties,
+                                                                        errcode_ret);
 }
 
 cl_int RetainSampler(cl_sampler sampler)
 {
-    WARN_NOT_SUPPORTED(RetainSampler);
-    return 0;
+    static_cast<Sampler *>(sampler)->retain();
+    return CL_SUCCESS;
 }
 
 cl_int ReleaseSampler(cl_sampler sampler)
 {
-    WARN_NOT_SUPPORTED(ReleaseSampler);
-    return 0;
+    static_cast<Sampler *>(sampler)->release();
+    return CL_SUCCESS;
 }
 
 cl_int GetSamplerInfo(cl_sampler sampler,
@@ -362,8 +367,8 @@ cl_int GetSamplerInfo(cl_sampler sampler,
                       void *param_value,
                       size_t *param_value_size_ret)
 {
-    WARN_NOT_SUPPORTED(GetSamplerInfo);
-    return 0;
+    return static_cast<Sampler *>(sampler)->getInfo(param_name, param_value_size, param_value,
+                                                    param_value_size_ret);
 }
 
 cl_program CreateProgramWithSource(cl_context context,
@@ -372,8 +377,8 @@ cl_program CreateProgramWithSource(cl_context context,
                                    const size_t *lengths,
                                    cl_int *errcode_ret)
 {
-    WARN_NOT_SUPPORTED(CreateProgramWithSource);
-    return 0;
+    return static_cast<Context *>(context)->createProgramWithSource(count, strings, lengths,
+                                                                    errcode_ret);
 }
 
 cl_program CreateProgramWithBinary(cl_context context,
@@ -384,8 +389,8 @@ cl_program CreateProgramWithBinary(cl_context context,
                                    cl_int *binary_status,
                                    cl_int *errcode_ret)
 {
-    WARN_NOT_SUPPORTED(CreateProgramWithBinary);
-    return 0;
+    return static_cast<Context *>(context)->createProgramWithBinary(
+        num_devices, device_list, lengths, binaries, binary_status, errcode_ret);
 }
 
 cl_program CreateProgramWithBuiltInKernels(cl_context context,
@@ -394,8 +399,8 @@ cl_program CreateProgramWithBuiltInKernels(cl_context context,
                                            const char *kernel_names,
                                            cl_int *errcode_ret)
 {
-    WARN_NOT_SUPPORTED(CreateProgramWithBuiltInKernels);
-    return 0;
+    return static_cast<Context *>(context)->createProgramWithBuiltInKernels(
+        num_devices, device_list, kernel_names, errcode_ret);
 }
 
 cl_program CreateProgramWithIL(cl_context context,
@@ -403,20 +408,19 @@ cl_program CreateProgramWithIL(cl_context context,
                                size_t length,
                                cl_int *errcode_ret)
 {
-    WARN_NOT_SUPPORTED(CreateProgramWithIL);
-    return 0;
+    return static_cast<Context *>(context)->createProgramWithIL(il, length, errcode_ret);
 }
 
 cl_int RetainProgram(cl_program program)
 {
-    WARN_NOT_SUPPORTED(RetainProgram);
-    return 0;
+    static_cast<Program *>(program)->retain();
+    return CL_SUCCESS;
 }
 
 cl_int ReleaseProgram(cl_program program)
 {
-    WARN_NOT_SUPPORTED(ReleaseProgram);
-    return 0;
+    static_cast<Program *>(program)->release();
+    return CL_SUCCESS;
 }
 
 cl_int BuildProgram(cl_program program,
@@ -487,8 +491,8 @@ cl_int GetProgramInfo(cl_program program,
                       void *param_value,
                       size_t *param_value_size_ret)
 {
-    WARN_NOT_SUPPORTED(GetProgramInfo);
-    return 0;
+    return static_cast<Program *>(program)->getInfo(param_name, param_value_size, param_value,
+                                                    param_value_size_ret);
 }
 
 cl_int GetProgramBuildInfo(cl_program program,
@@ -1063,8 +1067,8 @@ cl_int SetCommandQueueProperty(cl_command_queue command_queue,
                                cl_bool enable,
                                cl_command_queue_properties *old_properties)
 {
-    WARN_NOT_SUPPORTED(SetCommandQueueProperty);
-    return 0;
+    return static_cast<CommandQueue *>(command_queue)
+        ->setProperty(properties, enable, old_properties);
 }
 
 cl_mem CreateImage2D(cl_context context,
@@ -1076,8 +1080,8 @@ cl_mem CreateImage2D(cl_context context,
                      void *host_ptr,
                      cl_int *errcode_ret)
 {
-    WARN_NOT_SUPPORTED(CreateImage2D);
-    return 0;
+    return static_cast<Context *>(context)->createImage2D(
+        flags, image_format, image_width, image_height, image_row_pitch, host_ptr, errcode_ret);
 }
 
 cl_mem CreateImage3D(cl_context context,
@@ -1091,8 +1095,9 @@ cl_mem CreateImage3D(cl_context context,
                      void *host_ptr,
                      cl_int *errcode_ret)
 {
-    WARN_NOT_SUPPORTED(CreateImage3D);
-    return 0;
+    return static_cast<Context *>(context)->createImage3D(
+        flags, image_format, image_width, image_height, image_depth, image_row_pitch,
+        image_slice_pitch, host_ptr, errcode_ret);
 }
 
 cl_int EnqueueMarker(cl_command_queue command_queue, cl_event *event)
@@ -1137,8 +1142,7 @@ cl_command_queue CreateCommandQueue(cl_context context,
                                     cl_command_queue_properties properties,
                                     cl_int *errcode_ret)
 {
-    WARN_NOT_SUPPORTED(CreateCommandQueue);
-    return 0;
+    return static_cast<Context *>(context)->createCommandQueue(device, properties, errcode_ret);
 }
 
 cl_sampler CreateSampler(cl_context context,
@@ -1147,8 +1151,8 @@ cl_sampler CreateSampler(cl_context context,
                          FilterMode filter_mode,
                          cl_int *errcode_ret)
 {
-    WARN_NOT_SUPPORTED(CreateSampler);
-    return 0;
+    return static_cast<Context *>(context)->createSampler(normalized_coords, addressing_mode,
+                                                          filter_mode, errcode_ret);
 }
 
 cl_int EnqueueTask(cl_command_queue command_queue,

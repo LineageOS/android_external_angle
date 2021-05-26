@@ -837,9 +837,20 @@ angle::Result RendererVk::initialize(DisplayVk *displayVk,
                                      const char *wsiExtension,
                                      const char *wsiLayer)
 {
+    bool canLoadDebugUtils = true;
 #if defined(ANGLE_SHARED_LIBVULKAN)
     // Set all vk* function ptrs
     ANGLE_VK_TRY(displayVk, volkInitialize());
+
+    uint32_t ver = volkGetInstanceVersion();
+    if (!IsAndroid() && VK_API_VERSION_MAJOR(ver) == 1 &&
+        (VK_API_VERSION_MINOR(ver) < 1 ||
+         (VK_API_VERSION_MINOR(ver) == 1 && VK_API_VERSION_PATCH(ver) < 91)))
+    {
+        // http://crbug.com/1205999 - non-Android Vulkan Loader versions before 1.1.91 have a bug
+        // which prevents loading VK_EXT_debug_utils function pointers.
+        canLoadDebugUtils = false;
+    }
 #endif  // defined(ANGLE_SHARED_LIBVULKAN)
 
     mDisplay                         = display;
@@ -926,16 +937,9 @@ angle::Result RendererVk::initialize(DisplayVk *displayVk,
     }
 
     vk::ExtensionNameList enabledInstanceExtensions;
-    if (displayVk->isUsingSwapchain())
-    {
-        enabledInstanceExtensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
-    }
-
-    if (wsiExtension)
-    {
-        enabledInstanceExtensions.push_back(wsiExtension);
-    }
-    mEnableDebugUtils = mEnableValidationLayers &&
+    enabledInstanceExtensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+    enabledInstanceExtensions.push_back(wsiExtension);
+    mEnableDebugUtils = canLoadDebugUtils && mEnableValidationLayers &&
                         ExtensionFound(VK_EXT_DEBUG_UTILS_EXTENSION_NAME, instanceExtensionNames);
 
     bool enableDebugReport =
@@ -1443,10 +1447,7 @@ angle::Result RendererVk::initializeDevice(DisplayVk *displayVk, uint32_t queueF
     }
 
     vk::ExtensionNameList enabledDeviceExtensions;
-    if (displayVk->isUsingSwapchain())
-    {
-        enabledDeviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
-    }
+    enabledDeviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
 
     // Queues: map low, med, high priority to whatever is supported up to 3 queues
     uint32_t queueCount = std::min(mQueueFamilyProperties[queueFamilyIndex].queueCount,
@@ -2366,11 +2367,12 @@ void RendererVk::initFeatures(DisplayVk *displayVk,
     ANGLE_FEATURE_CONDITION(&mFeatures, enablePreRotateSurfaces,
                             IsAndroid() && supportsNegativeViewport);
 
-    // Currently disabled by default: http://anglebug.com/3078
+    // http://anglebug.com/3078
     ANGLE_FEATURE_CONDITION(
         &mFeatures, enablePrecisionQualifiers,
         !(IsPixel2(mPhysicalDeviceProperties.vendorID, mPhysicalDeviceProperties.deviceID) &&
-          (mPhysicalDeviceProperties.driverVersion < kPixel2DriverWithRelaxedPrecision)));
+          (mPhysicalDeviceProperties.driverVersion < kPixel2DriverWithRelaxedPrecision)) &&
+            !IsPixel4(mPhysicalDeviceProperties.vendorID, mPhysicalDeviceProperties.deviceID));
 
     ANGLE_FEATURE_CONDITION(&mFeatures, preferAggregateBarrierCalls, isNvidia || isAMD || isIntel);
 

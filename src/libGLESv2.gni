@@ -453,10 +453,12 @@ cl_includes = [
 ]
 
 libangle_cl_headers = [
+  "src/libANGLE/CLBuffer.h",
   "src/libANGLE/CLCommandQueue.h",
   "src/libANGLE/CLContext.h",
   "src/libANGLE/CLDevice.h",
   "src/libANGLE/CLEvent.h",
+  "src/libANGLE/CLImage.h",
   "src/libANGLE/CLKernel.h",
   "src/libANGLE/CLMemory.h",
   "src/libANGLE/CLObject.h",
@@ -465,27 +467,40 @@ libangle_cl_headers = [
   "src/libANGLE/CLRefPointer.h",
   "src/libANGLE/CLSampler.h",
   "src/libANGLE/CLtypes.h",
+  "src/libANGLE/cl_utils.h",
+  "src/libANGLE/renderer/CLCommandQueueImpl.h",
   "src/libANGLE/renderer/CLContextImpl.h",
   "src/libANGLE/renderer/CLDeviceImpl.h",
+  "src/libANGLE/renderer/CLMemoryImpl.h",
   "src/libANGLE/renderer/CLPlatformImpl.h",
+  "src/libANGLE/renderer/CLProgramImpl.h",
+  "src/libANGLE/renderer/CLSamplerImpl.h",
   "src/libANGLE/renderer/CLtypes.h",
   "src/libANGLE/validationCL.h",
   "src/libANGLE/validationCL_autogen.h",
 ]
 
 libangle_cl_sources = [
+  "src/libANGLE/CLBuffer.cpp",
   "src/libANGLE/CLCommandQueue.cpp",
   "src/libANGLE/CLContext.cpp",
   "src/libANGLE/CLDevice.cpp",
   "src/libANGLE/CLEvent.cpp",
+  "src/libANGLE/CLImage.cpp",
   "src/libANGLE/CLKernel.cpp",
   "src/libANGLE/CLMemory.cpp",
+  "src/libANGLE/CLObject.cpp",
   "src/libANGLE/CLPlatform.cpp",
   "src/libANGLE/CLProgram.cpp",
   "src/libANGLE/CLSampler.cpp",
+  "src/libANGLE/cl_utils.cpp",
+  "src/libANGLE/renderer/CLCommandQueueImpl.cpp",
   "src/libANGLE/renderer/CLContextImpl.cpp",
   "src/libANGLE/renderer/CLDeviceImpl.cpp",
+  "src/libANGLE/renderer/CLMemoryImpl.cpp",
   "src/libANGLE/renderer/CLPlatformImpl.cpp",
+  "src/libANGLE/renderer/CLProgramImpl.cpp",
+  "src/libANGLE/renderer/CLSamplerImpl.cpp",
   "src/libANGLE/validationCL.cpp",
 ]
 

@@ -22,19 +22,28 @@ class Device final : public _cl_device_id, public Object
   public:
     using CreateImplFunc = std::function<rx::CLDeviceImpl::Ptr(const cl::Device &)>;
 
-    ~Device();
+    ~Device() override;
 
-    Platform &getPlatform() const noexcept;
+    Platform &getPlatform() noexcept;
+    const Platform &getPlatform() const noexcept;
     bool isRoot() const noexcept;
-    rx::CLDeviceImpl &getImpl() const;
+
+    template <typename T>
+    T &getImpl() const;
+
     const rx::CLDeviceImpl::Info &getInfo() const;
+    bool isVersionOrNewer(cl_uint major, cl_uint minor) const;
     bool hasSubDevice(const _cl_device_id *device) const;
+
+    bool supportsBuiltInKernel(const std::string &name) const;
 
     void retain() noexcept;
     bool release();
 
+    cl_int getInfoUInt(DeviceInfo name, cl_uint *value) const;
     cl_int getInfoULong(DeviceInfo name, cl_ulong *value) const;
-    cl_int getInfo(DeviceInfo name, size_t valueSize, void *value, size_t *valueSizeRet);
+
+    cl_int getInfo(DeviceInfo name, size_t valueSize, void *value, size_t *valueSizeRet) const;
 
     cl_int createSubDevices(const cl_device_partition_property *properties,
                             cl_uint numDevices,
@@ -42,14 +51,18 @@ class Device final : public _cl_device_id, public Object
                             cl_uint *numDevicesRet);
 
     static DevicePtr CreateDevice(Platform &platform,
-                                  DeviceRefPtr &&parent,
+                                  Device *parent,
+                                  cl_device_type type,
                                   const CreateImplFunc &createImplFunc);
 
     static bool IsValid(const _cl_device_id *device);
     static bool IsValidType(cl_device_type type);
 
   private:
-    Device(Platform &platform, DeviceRefPtr &&parent, const CreateImplFunc &createImplFunc);
+    Device(Platform &platform,
+           Device *parent,
+           cl_device_type type,
+           const CreateImplFunc &createImplFunc);
 
     void destroySubDevice(Device *device);
 
@@ -59,11 +72,18 @@ class Device final : public _cl_device_id, public Object
     const rx::CLDeviceImpl::Info mInfo;
 
     DevicePtrList mSubDevices;
+    CommandQueue *mDefaultCommandQueue = nullptr;
 
+    friend class CommandQueue;
     friend class Platform;
 };
 
-inline Platform &Device::getPlatform() const noexcept
+inline Platform &Device::getPlatform() noexcept
+{
+    return mPlatform;
+}
+
+inline const Platform &Device::getPlatform() const noexcept
 {
     return mPlatform;
 }
@@ -73,14 +93,20 @@ inline bool Device::isRoot() const noexcept
     return !mParent;
 }
 
-inline rx::CLDeviceImpl &Device::getImpl() const
+template <typename T>
+inline T &Device::getImpl() const
 {
-    return *mImpl;
+    return static_cast<T>(*mImpl);
 }
 
 inline const rx::CLDeviceImpl::Info &Device::getInfo() const
 {
     return mInfo;
+}
+
+inline bool Device::isVersionOrNewer(cl_uint major, cl_uint minor) const
+{
+    return mInfo.mVersion >= CL_MAKE_VERSION(major, minor, 0u);
 }
 
 inline bool Device::hasSubDevice(const _cl_device_id *device) const
@@ -96,6 +122,11 @@ inline void Device::retain() noexcept
     {
         addRef();
     }
+}
+
+inline cl_int Device::getInfoUInt(DeviceInfo name, cl_uint *value) const
+{
+    return mImpl->getInfoUInt(name, value);
 }
 
 inline cl_int Device::getInfoULong(DeviceInfo name, cl_ulong *value) const

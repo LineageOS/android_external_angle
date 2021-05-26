@@ -26,14 +26,20 @@ class Platform final : public _cl_platform_id, public Object
     using PtrList        = std::list<PlatformPtr>;
     using CreateImplFunc = std::function<rx::CLPlatformImpl::Ptr(const cl::Platform &)>;
 
-    ~Platform();
+    ~Platform() override;
 
     const rx::CLPlatformImpl::Info &getInfo() const;
+    bool isVersionOrNewer(cl_uint major, cl_uint minor) const;
     bool hasDevice(const _cl_device_id *device) const;
     const DevicePtrList &getDevices() const;
-    bool hasContext(const _cl_context *context) const;
 
-    cl_int getInfo(PlatformInfo name, size_t valueSize, void *value, size_t *valueSizeRet);
+    bool hasContext(const _cl_context *context) const;
+    bool hasCommandQueue(const _cl_command_queue *commandQueue) const;
+    bool hasMemory(const _cl_mem *memory) const;
+    bool hasSampler(const _cl_sampler *sampler) const;
+    bool hasProgram(const _cl_program *program) const;
+
+    cl_int getInfo(PlatformInfo name, size_t valueSize, void *value, size_t *valueSizeRet) const;
 
     cl_int getDeviceIDs(cl_device_type deviceType,
                         cl_uint numEntries,
@@ -71,6 +77,7 @@ class Platform final : public _cl_platform_id, public Object
   private:
     Platform(const cl_icd_dispatch &dispatch, const CreateImplFunc &createImplFunc);
 
+    cl_context createContext(Context *context, cl_int *errcodeRet);
     void destroyContext(Context *context);
 
     static PtrList &GetList();
@@ -92,6 +99,11 @@ inline const rx::CLPlatformImpl::Info &Platform::getInfo() const
     return mInfo;
 }
 
+inline bool Platform::isVersionOrNewer(cl_uint major, cl_uint minor) const
+{
+    return mInfo.mVersion >= CL_MAKE_VERSION(major, minor, 0u);
+}
+
 inline bool Platform::hasDevice(const _cl_device_id *device) const
 {
     return std::find_if(mDevices.cbegin(), mDevices.cend(), [=](const DevicePtr &ptr) {
@@ -108,6 +120,34 @@ inline bool Platform::hasContext(const _cl_context *context) const
 {
     return std::find_if(mContexts.cbegin(), mContexts.cend(), [=](const ContextPtr &ptr) {
                return ptr.get() == context;
+           }) != mContexts.cend();
+}
+
+inline bool Platform::hasCommandQueue(const _cl_command_queue *commandQueue) const
+{
+    return std::find_if(mContexts.cbegin(), mContexts.cend(), [=](const ContextPtr &ptr) {
+               return ptr->hasCommandQueue(commandQueue);
+           }) != mContexts.cend();
+}
+
+inline bool Platform::hasMemory(const _cl_mem *memory) const
+{
+    return std::find_if(mContexts.cbegin(), mContexts.cend(), [=](const ContextPtr &ptr) {
+               return ptr->hasMemory(memory);
+           }) != mContexts.cend();
+}
+
+inline bool Platform::hasSampler(const _cl_sampler *sampler) const
+{
+    return std::find_if(mContexts.cbegin(), mContexts.cend(), [=](const ContextPtr &ptr) {
+               return ptr->hasSampler(sampler);
+           }) != mContexts.cend();
+}
+
+inline bool Platform::hasProgram(const _cl_program *program) const
+{
+    return std::find_if(mContexts.cbegin(), mContexts.cend(), [=](const ContextPtr &ptr) {
+               return ptr->hasProgram(program);
            }) != mContexts.cend();
 }
 
