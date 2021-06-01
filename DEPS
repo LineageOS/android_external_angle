@@ -484,7 +484,7 @@ deps = {
   },
 
   'third_party/SwiftShader': {
-    'url': '{swiftshader_git}/SwiftShader@b46b97c10c10fbd5dc0ff1d1d101839cbc76a995',
+    'url': '{swiftshader_git}/SwiftShader@90c0551ca547914f96b32d50bba9c2126b45be41',
     'condition': 'not build_with_chromium',
   },
 
@@ -1376,6 +1376,16 @@ deps = {
       'packages': [
         {
             'package': 'angle/traces/standoff_2',
+            'version': 'version:1',
+        },
+      ],
+      'dep_type': 'cipd',
+      'condition': 'checkout_angle_restricted_traces',
+  },
+  'src/tests/restricted_traces/subway_princess_runner': {
+      'packages': [
+        {
+            'package': 'angle/traces/subway_princess_runner',
             'version': 'version:1',
         },
       ],
