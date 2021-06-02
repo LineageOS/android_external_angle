@@ -30,17 +30,17 @@ class Image final : public Memory
   private:
     Image(Context &context,
           PropArray &&properties,
-          cl_mem_flags flags,
+          MemFlags flags,
           const cl_image_format &format,
           const ImageDescriptor &desc,
           Memory *parent,
           void *hostPtr,
-          cl_int *errcodeRet);
+          cl_int &errorCode);
 
     const cl_image_format mFormat;
     const ImageDescriptor mDesc;
 
-    friend class Context;
+    friend class Object;
 };
 
 inline cl_mem_object_type Image::getType() const

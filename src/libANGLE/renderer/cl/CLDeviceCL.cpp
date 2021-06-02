@@ -7,11 +7,9 @@
 
 #include "libANGLE/renderer/cl/CLDeviceCL.h"
 
-#include "libANGLE/renderer/cl/CLPlatformCL.h"
 #include "libANGLE/renderer/cl/cl_util.h"
 
 #include "libANGLE/CLDevice.h"
-#include "libANGLE/Debug.h"
 
 namespace rx
 {
@@ -65,7 +63,7 @@ CLDeviceCL::~CLDeviceCL()
     }
 }
 
-CLDeviceImpl::Info CLDeviceCL::createInfo(cl_device_type type) const
+CLDeviceImpl::Info CLDeviceCL::createInfo(cl::DeviceType type) const
 {
     Info info(type);
     std::vector<char> valString;
@@ -134,7 +132,8 @@ CLDeviceImpl::Info CLDeviceCL::createInfo(cl_device_type type) const
     if (info.mVersion >= CL_MAKE_VERSION(2, 0, 0) &&
         (!GetDeviceInfo(mNative, cl::DeviceInfo::ImagePitchAlignment, info.mImagePitchAlignment) ||
          !GetDeviceInfo(mNative, cl::DeviceInfo::ImageBaseAddressAlignment,
-                        info.mImageBaseAddressAlignment)))
+                        info.mImageBaseAddressAlignment) ||
+         !GetDeviceInfo(mNative, cl::DeviceInfo::QueueOnDeviceMaxSize, info.mQueueOnDeviceMaxSize)))
     {
         return Info{};
     }
@@ -194,10 +193,9 @@ cl_int CLDeviceCL::getInfoString(cl::DeviceInfo name, size_t size, char *value) 
                                                   nullptr);
 }
 
-cl_int CLDeviceCL::createSubDevices(cl::Device &device,
-                                    const cl_device_partition_property *properties,
+cl_int CLDeviceCL::createSubDevices(const cl_device_partition_property *properties,
                                     cl_uint numDevices,
-                                    cl::DevicePtrList &subDeviceList,
+                                    CreateFuncs &createFuncs,
                                     cl_uint *numDevicesRet)
 {
     if (numDevices == 0u)
@@ -207,26 +205,18 @@ cl_int CLDeviceCL::createSubDevices(cl::Device &device,
     }
 
     std::vector<cl_device_id> nativeSubDevices(numDevices, nullptr);
-    const cl_int result = mNative->getDispatch().clCreateSubDevices(
+    const cl_int errorCode = mNative->getDispatch().clCreateSubDevices(
         mNative, properties, numDevices, nativeSubDevices.data(), nullptr);
-    if (result == CL_SUCCESS)
+    if (errorCode == CL_SUCCESS)
     {
         for (cl_device_id nativeSubDevice : nativeSubDevices)
         {
-            const cl::Device::CreateImplFunc createImplFunc = [&](const cl::Device &device) {
+            createFuncs.emplace_back([=](const cl::Device &device) {
                 return Ptr(new CLDeviceCL(device, nativeSubDevice));
-            };
-            subDeviceList.emplace_back(cl::Device::CreateDevice(
-                device.getPlatform(), &device, device.getInfo().mType & ~CL_DEVICE_TYPE_DEFAULT,
-                createImplFunc));
-            if (!subDeviceList.back())
-            {
-                subDeviceList.clear();
-                return CL_INVALID_VALUE;
-            }
+            });
         }
     }
-    return result;
+    return errorCode;
 }
 
 CLDeviceCL::CLDeviceCL(const cl::Device &device, cl_device_id native)

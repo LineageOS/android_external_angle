@@ -10,27 +10,21 @@
 #include "libANGLE/CLContext.h"
 #include "libANGLE/CLPlatform.h"
 
+#include <cstring>
+
 namespace cl
 {
 
 Program::~Program() = default;
 
-bool Program::release()
-{
-    const bool released = removeRef();
-    if (released)
-    {
-        mContext->destroyProgram(this);
-    }
-    return released;
-}
-
 cl_int Program::getInfo(ProgramInfo name, size_t valueSize, void *value, size_t *valueSizeRet) const
 {
-    static_assert(std::is_same<cl_uint, cl_addressing_mode>::value &&
+    static_assert(std::is_same<cl_uint, cl_bool>::value &&
+                      std::is_same<cl_uint, cl_addressing_mode>::value &&
                       std::is_same<cl_uint, cl_filter_mode>::value,
                   "OpenCL type mismatch");
 
+    std::vector<cl_device_id> devices;
     std::vector<size_t> binarySizes;
     std::vector<const unsigned char *> binaries;
     cl_uint valUInt       = 0u;
@@ -41,11 +35,12 @@ cl_int Program::getInfo(ProgramInfo name, size_t valueSize, void *value, size_t 
     switch (name)
     {
         case ProgramInfo::ReferenceCount:
-            copyValue = getRefCountPtr();
-            copySize  = sizeof(*getRefCountPtr());
+            valUInt   = getRefCount();
+            copyValue = &valUInt;
+            copySize  = sizeof(valUInt);
             break;
         case ProgramInfo::Context:
-            valPointer = static_cast<cl_context>(mContext.get());
+            valPointer = mContext->getNative();
             copyValue  = &valPointer;
             copySize   = sizeof(valPointer);
             break;
@@ -55,10 +50,13 @@ cl_int Program::getInfo(ProgramInfo name, size_t valueSize, void *value, size_t 
             copySize  = sizeof(valUInt);
             break;
         case ProgramInfo::Devices:
-            static_assert(sizeof(decltype(mDevices)::value_type) == sizeof(Device *),
-                          "DeviceRefList has wrong element size");
-            copyValue = mDevices.data();
-            copySize  = mDevices.size() * sizeof(decltype(mDevices)::value_type);
+            devices.reserve(mDevices.size());
+            for (const DevicePtr &device : mDevices)
+            {
+                devices.emplace_back(device->getNative());
+            }
+            copyValue = devices.data();
+            copySize  = devices.size() * sizeof(decltype(devices)::value_type);
             break;
         case ProgramInfo::Source:
             copyValue = mSource.c_str();
@@ -89,15 +87,31 @@ cl_int Program::getInfo(ProgramInfo name, size_t valueSize, void *value, size_t 
             copySize  = binaries.size() * sizeof(decltype(binaries)::value_type);
             break;
         case ProgramInfo::NumKernels:
+            copyValue = &mNumKernels;
+            copySize  = sizeof(mNumKernels);
+            break;
         case ProgramInfo::KernelNames:
+            copyValue = mKernelNames.c_str();
+            copySize  = mKernelNames.length() + 1u;
+            break;
         case ProgramInfo::ScopeGlobalCtorsPresent:
+            valUInt   = CL_FALSE;
+            copyValue = &valUInt;
+            copySize  = sizeof(valUInt);
+            break;
         case ProgramInfo::ScopeGlobalDtorsPresent:
+            valUInt   = CL_FALSE;
+            copyValue = &valUInt;
+            copySize  = sizeof(valUInt);
+            break;
         default:
             return CL_INVALID_VALUE;
     }
 
     if (value != nullptr)
     {
+        // CL_INVALID_VALUE if size in bytes specified by param_value_size is < size of return type
+        // as described in the Program Object Queries table and param_value is not NULL.
         if (valueSize < copySize)
         {
             return CL_INVALID_VALUE;
@@ -114,53 +128,72 @@ cl_int Program::getInfo(ProgramInfo name, size_t valueSize, void *value, size_t 
     return CL_SUCCESS;
 }
 
-bool Program::IsValid(const _cl_program *program)
+cl_kernel Program::createKernel(const char *kernel_name, cl_int &errorCode)
 {
-    const Platform::PtrList &platforms = Platform::GetPlatforms();
-    return std::find_if(platforms.cbegin(), platforms.cend(), [=](const PlatformPtr &platform) {
-               return platform->hasProgram(program);
-           }) != platforms.cend();
+    return Object::Create<Kernel>(errorCode, *this, kernel_name);
 }
 
-Program::Program(Context &context, std::string &&source, cl_int *errcodeRet)
-    : _cl_program(context.getDispatch()),
-      mContext(&context),
+cl_int Program::createKernels(cl_uint numKernels, cl_kernel *kernels, cl_uint *numKernelsRet)
+{
+    if (kernels == nullptr)
+    {
+        numKernels = 0u;
+    }
+    rx::CLKernelImpl::CreateFuncs createFuncs;
+    cl_int errorCode = mImpl->createKernels(numKernels, createFuncs, numKernelsRet);
+    if (errorCode == CL_SUCCESS)
+    {
+        KernelPtrs krnls;
+        krnls.reserve(createFuncs.size());
+        while (!createFuncs.empty())
+        {
+            krnls.emplace_back(new Kernel(*this, createFuncs.front(), errorCode));
+            if (errorCode != CL_SUCCESS)
+            {
+                return CL_INVALID_VALUE;
+            }
+            createFuncs.pop_front();
+        }
+        for (KernelPtr &kernel : krnls)
+        {
+            *kernels++ = kernel.release();
+        }
+    }
+    return errorCode;
+}
+
+Program::Program(Context &context, std::string &&source, cl_int &errorCode)
+    : mContext(&context),
       mDevices(context.getDevices()),
-      mImpl(context.mImpl->createProgramWithSource(*this, source, errcodeRet)),
+      mImpl(context.getImpl().createProgramWithSource(*this, source, errorCode)),
       mSource(std::move(source))
 {}
 
-Program::Program(Context &context, const void *il, size_t length, cl_int *errcodeRet)
-    : _cl_program(context.getDispatch()),
-      mContext(&context),
+Program::Program(Context &context, const void *il, size_t length, cl_int &errorCode)
+    : mContext(&context),
       mDevices(context.getDevices()),
       mIL(static_cast<const char *>(il), length),
-      mImpl(context.mImpl->createProgramWithIL(*this, il, length, errcodeRet)),
-      mSource(mImpl ? mImpl->getSource() : std::string{})
+      mImpl(context.getImpl().createProgramWithIL(*this, il, length, errorCode)),
+      mSource(mImpl ? mImpl->getSource(errorCode) : std::string{})
 {}
 
 Program::Program(Context &context,
-                 DeviceRefList &&devices,
+                 DevicePtrs &&devices,
                  Binaries &&binaries,
                  cl_int *binaryStatus,
-                 cl_int *errcodeRet)
-    : _cl_program(context.getDispatch()),
-      mContext(&context),
+                 cl_int &errorCode)
+    : mContext(&context),
       mDevices(std::move(devices)),
-      mImpl(context.mImpl->createProgramWithBinary(*this, binaries, binaryStatus, errcodeRet)),
-      mSource(mImpl ? mImpl->getSource() : std::string{}),
+      mImpl(context.getImpl().createProgramWithBinary(*this, binaries, binaryStatus, errorCode)),
+      mSource(mImpl ? mImpl->getSource(errorCode) : std::string{}),
       mBinaries(std::move(binaries))
 {}
 
-Program::Program(Context &context,
-                 DeviceRefList &&devices,
-                 const char *kernelNames,
-                 cl_int *errcodeRet)
-    : _cl_program(context.getDispatch()),
-      mContext(&context),
+Program::Program(Context &context, DevicePtrs &&devices, const char *kernelNames, cl_int &errorCode)
+    : mContext(&context),
       mDevices(std::move(devices)),
-      mImpl(context.mImpl->createProgramWithBuiltInKernels(*this, kernelNames, errcodeRet)),
-      mSource(mImpl ? mImpl->getSource() : std::string{})
+      mImpl(context.getImpl().createProgramWithBuiltInKernels(*this, kernelNames, errorCode)),
+      mSource(mImpl ? mImpl->getSource(errorCode) : std::string{})
 {}
 
 }  // namespace cl

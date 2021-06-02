@@ -21,23 +21,19 @@ class CLPlatformCL : public CLPlatformImpl
     cl_platform_id getNative();
 
     Info createInfo() const override;
-    cl::DevicePtrList createDevices(cl::Platform &platform) const override;
+    CLDeviceImpl::CreateDatas createDevices() const override;
 
-    CLContextImpl::Ptr createContext(const cl::Context &context,
-                                     const cl::DeviceRefList &devices,
-                                     cl::ContextErrorCB notify,
-                                     void *userData,
+    CLContextImpl::Ptr createContext(cl::Context &context,
+                                     const cl::DevicePtrs &devices,
                                      bool userSync,
-                                     cl_int *errcodeRet) override;
+                                     cl_int &errorCode) override;
 
-    CLContextImpl::Ptr createContextFromType(const cl::Context &context,
-                                             cl_device_type deviceType,
-                                             cl::ContextErrorCB notify,
-                                             void *userData,
+    CLContextImpl::Ptr createContextFromType(cl::Context &context,
+                                             cl::DeviceType deviceType,
                                              bool userSync,
-                                             cl_int *errcodeRet) override;
+                                             cl_int &errorCode) override;
 
-    static void Initialize(const cl_icd_dispatch &dispatch, bool isIcd);
+    static void Initialize(CreateFuncs &createFuncs, bool isIcd);
 
   private:
     CLPlatformCL(const cl::Platform &platform, cl_platform_id native);

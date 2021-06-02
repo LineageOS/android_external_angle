@@ -453,6 +453,7 @@ cl_includes = [
 ]
 
 libangle_cl_headers = [
+  "src/libANGLE/CLBitField.h",
   "src/libANGLE/CLBuffer.h",
   "src/libANGLE/CLCommandQueue.h",
   "src/libANGLE/CLContext.h",
@@ -471,6 +472,8 @@ libangle_cl_headers = [
   "src/libANGLE/renderer/CLCommandQueueImpl.h",
   "src/libANGLE/renderer/CLContextImpl.h",
   "src/libANGLE/renderer/CLDeviceImpl.h",
+  "src/libANGLE/renderer/CLEventImpl.h",
+  "src/libANGLE/renderer/CLKernelImpl.h",
   "src/libANGLE/renderer/CLMemoryImpl.h",
   "src/libANGLE/renderer/CLPlatformImpl.h",
   "src/libANGLE/renderer/CLProgramImpl.h",
@@ -497,6 +500,8 @@ libangle_cl_sources = [
   "src/libANGLE/renderer/CLCommandQueueImpl.cpp",
   "src/libANGLE/renderer/CLContextImpl.cpp",
   "src/libANGLE/renderer/CLDeviceImpl.cpp",
+  "src/libANGLE/renderer/CLEventImpl.cpp",
+  "src/libANGLE/renderer/CLKernelImpl.cpp",
   "src/libANGLE/renderer/CLMemoryImpl.cpp",
   "src/libANGLE/renderer/CLPlatformImpl.cpp",
   "src/libANGLE/renderer/CLProgramImpl.cpp",
