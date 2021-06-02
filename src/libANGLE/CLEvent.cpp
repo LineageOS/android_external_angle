@@ -15,22 +15,6 @@
 namespace cl
 {
 
-Event::~Event() = default;
-
-void Event::callback(cl_int commandStatus)
-{
-    ASSERT(commandStatus >= 0 && commandStatus < 3);
-    for (const CallbackData &data : mCallbacks[commandStatus])
-    {
-        data.first(this, commandStatus, data.second);
-    }
-    // This event can be released after the callback was called.
-    if (release())
-    {
-        delete this;
-    }
-}
-
 cl_int Event::setUserEventStatus(cl_int executionStatus)
 {
     const cl_int errorCode = mImpl->setUserEventStatus(executionStatus);
@@ -122,10 +106,47 @@ cl_int Event::setCallback(cl_int commandExecCallbackType, EventCB pfnNotify, voi
     return CL_SUCCESS;
 }
 
+Event::~Event() = default;
+
+void Event::callback(cl_int commandStatus)
+{
+    ASSERT(commandStatus >= 0 && commandStatus < 3);
+    for (const CallbackData &data : mCallbacks[commandStatus])
+    {
+        data.first(this, commandStatus, data.second);
+    }
+    // This event can be released after the callback was called.
+    if (release())
+    {
+        delete this;
+    }
+}
+
+EventPtrs Event::Cast(cl_uint numEvents, const cl_event *eventList)
+{
+    EventPtrs events;
+    events.reserve(numEvents);
+    while (numEvents-- != 0u)
+    {
+        events.emplace_back(&(*eventList++)->cast<Event>());
+    }
+    return events;
+}
+
 Event::Event(Context &context, cl_int &errorCode)
     : mContext(&context),
-      mImpl(context.getImpl().createUserEvent(*this, errorCode)),
-      mCommandType(CL_COMMAND_USER)
+      mCommandType(CL_COMMAND_USER),
+      mImpl(context.getImpl().createUserEvent(*this, errorCode))
+{}
+
+Event::Event(CommandQueue &queue,
+             cl_command_type commandType,
+             const rx::CLEventImpl::CreateFunc &createFunc,
+             cl_int &errorCode)
+    : mContext(&queue.getContext()),
+      mCommandQueue(&queue),
+      mCommandType(commandType),
+      mImpl(createFunc(*this))
 {}
 
 }  // namespace cl
