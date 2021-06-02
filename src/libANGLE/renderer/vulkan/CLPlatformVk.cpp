@@ -56,49 +56,37 @@ CLPlatformImpl::Info CLPlatformVk::createInfo() const
     return info;
 }
 
-cl::DevicePtrList CLPlatformVk::createDevices(cl::Platform &platform) const
+CLDeviceImpl::CreateDatas CLPlatformVk::createDevices() const
 {
-    cl_device_type type = 0u;  // TODO(jplate) Fetch device type from Vulkan
-    cl::DevicePtrList devices;
-    const cl::Device::CreateImplFunc createImplFunc = [](const cl::Device &device) {
-        return CLDeviceVk::Ptr(new CLDeviceVk(device));
-    };
-    devices.emplace_back(cl::Device::CreateDevice(platform, nullptr, type, createImplFunc));
-    if (!devices.back())
-    {
-        devices.clear();
-    }
-    return devices;
+    cl::DeviceType type;  // TODO(jplate) Fetch device type from Vulkan
+    CLDeviceImpl::CreateDatas createDatas;
+    createDatas.emplace_back(
+        type, [](const cl::Device &device) { return CLDeviceVk::Ptr(new CLDeviceVk(device)); });
+    return createDatas;
 }
 
-CLContextImpl::Ptr CLPlatformVk::createContext(const cl::Context &context,
-                                               const cl::DeviceRefList &devices,
-                                               cl::ContextErrorCB notify,
-                                               void *userData,
+CLContextImpl::Ptr CLPlatformVk::createContext(cl::Context &context,
+                                               const cl::DevicePtrs &devices,
                                                bool userSync,
-                                               cl_int *errcodeRet)
+                                               cl_int &errorCode)
 {
     CLContextImpl::Ptr contextImpl;
     return contextImpl;
 }
 
-CLContextImpl::Ptr CLPlatformVk::createContextFromType(const cl::Context &context,
-                                                       cl_device_type deviceType,
-                                                       cl::ContextErrorCB notify,
-                                                       void *userData,
+CLContextImpl::Ptr CLPlatformVk::createContextFromType(cl::Context &context,
+                                                       cl::DeviceType deviceType,
                                                        bool userSync,
-                                                       cl_int *errcodeRet)
+                                                       cl_int &errorCode)
 {
     CLContextImpl::Ptr contextImpl;
     return contextImpl;
 }
 
-void CLPlatformVk::Initialize(const cl_icd_dispatch &dispatch)
+void CLPlatformVk::Initialize(CreateFuncs &createFuncs)
 {
-    const cl::Platform::CreateImplFunc createImplFunc = [](const cl::Platform &platform) {
-        return Ptr(new CLPlatformVk(platform));
-    };
-    cl::Platform::CreatePlatform(dispatch, createImplFunc);
+    createFuncs.emplace_back(
+        [](const cl::Platform &platform) { return Ptr(new CLPlatformVk(platform)); });
 }
 
 const std::string &CLPlatformVk::GetVersionString()

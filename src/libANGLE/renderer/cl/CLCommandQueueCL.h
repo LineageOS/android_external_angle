@@ -9,8 +9,6 @@
 #ifndef LIBANGLE_RENDERER_CL_CLCOMMANDQUEUECL_H_
 #define LIBANGLE_RENDERER_CL_CLCOMMANDQUEUECL_H_
 
-#include "libANGLE/renderer/cl/cl_types.h"
-
 #include "libANGLE/renderer/CLCommandQueueImpl.h"
 
 namespace rx
@@ -22,7 +20,7 @@ class CLCommandQueueCL : public CLCommandQueueImpl
     CLCommandQueueCL(const cl::CommandQueue &commandQueue, cl_command_queue native);
     ~CLCommandQueueCL() override;
 
-    cl_int setProperty(cl_command_queue_properties properties, cl_bool enable) override;
+    cl_int setProperty(cl::CommandQueueProperties properties, cl_bool enable) override;
 
   private:
     const cl_command_queue mNative;

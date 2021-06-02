@@ -19,23 +19,19 @@ class CLPlatformVk : public CLPlatformImpl
     ~CLPlatformVk() override;
 
     Info createInfo() const override;
-    cl::DevicePtrList createDevices(cl::Platform &platform) const override;
+    CLDeviceImpl::CreateDatas createDevices() const override;
 
-    CLContextImpl::Ptr createContext(const cl::Context &context,
-                                     const cl::DeviceRefList &devices,
-                                     cl::ContextErrorCB notify,
-                                     void *userData,
+    CLContextImpl::Ptr createContext(cl::Context &context,
+                                     const cl::DevicePtrs &devices,
                                      bool userSync,
-                                     cl_int *errcodeRet) override;
+                                     cl_int &errorCode) override;
 
-    CLContextImpl::Ptr createContextFromType(const cl::Context &context,
-                                             cl_device_type deviceType,
-                                             cl::ContextErrorCB notify,
-                                             void *userData,
+    CLContextImpl::Ptr createContextFromType(cl::Context &context,
+                                             cl::DeviceType deviceType,
                                              bool userSync,
-                                             cl_int *errcodeRet) override;
+                                             cl_int &errorCode) override;
 
-    static void Initialize(const cl_icd_dispatch &dispatch);
+    static void Initialize(CreateFuncs &createFuncs);
 
     static constexpr cl_version GetVersion();
     static const std::string &GetVersionString();

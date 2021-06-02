@@ -8,12 +8,16 @@
 #ifndef LIBANGLE_CLTYPES_H_
 #define LIBANGLE_CLTYPES_H_
 
+#include "libANGLE/CLBitField.h"
 #include "libANGLE/CLRefPointer.h"
+#include "libANGLE/Debug.h"
 
 #include "common/PackedCLEnums_autogen.h"
+#include "common/angleutils.h"
 
 // Include frequently used standard headers
 #include <algorithm>
+#include <functional>
 #include <list>
 #include <memory>
 #include <string>
@@ -36,23 +40,20 @@ class Platform;
 class Program;
 class Sampler;
 
-using CommandQueuePtr = std::unique_ptr<CommandQueue>;
-using ContextPtr      = std::unique_ptr<Context>;
-using DevicePtr       = std::unique_ptr<Device>;
-using EventPtr        = std::unique_ptr<Event>;
-using KernelPtr       = std::unique_ptr<Kernel>;
-using MemoryPtr       = std::unique_ptr<Memory>;
-using ObjectPtr       = std::unique_ptr<Object>;
-using PlatformPtr     = std::unique_ptr<Platform>;
-using ProgramPtr      = std::unique_ptr<Program>;
-using SamplerPtr      = std::unique_ptr<Sampler>;
+using CommandQueuePtr = RefPointer<CommandQueue>;
+using ContextPtr      = RefPointer<Context>;
+using DevicePtr       = RefPointer<Device>;
+using EventPtr        = RefPointer<Event>;
+using KernelPtr       = RefPointer<Kernel>;
+using MemoryPtr       = RefPointer<Memory>;
+using PlatformPtr     = RefPointer<Platform>;
+using ProgramPtr      = RefPointer<Program>;
+using SamplerPtr      = RefPointer<Sampler>;
 
-using ContextRefPtr = RefPointer<Context>;
-using DeviceRefPtr  = RefPointer<Device>;
-using MemoryRefPtr  = RefPointer<Memory>;
-
-using DevicePtrList = std::list<DevicePtr>;
-using DeviceRefList = std::vector<DeviceRefPtr>;
+using DevicePtrs   = std::vector<DevicePtr>;
+using EventPtrs    = std::vector<EventPtr>;
+using KernelPtrs   = std::vector<KernelPtr>;
+using PlatformPtrs = std::vector<PlatformPtr>;
 
 using Binary   = std::vector<unsigned char>;
 using Binaries = std::vector<Binary>;

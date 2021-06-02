@@ -7,7 +7,9 @@
 
 #include "libANGLE/CLPlatform.h"
 
-#include <cstdint>
+#include "libANGLE/CLContext.h"
+#include "libANGLE/CLDevice.h"
+
 #include <cstring>
 
 namespace cl
@@ -16,13 +18,12 @@ namespace cl
 namespace
 {
 
-bool IsDeviceTypeMatch(cl_device_type select, cl_device_type type)
+bool IsDeviceTypeMatch(DeviceType select, DeviceType type)
 {
-    // The type 'cl_device_type' is a bitfield, so masking out the selected bits indicates
-    // if a given type is a match. A custom device is an exception, which only matches
-    // if it was explicitely selected, as defined here:
+    // The type 'DeviceType' is a bitfield, so it matches if any selected bit is set.
+    // A custom device is an exception, which only matches if it was explicitely selected, see:
     // https://www.khronos.org/registry/OpenCL/specs/3.0-unified/html/OpenCL_API.html#clGetDeviceIDs
-    return type == CL_DEVICE_TYPE_CUSTOM ? select == CL_DEVICE_TYPE_CUSTOM : (type & select) != 0u;
+    return type == CL_DEVICE_TYPE_CUSTOM ? select == CL_DEVICE_TYPE_CUSTOM : type.isSet(select);
 }
 
 Context::PropArray ParseContextProperties(const cl_context_properties *properties,
@@ -38,7 +39,7 @@ Context::PropArray ParseContextProperties(const cl_context_properties *propertie
             switch (*propIt++)
             {
                 case CL_CONTEXT_PLATFORM:
-                    platform = reinterpret_cast<Platform *>(*propIt++);
+                    platform = &reinterpret_cast<cl_platform_id>(*propIt++)->cast<Platform>();
                     break;
                 case CL_CONTEXT_INTEROP_USER_SYNC:
                     userSync = *propIt++ != CL_FALSE;
@@ -59,10 +60,7 @@ Context::PropArray ParseContextProperties(const cl_context_properties *propertie
 
 }  // namespace
 
-Platform::~Platform()
-{
-    removeRef();
-}
+Platform::~Platform() = default;
 
 cl_int Platform::getInfo(PlatformInfo name,
                          size_t valueSize,
@@ -112,11 +110,14 @@ cl_int Platform::getInfo(PlatformInfo name,
             copySize  = sizeof(kIcdSuffix);
             break;
         default:
+            ASSERT(false);
             return CL_INVALID_VALUE;
     }
 
     if (value != nullptr)
     {
+        // CL_INVALID_VALUE if size in bytes specified by param_value_size is < size of return type
+        // as specified in the OpenCL Platform Queries table, and param_value is not a NULL value.
         if (valueSize < copySize)
         {
             return CL_INVALID_VALUE;
@@ -133,7 +134,7 @@ cl_int Platform::getInfo(PlatformInfo name,
     return CL_SUCCESS;
 }
 
-cl_int Platform::getDeviceIDs(cl_device_type deviceType,
+cl_int Platform::getDeviceIDs(DeviceType deviceType,
                               cl_uint numEntries,
                               cl_device_id *devices,
                               cl_uint *numDevices) const
@@ -154,32 +155,54 @@ cl_int Platform::getDeviceIDs(cl_device_type deviceType,
     {
         *numDevices = found;
     }
-    return found == 0u ? CL_DEVICE_NOT_FOUND : CL_SUCCESS;
+
+    // CL_DEVICE_NOT_FOUND if no OpenCL devices that matched device_type were found.
+    if (found == 0u)
+    {
+        return CL_DEVICE_NOT_FOUND;
+    }
+
+    return CL_SUCCESS;
 }
 
-void Platform::CreatePlatform(const cl_icd_dispatch &dispatch, const CreateImplFunc &createImplFunc)
+void Platform::Initialize(const cl_icd_dispatch &dispatch,
+                          rx::CLPlatformImpl::CreateFuncs &&createFuncs)
 {
-    PlatformPtr platform(new Platform(dispatch, createImplFunc));
-    if (platform->mInfo.isValid() && !platform->mDevices.empty())
+    PlatformPtrs &platforms = GetPointers();
+    ASSERT(Dispatch::sDispatch == nullptr && platforms.empty());
+    if (Dispatch::sDispatch != nullptr || !platforms.empty())
     {
-        GetList().emplace_back(std::move(platform));
+        ERR() << "Already initialized";
+        return;
+    }
+    Dispatch::sDispatch = &dispatch;
+
+    platforms.reserve(createFuncs.size());
+    while (!createFuncs.empty())
+    {
+        platforms.emplace_back(new Platform(createFuncs.front()));
+        if (!platforms.back()->mInfo.isValid() || platforms.back()->mDevices.empty())
+        {
+            platforms.pop_back();
+        }
+        createFuncs.pop_front();
     }
 }
 
-cl_int Platform::GetPlatformIDs(cl_uint num_entries,
+cl_int Platform::GetPlatformIDs(cl_uint numEntries,
                                 cl_platform_id *platforms,
-                                cl_uint *num_platforms)
+                                cl_uint *numPlatforms)
 {
-    const PtrList &platformList = GetList();
-    if (num_platforms != nullptr)
+    const PlatformPtrs &availPlatforms = GetPlatforms();
+    if (numPlatforms != nullptr)
     {
-        *num_platforms = static_cast<cl_uint>(platformList.size());
+        *numPlatforms = static_cast<cl_uint>(availPlatforms.size());
     }
     if (platforms != nullptr)
     {
         cl_uint entry   = 0u;
-        auto platformIt = platformList.cbegin();
-        while (entry < num_entries && platformIt != platformList.cend())
+        auto platformIt = availPlatforms.cbegin();
+        while (entry < numEntries && platformIt != availPlatforms.cend())
         {
             platforms[entry++] = (*platformIt++).get();
         }
@@ -192,75 +215,57 @@ cl_context Platform::CreateContext(const cl_context_properties *properties,
                                    const cl_device_id *devices,
                                    ContextErrorCB notify,
                                    void *userData,
-                                   cl_int *errcodeRet)
+                                   cl_int &errorCode)
 {
     Platform *platform           = nullptr;
     bool userSync                = false;
     Context::PropArray propArray = ParseContextProperties(properties, platform, userSync);
     ASSERT(platform != nullptr);
-    DeviceRefList refDevices;
+    DevicePtrs devs;
+    devs.reserve(numDevices);
     while (numDevices-- != 0u)
     {
-        refDevices.emplace_back(static_cast<Device *>(*devices++));
+        devs.emplace_back(&(*devices++)->cast<Device>());
     }
-    return platform->createContext(
-        new Context(*platform, std::move(propArray), std::move(refDevices), notify, userData,
-                    userSync, errcodeRet),
-        errcodeRet);
+    return Object::Create<Context>(errorCode, *platform, std::move(propArray), std::move(devs),
+                                   notify, userData, userSync);
 }
 
 cl_context Platform::CreateContextFromType(const cl_context_properties *properties,
-                                           cl_device_type deviceType,
+                                           DeviceType deviceType,
                                            ContextErrorCB notify,
                                            void *userData,
-                                           cl_int *errcodeRet)
+                                           cl_int &errorCode)
 {
     Platform *platform           = nullptr;
     bool userSync                = false;
     Context::PropArray propArray = ParseContextProperties(properties, platform, userSync);
     ASSERT(platform != nullptr);
-    return platform->createContext(new Context(*platform, std::move(propArray), deviceType, notify,
-                                               userData, userSync, errcodeRet),
-                                   errcodeRet);
+    return Object::Create<Context>(errorCode, *platform, std::move(propArray), deviceType, notify,
+                                   userData, userSync);
 }
 
-Platform::Platform(const cl_icd_dispatch &dispatch, const CreateImplFunc &createImplFunc)
-    : _cl_platform_id(dispatch),
-      mImpl(createImplFunc(*this)),
+Platform::Platform(const rx::CLPlatformImpl::CreateFunc &createFunc)
+    : mImpl(createFunc(*this)),
       mInfo(mImpl->createInfo()),
-      mDevices(mImpl->createDevices(*this))
+      mDevices(createDevices(mImpl->createDevices()))
 {}
 
-cl_context Platform::createContext(Context *context, cl_int *errcodeRet)
+DevicePtrs Platform::createDevices(rx::CLDeviceImpl::CreateDatas &&createDatas)
 {
-    mContexts.emplace_back(context);
-    if (!mContexts.back()->mImpl)
+    DevicePtrs devices;
+    devices.reserve(createDatas.size());
+    while (!createDatas.empty())
     {
-        mContexts.back()->release();
-        return nullptr;
+        devices.emplace_back(
+            new Device(*this, nullptr, createDatas.front().first, createDatas.front().second));
+        if (!devices.back()->mInfo.isValid())
+        {
+            devices.pop_back();
+        }
+        createDatas.pop_front();
     }
-    if (errcodeRet != nullptr)
-    {
-        *errcodeRet = CL_SUCCESS;
-    }
-    return mContexts.back().get();
-}
-
-void Platform::destroyContext(Context *context)
-{
-    auto contextIt = mContexts.cbegin();
-    while (contextIt != mContexts.cend() && contextIt->get() != context)
-    {
-        ++contextIt;
-    }
-    if (contextIt != mContexts.cend())
-    {
-        mContexts.erase(contextIt);
-    }
-    else
-    {
-        ERR() << "Context not found";
-    }
+    return devices;
 }
 
 constexpr char Platform::kVendor[];

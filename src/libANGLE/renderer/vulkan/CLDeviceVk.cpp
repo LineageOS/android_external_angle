@@ -16,7 +16,7 @@ CLDeviceVk::CLDeviceVk(const cl::Device &device) : CLDeviceImpl(device) {}
 
 CLDeviceVk::~CLDeviceVk() = default;
 
-CLDeviceImpl::Info CLDeviceVk::createInfo(cl_device_type type) const
+CLDeviceImpl::Info CLDeviceVk::createInfo(cl::DeviceType type) const
 {
     Info info(type);
     return info;
@@ -47,10 +47,9 @@ cl_int CLDeviceVk::getInfoString(cl::DeviceInfo name, size_t size, char *value) 
     return CL_INVALID_VALUE;
 }
 
-cl_int CLDeviceVk::createSubDevices(cl::Device &device,
-                                    const cl_device_partition_property *properties,
+cl_int CLDeviceVk::createSubDevices(const cl_device_partition_property *properties,
                                     cl_uint numDevices,
-                                    cl::DevicePtrList &subDeviceList,
+                                    CreateFuncs &subDevices,
                                     cl_uint *numDevicesRet)
 {
     return CL_INVALID_VALUE;

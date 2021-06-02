@@ -23,24 +23,24 @@ class Buffer final : public Memory
     bool isSubBuffer() const;
     bool isRegionValid(const cl_buffer_region &region) const;
 
-    cl_mem createSubBuffer(cl_mem_flags flags,
+    cl_mem createSubBuffer(MemFlags flags,
                            cl_buffer_create_type createType,
                            const void *createInfo,
-                           cl_int *errcodeRet);
+                           cl_int &errorCode);
 
     static bool IsValid(const _cl_mem *buffer);
 
   private:
     Buffer(Context &context,
            PropArray &&properties,
-           cl_mem_flags flags,
+           MemFlags flags,
            size_t size,
            void *hostPtr,
-           cl_int *errcodeRet);
+           cl_int &errorCode);
 
-    Buffer(Buffer &parent, cl_mem_flags flags, size_t offset, size_t size, cl_int *errcodeRet);
+    Buffer(Buffer &parent, MemFlags flags, size_t offset, size_t size, cl_int &errorCode);
 
-    friend class Context;
+    friend class Object;
 };
 
 inline cl_mem_object_type Buffer::getType() const
@@ -50,7 +50,7 @@ inline cl_mem_object_type Buffer::getType() const
 
 inline bool Buffer::isSubBuffer() const
 {
-    return bool(mParent);
+    return mParent != nullptr;
 }
 
 inline bool Buffer::isRegionValid(const cl_buffer_region &region) const
@@ -60,8 +60,7 @@ inline bool Buffer::isRegionValid(const cl_buffer_region &region) const
 
 inline bool Buffer::IsValid(const _cl_mem *buffer)
 {
-    return Memory::IsValid(buffer) &&
-           static_cast<const Memory *>(buffer)->getType() == CL_MEM_OBJECT_BUFFER;
+    return Memory::IsValid(buffer) && buffer->cast<Memory>().getType() == CL_MEM_OBJECT_BUFFER;
 }
 
 }  // namespace cl

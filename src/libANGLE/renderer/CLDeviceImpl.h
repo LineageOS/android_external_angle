@@ -16,12 +16,16 @@ namespace rx
 class CLDeviceImpl : angle::NonCopyable
 {
   public:
-    using Ptr = std::unique_ptr<CLDeviceImpl>;
+    using Ptr         = std::unique_ptr<CLDeviceImpl>;
+    using CreateFunc  = std::function<Ptr(const cl::Device &)>;
+    using CreateFuncs = std::list<CreateFunc>;
+    using CreateData  = std::pair<cl::DeviceType, CreateFunc>;
+    using CreateDatas = std::list<CreateData>;
 
     struct Info
     {
         Info();
-        explicit Info(cl_device_type type);
+        explicit Info(cl::DeviceType type);
         ~Info();
 
         Info(const Info &) = delete;
@@ -30,10 +34,10 @@ class CLDeviceImpl : angle::NonCopyable
         Info(Info &&);
         Info &operator=(Info &&);
 
-        bool isValid() const { return mType != 0u; }
+        bool isValid() const { return mVersion != 0u; }
 
         // In the order as they appear in the OpenCL specification V3.0.7, table 5
-        cl_device_type mType = 0u;
+        cl::DeviceType mType;
         std::vector<size_t> mMaxWorkItemSizes;
         cl_ulong mMaxMemAllocSize = 0u;
         cl_bool mImageSupport     = CL_FALSE;
@@ -48,6 +52,7 @@ class CLDeviceImpl : angle::NonCopyable
         size_t mImageMaxArraySize          = 0u;
         cl_uint mImagePitchAlignment       = 0u;
         cl_uint mImageBaseAddressAlignment = 0u;
+        cl_uint mQueueOnDeviceMaxSize      = 0u;
         std::string mBuiltInKernels;
         NameVersionVector mBuiltInKernelsWithVersion;
         std::string mVersionStr;
@@ -63,7 +68,7 @@ class CLDeviceImpl : angle::NonCopyable
     CLDeviceImpl(const cl::Device &device);
     virtual ~CLDeviceImpl();
 
-    virtual Info createInfo(cl_device_type type) const = 0;
+    virtual Info createInfo(cl::DeviceType type) const = 0;
 
     virtual cl_int getInfoUInt(cl::DeviceInfo name, cl_uint *value) const             = 0;
     virtual cl_int getInfoULong(cl::DeviceInfo name, cl_ulong *value) const           = 0;
@@ -71,10 +76,9 @@ class CLDeviceImpl : angle::NonCopyable
     virtual cl_int getInfoStringLength(cl::DeviceInfo name, size_t *value) const      = 0;
     virtual cl_int getInfoString(cl::DeviceInfo name, size_t size, char *value) const = 0;
 
-    virtual cl_int createSubDevices(cl::Device &device,
-                                    const cl_device_partition_property *properties,
+    virtual cl_int createSubDevices(const cl_device_partition_property *properties,
                                     cl_uint numDevices,
-                                    cl::DevicePtrList &subDeviceList,
+                                    CreateFuncs &createFuncs,
                                     cl_uint *numDevicesRet) = 0;
 
   protected:
