@@ -20,6 +20,15 @@ namespace cl
 class Event final : public _cl_event, public Object
 {
   public:
+    // Front end entry functions, only called from OpenCL entry points
+
+    cl_int setUserEventStatus(cl_int executionStatus);
+
+    cl_int getInfo(EventInfo name, size_t valueSize, void *value, size_t *valueSizeRet) const;
+
+    cl_int setCallback(cl_int commandExecCallbackType, EventCB pfnNotify, void *userData);
+
+  public:
     ~Event() override;
 
     Context &getContext();
@@ -33,21 +42,22 @@ class Event final : public _cl_event, public Object
 
     void callback(cl_int commandStatus);
 
-    cl_int setUserEventStatus(cl_int executionStatus);
-
-    cl_int getInfo(EventInfo name, size_t valueSize, void *value, size_t *valueSizeRet) const;
-
-    cl_int setCallback(cl_int commandExecCallbackType, EventCB pfnNotify, void *userData);
+    static EventPtrs Cast(cl_uint numEvents, const cl_event *eventList);
 
   private:
     using CallbackData = std::pair<EventCB, void *>;
 
     Event(Context &context, cl_int &errorCode);
 
+    Event(CommandQueue &queue,
+          cl_command_type commandType,
+          const rx::CLEventImpl::CreateFunc &createFunc,
+          cl_int &errorCode);
+
     const ContextPtr mContext;
     const CommandQueuePtr mCommandQueue;
-    const rx::CLEventImpl::Ptr mImpl;
     const cl_command_type mCommandType;
+    const rx::CLEventImpl::Ptr mImpl;
 
     bool mStatusWasChanged = false;
 
