@@ -51,7 +51,7 @@ spirv::IdRef SPIRVBuilder::getNewId()
     return newId;
 }
 
-const SpirvTypeData &SPIRVBuilder::getTypeData(const TType &type, TLayoutBlockStorage blockStorage)
+SpirvType SPIRVBuilder::getSpirvType(const TType &type, TLayoutBlockStorage blockStorage) const
 {
     SpirvType spirvType;
     spirvType.type                = type.getBasicType();
@@ -68,16 +68,13 @@ const SpirvTypeData &SPIRVBuilder::getTypeData(const TType &type, TLayoutBlockSt
         spirvType.matrixPacking = EmpColumnMajor;
     }
 
-    const char *blockName = "";
     if (type.getStruct() != nullptr)
     {
         spirvType.block = type.getStruct();
-        blockName       = type.getStruct()->name().data();
     }
     else if (type.isInterfaceBlock())
     {
         spirvType.block = type.getInterfaceBlock();
-        blockName       = type.getInterfaceBlock()->name().data();
 
         // Calculate the block storage from the interface block automatically.  The fields inherit
         // from this.  Default to std140.
@@ -92,6 +89,23 @@ const SpirvTypeData &SPIRVBuilder::getTypeData(const TType &type, TLayoutBlockSt
     {
         // No difference in type for non-block non-array types in std140 and std430 block storage.
         spirvType.blockStorage = EbsUnspecified;
+    }
+
+    return spirvType;
+}
+
+const SpirvTypeData &SPIRVBuilder::getTypeData(const TType &type, TLayoutBlockStorage blockStorage)
+{
+    SpirvType spirvType = getSpirvType(type, blockStorage);
+
+    const char *blockName = "";
+    if (type.getStruct() != nullptr)
+    {
+        blockName = type.getStruct()->name().data();
+    }
+    else if (type.isInterfaceBlock())
+    {
+        blockName = type.getInterfaceBlock()->name().data();
     }
 
     return getSpirvTypeData(spirvType, blockName);
@@ -293,7 +307,7 @@ SpirvTypeData SPIRVBuilder::declareType(const SpirvType &type, const char *block
     // unconditionally and having the SPIR-V transformer remove them, it's better to avoid
     // generating them in the first place.  This both simplifies the transformer and reduces SPIR-V
     // binary size that gets written to disk cache.  http://anglebug.com/4889
-    if (type.block != nullptr)
+    if (type.block != nullptr && type.arraySizes.empty())
     {
         spirv::WriteName(&mSpirvDebug, typeId, blockName);
 
@@ -769,6 +783,68 @@ spirv::IdRef SPIRVBuilder::getCompositeConstant(spirv::IdRef typeId, const spirv
     return iter->second;
 }
 
+void SPIRVBuilder::startNewFunction()
+{
+    ASSERT(mSpirvCurrentFunctionBlocks.empty());
+
+    // Add the first block of the function.
+    mSpirvCurrentFunctionBlocks.emplace_back();
+    mSpirvCurrentFunctionBlocks.back().labelId = getNewId();
+}
+
+void SPIRVBuilder::assembleSpirvFunctionBlocks()
+{
+    // Take all the blocks and place them in the functions section of SPIR-V in sequence.
+    for (const SpirvBlock &block : mSpirvCurrentFunctionBlocks)
+    {
+        // Every block must be properly terminated.
+        ASSERT(block.isTerminated);
+
+        // Generate the OpLabel instruction for the block.
+        spirv::WriteLabel(&mSpirvFunctions, block.labelId);
+
+        // Add the variable declarations if any.
+        mSpirvFunctions.insert(mSpirvFunctions.end(), block.localVariables.begin(),
+                               block.localVariables.end());
+
+        // Add the body of the block.
+        mSpirvFunctions.insert(mSpirvFunctions.end(), block.body.begin(), block.body.end());
+    }
+
+    // Clean up.
+    mSpirvCurrentFunctionBlocks.clear();
+}
+
+spirv::IdRef SPIRVBuilder::declareVariable(spirv::IdRef typeId,
+                                           spv::StorageClass storageClass,
+                                           spirv::IdRef *initializerId,
+                                           const char *name)
+{
+    const bool isFunctionLocal = storageClass == spv::StorageClassFunction;
+
+    // Make sure storage class is consistent with where the variable is declared.
+    ASSERT(!isFunctionLocal || !mSpirvCurrentFunctionBlocks.empty());
+
+    // Function-local variables go in the first block of the function, while the rest are in the
+    // global variables section.
+    spirv::Blob *spirvSection = isFunctionLocal
+                                    ? &mSpirvCurrentFunctionBlocks.front().localVariables
+                                    : &mSpirvVariableDecls;
+
+    spirv::IdRef variableId          = getNewId();
+    const spirv::IdRef typePointerId = getTypePointerId(typeId, storageClass);
+
+    spirv::WriteVariable(spirvSection, typePointerId, variableId, storageClass, initializerId);
+
+    // Output debug information.
+    if (name)
+    {
+        spirv::WriteName(&mSpirvDebug, variableId, name);
+    }
+
+    return variableId;
+}
+
 uint32_t SPIRVBuilder::nextUnusedBinding()
 {
     return mNextUnusedBinding++;
@@ -912,6 +988,10 @@ uint32_t SPIRVBuilder::calculateBaseAlignmentAndSize(const SpirvType &type,
         // > laid out in order, according to rule (9).
         SpirvType baseType  = type;
         baseType.arraySizes = {};
+        if (baseType.arraySizes.empty() && baseType.block == nullptr)
+        {
+            baseType.blockStorage = EbsUnspecified;
+        }
 
         const SpirvTypeData &baseTypeData = getSpirvTypeData(baseType, "");
         uint32_t baseAlignment            = baseTypeData.baseAlignment;
@@ -1169,9 +1249,15 @@ spirv::Blob SPIRVBuilder::getSpirv()
     // - OpExecutionMode instructions
     for (spv::ExecutionMode executionMode : mExecutionModes)
     {
-        spirv::WriteExecutionMode(&result, mEntryPointId, executionMode);
+        spirv::WriteExecutionMode(&result, mEntryPointId, executionMode, {});
     }
     result.insert(result.end(), mSpirvExecutionModes.begin(), mSpirvExecutionModes.end());
+
+    // - OpSource instruction.
+    //
+    // This is to support debuggers and capture/replay tools and isn't strictly necessary.
+    spirv::WriteSource(&result, spv::SourceLanguageGLSL, spirv::LiteralInteger(450), nullptr,
+                       nullptr);
 
     // Append the already generated sections in order
     result.insert(result.end(), mSpirvDebug.begin(), mSpirvDebug.end());
