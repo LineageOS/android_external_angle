@@ -14,33 +14,6 @@
 namespace cl
 {
 
-Device::~Device() = default;
-
-bool Device::supportsBuiltInKernel(const std::string &name) const
-{
-    if (name.empty() || mInfo.mBuiltInKernels.empty())
-    {
-        return false;
-    }
-    // Compare kernel name with all sub-strings terminated by semi-colon or end of string
-    std::string::size_type start = 0u;
-    do
-    {
-        std::string::size_type end = mInfo.mBuiltInKernels.find(';', start);
-        if (end == std::string::npos)
-        {
-            end = mInfo.mBuiltInKernels.length();
-        }
-        const std::string::size_type length = end - start;
-        if (length == name.length() && mInfo.mBuiltInKernels.compare(start, length, name) == 0)
-        {
-            return true;
-        }
-        start = end + 1u;
-    } while (start < mInfo.mBuiltInKernels.size());
-    return false;
-}
-
 cl_int Device::getInfo(DeviceInfo name, size_t valueSize, void *value, size_t *valueSizeRet) const
 {
     static_assert(std::is_same<cl_uint, cl_bool>::value &&
@@ -98,7 +71,6 @@ cl_int Device::getInfo(DeviceInfo name, size_t valueSize, void *value, size_t *v
         case DeviceInfo::MaxPipeArgs:
         case DeviceInfo::PipeMaxActiveReservations:
         case DeviceInfo::PipeMaxPacketSize:
-        case DeviceInfo::MemBaseAddrAlign:
         case DeviceInfo::MinDataTypeAlignSize:
         case DeviceInfo::GlobalMemCacheType:
         case DeviceInfo::GlobalMemCachelineSize:
@@ -248,6 +220,10 @@ cl_int Device::getInfo(DeviceInfo name, size_t valueSize, void *value, size_t *v
             copyValue = &mInfo.mImageBaseAddressAlignment;
             copySize  = sizeof(mInfo.mImageBaseAddressAlignment);
             break;
+        case DeviceInfo::MemBaseAddrAlign:
+            copyValue = &mInfo.mMemBaseAddrAlign;
+            copySize  = sizeof(mInfo.mMemBaseAddrAlign);
+            break;
         case DeviceInfo::QueueOnDeviceMaxSize:
             copyValue = &mInfo.mQueueOnDeviceMaxSize;
             copySize  = sizeof(mInfo.mQueueOnDeviceMaxSize);
@@ -378,6 +354,33 @@ cl_int Device::createSubDevices(const cl_device_partition_property *properties,
         }
     }
     return errorCode;
+}
+
+Device::~Device() = default;
+
+bool Device::supportsBuiltInKernel(const std::string &name) const
+{
+    if (name.empty() || mInfo.mBuiltInKernels.empty())
+    {
+        return false;
+    }
+    // Compare kernel name with all sub-strings terminated by semi-colon or end of string
+    std::string::size_type start = 0u;
+    do
+    {
+        std::string::size_type end = mInfo.mBuiltInKernels.find(';', start);
+        if (end == std::string::npos)
+        {
+            end = mInfo.mBuiltInKernels.length();
+        }
+        const std::string::size_type length = end - start;
+        if (length == name.length() && mInfo.mBuiltInKernels.compare(start, length, name) == 0)
+        {
+            return true;
+        }
+        start = end + 1u;
+    } while (start < mInfo.mBuiltInKernels.size());
+    return false;
 }
 
 Device::Device(Platform &platform,
