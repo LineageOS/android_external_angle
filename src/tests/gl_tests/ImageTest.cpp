@@ -1883,6 +1883,9 @@ void ImageTest::SourceAHBTarget2D_helper(const EGLint *attribs)
 // Testing source AHB EGL images, target 2D external texture, cycling through YUV sources.
 TEST_P(ImageTest, SourceAHBTarget2DExternalCycleThroughYuvSourcesNoData)
 {
+    // http://issuetracker.google.com/175021871
+    ANGLE_SKIP_TEST_IF(IsPixel2() || IsPixel2XL());
+
     ANGLE_SKIP_TEST_IF(!IsAndroid());
 
     EGLWindow *window = getEGLWindow();
@@ -1958,6 +1961,9 @@ TEST_P(ImageTest, SourceAHBTarget2DExternalCycleThroughYuvSourcesNoData)
 // Testing source AHB EGL images, target 2D external texture, cycling through RGB and YUV sources.
 TEST_P(ImageTest, SourceAHBTarget2DExternalCycleThroughRgbAndYuvSources)
 {
+    // http://issuetracker.google.com/175021871
+    ANGLE_SKIP_TEST_IF(IsPixel2() || IsPixel2XL());
+
     ANGLE_SKIP_TEST_IF(!IsAndroid());
 
     EGLWindow *window = getEGLWindow();
