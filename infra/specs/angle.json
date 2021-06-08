@@ -380,6 +380,7 @@
           "-v",
           "--one-frame-only",
           "--test-timeout=100",
+          "--gtest_filter=-TracePerfTest.*",
           "--test-launcher-batch-limit=1"
         ],
         "isolate_name": "angle_perftests",
@@ -576,6 +577,7 @@
           "-v",
           "--one-frame-only",
           "--test-timeout=100",
+          "--gtest_filter=-TracePerfTest.*",
           "--batch-size=1",
           "--bot-mode",
           "--max-processes=1",
@@ -608,7 +610,8 @@
         "args": [
           "--test-machine-name",
           "${buildername}",
-          "--git-revision=${got_angle_revision}"
+          "--git-revision=${got_angle_revision}",
+          "--flaky-retries=1"
         ],
         "isolate_name": "angle_restricted_trace_gold_tests",
         "merge": {
@@ -979,7 +982,7 @@
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
-          "shards": 4
+          "shards": 2
         },
         "test": "angle_deqp_gles3_tests",
         "test_id_prefix": "ninja://src/tests:angle_deqp_gles3_tests/",
@@ -1203,6 +1206,7 @@
           "-v",
           "--one-frame-only",
           "--test-timeout=100",
+          "--gtest_filter=-TracePerfTest.*",
           "--batch-size=1",
           "--bot-mode",
           "--max-processes=1",
@@ -1407,7 +1411,7 @@
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
-          "shards": 4
+          "shards": 2
         },
         "test": "angle_deqp_gles3_tests",
         "test_id_prefix": "ninja://src/tests:angle_deqp_gles3_tests/",
@@ -1417,6 +1421,7 @@
         "args": [
           "angle_deqp_gles3_tests",
           "--use-angle=metal",
+          "--flaky-retries=2",
           "--bot-mode"
         ],
         "merge": {
@@ -1437,7 +1442,7 @@
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
-          "shards": 4
+          "shards": 2
         },
         "test": "angle_deqp_gles3_tests",
         "test_id_prefix": "ninja://src/tests:angle_deqp_gles3_tests/",
@@ -1636,7 +1641,7 @@
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
-          "shards": 4
+          "shards": 2
         },
         "test": "angle_deqp_gles3_tests",
         "test_id_prefix": "ninja://src/tests:angle_deqp_gles3_tests/",
@@ -1646,6 +1651,7 @@
         "args": [
           "angle_deqp_gles3_tests",
           "--use-angle=metal",
+          "--flaky-retries=2",
           "--bot-mode"
         ],
         "merge": {
@@ -1664,7 +1670,7 @@
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
-          "shards": 4
+          "shards": 2
         },
         "test": "angle_deqp_gles3_tests",
         "test_id_prefix": "ninja://src/tests:angle_deqp_gles3_tests/",
@@ -1930,6 +1936,7 @@
           "-v",
           "--one-frame-only",
           "--test-timeout=100",
+          "--gtest_filter=-TracePerfTest.*",
           "--batch-size=1",
           "--bot-mode",
           "--max-processes=1",
@@ -1962,7 +1969,8 @@
         "args": [
           "--test-machine-name",
           "${buildername}",
-          "--git-revision=${got_angle_revision}"
+          "--git-revision=${got_angle_revision}",
+          "--flaky-retries=1"
         ],
         "isolate_name": "angle_restricted_trace_gold_tests",
         "merge": {
@@ -2439,7 +2447,7 @@
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
-          "shards": 4
+          "shards": 2
         },
         "test": "angle_deqp_gles3_tests",
         "test_id_prefix": "ninja://src/tests:angle_deqp_gles3_tests/",
@@ -2688,6 +2696,7 @@
           "-v",
           "--one-frame-only",
           "--test-timeout=100",
+          "--gtest_filter=-TracePerfTest.*",
           "--batch-size=1",
           "--bot-mode",
           "--max-processes=1",

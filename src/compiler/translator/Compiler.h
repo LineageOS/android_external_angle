@@ -141,6 +141,8 @@ class TCompiler : public TShHandleBase
     // Get the resources set by InitBuiltInSymbolTable
     const ShBuiltInResources &getResources() const;
 
+    const TPragma &getPragma() const { return mPragma; }
+
     int getGeometryShaderMaxVertices() const { return mGeometryShaderMaxVertices; }
     int getGeometryShaderInvocations() const { return mGeometryShaderInvocations; }
     TLayoutPrimitiveType getGeometryShaderInputPrimitiveType() const
@@ -190,8 +192,6 @@ class TCompiler : public TShHandleBase
     // Get built-in extensions with default behavior.
     const TExtensionBehavior &getExtensionBehavior() const;
     const char *getSourcePath() const;
-    const TPragma &getPragma() const { return mPragma; }
-    void writePragma(ShCompileOptions compileOptions);
     // Relies on collectVariables having been called.
     bool isVaryingDefined(const char *varyingName);
 
@@ -349,14 +349,6 @@ class TCompiler : public TShHandleBase
 //
 TCompiler *ConstructCompiler(sh::GLenum type, ShShaderSpec spec, ShShaderOutput output);
 void DeleteCompiler(TCompiler *);
-
-void EmitEarlyFragmentTestsGLSL(const TCompiler &, TInfoSinkBase &sink);
-void EmitWorkGroupSizeGLSL(const TCompiler &, TInfoSinkBase &sink);
-void EmitMultiviewGLSL(const TCompiler &,
-                       const ShCompileOptions &,
-                       const TExtension,
-                       const TBehavior,
-                       TInfoSinkBase &sink);
 
 }  // namespace sh
 

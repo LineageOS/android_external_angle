@@ -208,7 +208,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
 
     // Record GL API calls for debuggers
     void logEvent(const char *eventString);
-    void endEventLog(angle::EntryPoint entryPoint);
+    void endEventLog(angle::EntryPoint entryPoint, PipelineType pipelineType);
 
     bool isViewportFlipEnabledForDrawFBO() const;
     bool isViewportFlipEnabledForReadFBO() const;
@@ -615,6 +615,8 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     void resetCurrentGraphicsPipeline() { mCurrentGraphicsPipeline = nullptr; }
 
     void onProgramExecutableReset(ProgramExecutableVk *executableVk);
+
+    angle::Result handleMidRenderPassClearEvent();
 
   private:
     // Dirty bits.

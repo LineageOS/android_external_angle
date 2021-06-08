@@ -1351,6 +1351,38 @@ TEST_P(GLSLTest, InvariantAllBoth)
     EXPECT_EQ(0u, program);
 }
 
+// Verify that using a struct as both invariant and non-invariant output works.
+TEST_P(GLSLTest_ES31, StructBothInvariantAndNot)
+{
+    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_EXT_shader_io_blocks"));
+
+    constexpr char kVS[] = R"(#version 310 es
+#extension GL_EXT_shader_io_blocks : require
+
+struct S
+{
+    vec4 s;
+};
+
+out Output
+{
+    vec4 x;
+    invariant S s;
+};
+
+out S s2;
+
+void main(){
+    x = vec4(0);
+    s.s = vec4(1);
+    s2.s = vec4(2);
+})";
+
+    GLuint shader = CompileShader(GL_VERTEX_SHADER, kVS);
+    EXPECT_NE(0u, shader);
+    glDeleteShader(shader);
+}
+
 // Verify that functions without return statements still compile
 TEST_P(GLSLTest, MissingReturnFloat)
 {
@@ -10194,9 +10226,6 @@ TEST_P(GLSLTest_ES31, IOBlockLocations)
     ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_EXT_shader_io_blocks"));
     ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_EXT_geometry_shader"));
 
-    // http://anglebug.com/5444
-    ANGLE_SKIP_TEST_IF(IsIntel() && IsOpenGL() && IsWindows());
-
     constexpr char kVS[] = R"(#version 310 es
 #extension GL_EXT_shader_io_blocks : require
 
@@ -10830,6 +10859,51 @@ void main() {
     GLint compileResult;
     glGetShaderiv(shader, GL_COMPILE_STATUS, &compileResult);
     EXPECT_NE(compileResult, 0);
+}
+
+// Test that providing more components to a matrix constructor than necessary works.  Based on a
+// clusterfuzz test that caught an OOB array write in glslang.
+TEST_P(GLSLTest, MatrixConstructor)
+{
+    constexpr char kVS[] = R"(attribute vec4 aPosition;
+varying vec4 vColor;
+void main()
+{
+    gl_Position = aPosition;
+    vec4 color = vec4(aPosition.xy, 0, 1);
+    mat4 m4 = mat4(color, color.yzwx, color.zwx, color.zwxy, color.wxyz);
+    vColor = m4[0];
+})";
+
+    GLuint shader = CompileShader(GL_VERTEX_SHADER, kVS);
+    EXPECT_NE(0u, shader);
+    glDeleteShader(shader);
+}
+
+// Test that initializing global variables with non-constant values work
+TEST_P(GLSLTest_ES3, InitGlobalNonConstant)
+{
+    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_EXT_shader_non_constant_global_initializers"));
+
+    constexpr char kVS[] = R"(#version 300 es
+#extension GL_EXT_shader_non_constant_global_initializers : require
+uniform U
+{
+vec4 u;
+} u;
+out vec4 color;
+
+vec4 global1 = u.u;
+vec4 global2 = u.u + vec4(1);
+vec4 global3 = global1 * global2;
+void main()
+{
+    color = global3;
+})";
+
+    GLuint shader = CompileShader(GL_VERTEX_SHADER, kVS);
+    EXPECT_NE(0u, shader);
+    glDeleteShader(shader);
 }
 
 }  // anonymous namespace

@@ -1337,21 +1337,37 @@ void TOutputGLSLBase::declareInterfaceBlock(const TType &type)
         {
             writeFieldLayoutQualifier(field);
         }
-        out << getMemoryQualifiers(*field->type());
-        if (writeVariablePrecision(field->type()->getPrecision()))
-            out << " ";
 
-        const char *qualifier = getVariableInterpolation(field->type()->getQualifier());
+        const TType &fieldType = *field->type();
+
+        out << getMemoryQualifiers(fieldType);
+        if (writeVariablePrecision(fieldType.getPrecision()))
+            out << " ";
+        if (fieldType.isInvariant())
+        {
+            writeInvariantQualifier(fieldType);
+        }
+
+        const char *qualifier = getVariableInterpolation(fieldType.getQualifier());
         if (qualifier != nullptr)
             out << qualifier;
 
-        out << getTypeName(*field->type()) << " " << hashFieldName(field);
+        out << getTypeName(fieldType) << " " << hashFieldName(field);
 
-        if (field->type()->isArray())
-            out << ArrayString(*field->type());
+        if (fieldType.isArray())
+            out << ArrayString(fieldType);
         out << ";\n";
     }
     out << "}";
+}
+
+void WritePragma(TInfoSinkBase &out, ShCompileOptions compileOptions, const TPragma &pragma)
+{
+    if ((compileOptions & SH_FLATTEN_PRAGMA_STDGL_INVARIANT_ALL) == 0)
+    {
+        if (pragma.stdgl.invariantAll)
+            out << "#pragma STDGL invariant(all)\n";
+    }
 }
 
 void WriteGeometryShaderLayoutQualifiers(TInfoSinkBase &out,
@@ -1472,6 +1488,66 @@ bool NeedsToWriteLayoutQualifier(const TType &type)
         return true;
     }
     return false;
+}
+
+void EmitEarlyFragmentTestsGLSL(const TCompiler &compiler, TInfoSinkBase &sink)
+{
+    if (compiler.isEarlyFragmentTestsSpecified() || compiler.isEarlyFragmentTestsOptimized())
+    {
+        sink << "layout (early_fragment_tests) in;\n";
+    }
+}
+
+void EmitWorkGroupSizeGLSL(const TCompiler &compiler, TInfoSinkBase &sink)
+{
+    if (compiler.isComputeShaderLocalSizeDeclared())
+    {
+        const sh::WorkGroupSize &localSize = compiler.getComputeShaderLocalSize();
+        sink << "layout (local_size_x=" << localSize[0] << ", local_size_y=" << localSize[1]
+             << ", local_size_z=" << localSize[2] << ") in;\n";
+    }
+}
+
+void EmitMultiviewGLSL(const TCompiler &compiler,
+                       const ShCompileOptions &compileOptions,
+                       const TExtension extension,
+                       const TBehavior behavior,
+                       TInfoSinkBase &sink)
+{
+    ASSERT(behavior != EBhUndefined);
+    if (behavior == EBhDisable)
+        return;
+
+    const bool isVertexShader = (compiler.getShaderType() == GL_VERTEX_SHADER);
+    if ((compileOptions & SH_INITIALIZE_BUILTINS_FOR_INSTANCED_MULTIVIEW) != 0)
+    {
+        // Emit ARB_shader_viewport_layer_array/NV_viewport_array2 in a vertex shader if the
+        // SH_SELECT_VIEW_IN_NV_GLSL_VERTEX_SHADER option is set and the
+        // OVR_multiview(2) extension is requested.
+        if (isVertexShader && (compileOptions & SH_SELECT_VIEW_IN_NV_GLSL_VERTEX_SHADER) != 0)
+        {
+            sink << "#if defined(GL_ARB_shader_viewport_layer_array)\n"
+                 << "#extension GL_ARB_shader_viewport_layer_array : require\n"
+                 << "#elif defined(GL_NV_viewport_array2)\n"
+                 << "#extension GL_NV_viewport_array2 : require\n"
+                 << "#endif\n";
+        }
+    }
+    else
+    {
+        sink << "#extension GL_OVR_multiview";
+        if (extension == TExtension::OVR_multiview2)
+        {
+            sink << "2";
+        }
+        sink << " : " << GetBehaviorString(behavior) << "\n";
+
+        const auto &numViews = compiler.getNumViews();
+        if (isVertexShader && numViews != -1)
+        {
+            sink << "layout(num_views=" << numViews << ") in;\n";
+        }
+    }
 }
 
 }  // namespace sh
