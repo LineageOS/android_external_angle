@@ -4415,8 +4415,9 @@ TEST_P(GLSLTest_ES31, ArraysOfArraysStructDifferentTypesSampler)
                 glActiveTexture(GL_TEXTURE0 + textureUnit);
                 glBindTexture(GL_TEXTURE_2D, textures[i][j][k]);
                 GLint texData[4]        = {i + 1, j + 1, k + 1, 1};
-                GLubyte texDataFloat[4] = {(i + 1) * 64 - 1, (j + 1) * 64 - 1, (k + 1) * 64 - 1,
-                                           64};
+                GLubyte texDataFloat[4] = {static_cast<GLubyte>((i + 1) * 64 - 1),
+                                           static_cast<GLubyte>((j + 1) * 64 - 1),
+                                           static_cast<GLubyte>((k + 1) * 64 - 1), 64};
                 if (j == 0)
                 {
                     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32I, 1, 1, 0, GL_RGBA_INTEGER, GL_INT,
@@ -10887,14 +10888,11 @@ TEST_P(GLSLTest_ES3, InitGlobalNonConstant)
 
     constexpr char kVS[] = R"(#version 300 es
 #extension GL_EXT_shader_non_constant_global_initializers : require
-uniform U
-{
-vec4 u;
-} u;
+uniform vec4 u;
 out vec4 color;
 
-vec4 global1 = u.u;
-vec4 global2 = u.u + vec4(1);
+vec4 global1 = u;
+vec4 global2 = u + vec4(1);
 vec4 global3 = global1 * global2;
 void main()
 {
