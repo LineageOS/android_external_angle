@@ -16,7 +16,7 @@ cc_defaults {
     cflags: [
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -62,7 +62,6 @@ cc_defaults {
             ],
             cflags: [
                 "-DCRC32_SIMD_SSE42_PCLMUL",
-                "-Wno-max-tokens",
                 "-mpclmul",
             ],
         },
@@ -72,7 +71,6 @@ cc_defaults {
             ],
             cflags: [
                 "-DCRC32_SIMD_SSE42_PCLMUL",
-                "-Wno-max-tokens",
                 "-mpclmul",
             ],
         },
@@ -93,7 +91,7 @@ cc_defaults {
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
         "-DANGLE_USE_EGL_LOADER",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DEGL_EGLEXT_PROTOTYPES",
@@ -136,13 +134,11 @@ cc_defaults {
         x86_64: {
             cflags: [
                 "-DANGLE_IS_64_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         x86: {
             cflags: [
                 "-DANGLE_IS_32_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         arm: {
@@ -219,7 +215,7 @@ cc_library_shared {
         "-DANGLE_GLESV2_LIBRARY_NAME=\"libGLESv2_angle\"",
         "-DANGLE_USE_ABSEIL",
         "-DANGLE_USE_EGL_LOADER",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DEGLAPI=__attribute__((visibility(\"default\")))",
@@ -264,13 +260,11 @@ cc_library_shared {
         x86_64: {
             cflags: [
                 "-DANGLE_IS_64_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         x86: {
             cflags: [
                 "-DANGLE_IS_32_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         arm: {
@@ -345,7 +339,7 @@ cc_library_shared {
     cflags: [
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DEGL_EGLEXT_PROTOTYPES",
@@ -390,13 +384,11 @@ cc_library_shared {
         x86_64: {
             cflags: [
                 "-DANGLE_IS_64_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         x86: {
             cflags: [
                 "-DANGLE_IS_32_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         arm: {
@@ -434,7 +426,7 @@ cc_defaults {
     cflags: [
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -477,18 +469,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_vulkan_deps_vulkan_headers_src_vulkan_headers",
     ],
@@ -511,7 +491,7 @@ cc_defaults {
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
         "-DANGLE_SHARED_LIBVULKAN=1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -559,13 +539,11 @@ cc_defaults {
         x86_64: {
             cflags: [
                 "-DANGLE_IS_64_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         x86: {
             cflags: [
                 "-DANGLE_IS_32_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         arm: {
@@ -618,7 +596,7 @@ cc_defaults {
         "-DANGLE_USE_ABSEIL",
         "-DANGLE_VK_LAYERS_DIR=\"angledata\"",
         "-DANGLE_VK_MOCK_ICD_JSON=\"angledata/VkICD_mock_icd.json\"",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -658,13 +636,11 @@ cc_defaults {
         x86_64: {
             cflags: [
                 "-DANGLE_IS_64_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         x86: {
             cflags: [
                 "-DANGLE_IS_32_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         arm: {
@@ -697,7 +673,7 @@ cc_defaults {
     cflags: [
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -733,18 +709,6 @@ cc_defaults {
         "-Wno-unused-parameter",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_vulkan_deps_vulkan_headers_src_vulkan_headers",
     ],
@@ -763,7 +727,7 @@ cc_defaults {
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
         "-DANGLE_SHARED_LIBVULKAN=1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -803,13 +767,11 @@ cc_defaults {
         x86_64: {
             cflags: [
                 "-DANGLE_IS_64_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         x86: {
             cflags: [
                 "-DANGLE_IS_32_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         arm: {
@@ -870,7 +832,7 @@ cc_defaults {
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
         "-DANGLE_USE_ABSEIL",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -909,13 +871,11 @@ cc_defaults {
         x86_64: {
             cflags: [
                 "-DANGLE_IS_64_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         x86: {
             cflags: [
                 "-DANGLE_IS_32_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         arm: {
@@ -965,7 +925,7 @@ cc_defaults {
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
         "-DANGLE_USE_ABSEIL",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -1005,13 +965,11 @@ cc_defaults {
         x86_64: {
             cflags: [
                 "-DANGLE_IS_64_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         x86: {
             cflags: [
                 "-DANGLE_IS_32_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         arm: {
@@ -1119,7 +1077,7 @@ cc_defaults {
         "-DANGLE_SHARED_LIBVULKAN=1",
         "-DANGLE_USE_ABSEIL",
         "-DANGLE_USE_CUSTOM_VULKAN_CMD_BUFFERS=1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -1160,13 +1118,11 @@ cc_defaults {
         x86_64: {
             cflags: [
                 "-DANGLE_IS_64_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         x86: {
             cflags: [
                 "-DANGLE_IS_32_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         arm: {
@@ -1456,7 +1412,7 @@ cc_library_static {
     cflags: [
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -1492,18 +1448,6 @@ cc_library_static {
         "-Wno-unused-parameter",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_vulkan_deps_spirv_headers_src_spv_headers",
         "third_party_vulkan_deps_spirv_tools_src_spvtools_headers",
@@ -1583,7 +1527,7 @@ cc_library_static {
     cflags: [
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -1619,18 +1563,6 @@ cc_library_static {
         "-Wno-unused-parameter",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_vulkan_deps_spirv_tools_src_spvtools_headers",
     ],
@@ -1705,7 +1637,7 @@ cc_defaults {
     cflags: [
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DGLSLANG_ANGLE",
@@ -1749,18 +1681,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_vulkan_deps_glslang_src_glslang_default_resource_limits_sources",
@@ -1776,7 +1696,7 @@ cc_defaults {
     cflags: [
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -1811,18 +1731,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     generated_headers: [
@@ -1854,7 +1762,7 @@ cc_defaults {
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
         "-DANGLE_USE_ABSEIL",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -1893,13 +1801,11 @@ cc_defaults {
         x86_64: {
             cflags: [
                 "-DANGLE_IS_64_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         x86: {
             cflags: [
                 "-DANGLE_IS_32_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         arm: {
@@ -1920,17 +1826,60 @@ cc_defaults {
     ],
 }
 cc_defaults {
-    name: "third_party_vulkan_deps_spirv_tools_src_spvtools_headers",
     stl: "libc++_static",
+    sdk_version: "28",
+    name: "third_party_vulkan_deps_spirv_tools_src_spvtools_headers",
+    cflags: [
+        "-DANDROID",
+        "-DANDROID_NDK_VERSION_ROLL=r22_1",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
+        "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
+        "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
+        "-DHAVE_SYS_UIO_H",
+        "-DNDEBUG",
+        "-DNVALGRIND",
+        "-D_FORTIFY_SOURCE=2",
+        "-D_GNU_SOURCE",
+        "-D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS",
+        "-D_LIBCPP_ENABLE_NODISCARD",
+        "-D_LIBCPP_HAS_NO_VENDOR_AVAILABILITY_ANNOTATIONS",
+        "-D_LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS",
+        "-D__STDC_CONSTANT_MACROS",
+        "-D__STDC_FORMAT_MACROS",
+        "-Oz",
+        "-Wno-builtin-assume-aligned-alignment",
+        "-Wno-builtin-macro-redefined",
+        "-Wno-c++11-narrowing",
+        "-Wno-deprecated-copy",
+        "-Wno-final-dtor-non-final-class",
+        "-Wno-ignored-pragma-optimize",
+        "-Wno-implicit-fallthrough",
+        "-Wno-implicit-int-float-conversion",
+        "-Wno-missing-field-initializers",
+        "-Wno-non-c-typedef-for-linkage",
+        "-Wno-psabi",
+        "-Wno-trigraphs",
+        "-Wno-undefined-var-template",
+        "-Wno-unknown-warning-option",
+        "-Wno-unneeded-internal-declaration",
+        "-Wno-unused-but-set-parameter",
+        "-Wno-unused-but-set-variable",
+        "-Wno-unused-parameter",
+        "-fno-unwind-tables",
+    ],
     local_include_dirs: [
         "",
         "third_party/vulkan-deps/spirv-tools/src/include/",
     ],
+}
+cc_defaults {
+    stl: "libc++_static",
     sdk_version: "28",
+    name: "third_party_vulkan_deps_spirv_headers_src_spv_headers",
     cflags: [
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -1965,77 +1914,10 @@ cc_defaults {
         "-Wno-unused-parameter",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
-}
-cc_defaults {
-    name: "third_party_vulkan_deps_spirv_headers_src_spv_headers",
-    stl: "libc++_static",
     local_include_dirs: [
         "",
         "third_party/vulkan-deps/spirv-headers/src/include/",
     ],
-    sdk_version: "28",
-    cflags: [
-        "-DANDROID",
-        "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
-        "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
-        "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
-        "-DHAVE_SYS_UIO_H",
-        "-DNDEBUG",
-        "-DNVALGRIND",
-        "-D_FORTIFY_SOURCE=2",
-        "-D_GNU_SOURCE",
-        "-D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS",
-        "-D_LIBCPP_ENABLE_NODISCARD",
-        "-D_LIBCPP_HAS_NO_VENDOR_AVAILABILITY_ANNOTATIONS",
-        "-D_LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS",
-        "-D__STDC_CONSTANT_MACROS",
-        "-D__STDC_FORMAT_MACROS",
-        "-Oz",
-        "-Wno-builtin-assume-aligned-alignment",
-        "-Wno-builtin-macro-redefined",
-        "-Wno-c++11-narrowing",
-        "-Wno-deprecated-copy",
-        "-Wno-final-dtor-non-final-class",
-        "-Wno-ignored-pragma-optimize",
-        "-Wno-implicit-fallthrough",
-        "-Wno-implicit-int-float-conversion",
-        "-Wno-missing-field-initializers",
-        "-Wno-non-c-typedef-for-linkage",
-        "-Wno-psabi",
-        "-Wno-trigraphs",
-        "-Wno-undefined-var-template",
-        "-Wno-unknown-warning-option",
-        "-Wno-unneeded-internal-declaration",
-        "-Wno-unused-but-set-parameter",
-        "-Wno-unused-but-set-variable",
-        "-Wno-unused-parameter",
-        "-fno-unwind-tables",
-    ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     generated_headers: [
@@ -2063,7 +1945,7 @@ cc_defaults {
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
         "-DANGLE_USE_ABSEIL",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -2102,13 +1984,11 @@ cc_defaults {
         x86_64: {
             cflags: [
                 "-DANGLE_IS_64_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         x86: {
             cflags: [
                 "-DANGLE_IS_32_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         arm: {
@@ -2154,7 +2034,7 @@ cc_defaults {
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
         "-DANGLE_USE_ABSEIL",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -2193,13 +2073,11 @@ cc_defaults {
         x86_64: {
             cflags: [
                 "-DANGLE_IS_64_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         x86: {
             cflags: [
                 "-DANGLE_IS_32_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         arm: {
@@ -2258,7 +2136,7 @@ cc_library_static {
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
         "-DANGLE_USE_ABSEIL",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -2297,13 +2175,11 @@ cc_library_static {
         x86_64: {
             cflags: [
                 "-DANGLE_IS_64_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         x86: {
             cflags: [
                 "-DANGLE_IS_32_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         arm: {
@@ -2478,7 +2354,7 @@ cc_library_static {
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
         "-DANGLE_ENABLE_VULKAN",
         "-DANGLE_USE_ABSEIL",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -2518,13 +2394,11 @@ cc_library_static {
         x86_64: {
             cflags: [
                 "-DANGLE_IS_64_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         x86: {
             cflags: [
                 "-DANGLE_IS_32_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         arm: {
@@ -2561,7 +2435,7 @@ cc_defaults {
     cflags: [
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -2600,13 +2474,11 @@ cc_defaults {
         x86_64: {
             cflags: [
                 "-DANGLE_IS_64_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         x86: {
             cflags: [
                 "-DANGLE_IS_32_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         arm: {
@@ -2650,7 +2522,7 @@ cc_defaults {
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
         "-DANGLE_USE_ABSEIL",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -2690,13 +2562,11 @@ cc_defaults {
         x86_64: {
             cflags: [
                 "-DANGLE_IS_64_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         x86: {
             cflags: [
                 "-DANGLE_IS_32_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         arm: {
@@ -2740,7 +2610,7 @@ cc_defaults {
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
         "-DANGLE_USE_ABSEIL",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -2779,13 +2649,11 @@ cc_defaults {
         x86_64: {
             cflags: [
                 "-DANGLE_IS_64_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         x86: {
             cflags: [
                 "-DANGLE_IS_32_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         arm: {
@@ -2832,7 +2700,7 @@ cc_library_static {
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
         "-DANGLE_USE_ABSEIL",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -2871,13 +2739,11 @@ cc_library_static {
         x86_64: {
             cflags: [
                 "-DANGLE_IS_64_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         x86: {
             cflags: [
                 "-DANGLE_IS_32_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         arm: {
@@ -2896,17 +2762,13 @@ cc_library_static {
     ],
 }
 cc_defaults {
-    name: "third_party_vulkan_deps_vulkan_headers_src_vulkan_headers",
     stl: "libc++_static",
-    local_include_dirs: [
-        "",
-        "third_party/vulkan-deps/vulkan-headers/src/include/",
-    ],
     sdk_version: "28",
+    name: "third_party_vulkan_deps_vulkan_headers_src_vulkan_headers",
     cflags: [
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -2942,18 +2804,10 @@ cc_defaults {
         "-Wno-unused-parameter",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
+    local_include_dirs: [
+        "",
+        "third_party/vulkan-deps/vulkan-headers/src/include/",
+    ],
 }
 cc_library_static {
     generated_headers: [
@@ -2990,7 +2844,7 @@ cc_library_static {
         "-DANGLE_HAS_VULKAN_SYSTEM_INFO",
         "-DANGLE_USE_ABSEIL",
         "-DANGLE_USE_CUSTOM_VULKAN_CMD_BUFFERS=1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -3030,13 +2884,11 @@ cc_library_static {
         x86_64: {
             cflags: [
                 "-DANGLE_IS_64_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         x86: {
             cflags: [
                 "-DANGLE_IS_32_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         arm: {
@@ -3064,7 +2916,7 @@ cc_defaults {
     cflags: [
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -3112,7 +2964,6 @@ cc_defaults {
             cflags: [
                 "-DCRC32_SIMD_SSE42_PCLMUL",
                 "-DDEFLATE_FILL_WINDOW_SSE2",
-                "-Wno-max-tokens",
                 "-mpclmul",
             ],
         },
@@ -3124,7 +2975,6 @@ cc_defaults {
             cflags: [
                 "-DCRC32_SIMD_SSE42_PCLMUL",
                 "-DDEFLATE_FILL_WINDOW_SSE2",
-                "-Wno-max-tokens",
                 "-mpclmul",
             ],
         },
@@ -3145,7 +2995,7 @@ cc_defaults {
     cflags: [
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -3185,13 +3035,11 @@ cc_defaults {
             cflags: [
                 "-DINFLATE_CHUNK_READ_64LE",
                 "-DINFLATE_CHUNK_SIMD_SSE2",
-                "-Wno-max-tokens",
             ],
         },
         x86: {
             cflags: [
                 "-DINFLATE_CHUNK_SIMD_SSE2",
-                "-Wno-max-tokens",
             ],
         },
         arm: {
@@ -3227,7 +3075,7 @@ cc_defaults {
                 "-DANDROID_NDK_VERSION_ROLL=r22_1",
                 "-DARMV8_OS_ANDROID",
                 "-DCRC32_ARMV8_CRC32",
-                "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+                "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
                 "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
                 "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
                 "-DHAVE_SYS_UIO_H",
@@ -3277,7 +3125,7 @@ cc_defaults {
                 "-DANDROID_NDK_VERSION_ROLL=r22_1",
                 "-DARMV8_OS_ANDROID",
                 "-DCRC32_ARMV8_CRC32",
-                "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+                "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
                 "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
                 "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
                 "-DHAVE_SYS_UIO_H",
@@ -3321,16 +3169,13 @@ cc_defaults {
     ],
 }
 cc_defaults {
-    name: "third_party_zlib_zlib_common_headers",
     stl: "libc++_static",
-    local_include_dirs: [
-        "",
-    ],
     sdk_version: "28",
+    name: "third_party_zlib_zlib_common_headers",
     cflags: [
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -3365,18 +3210,9 @@ cc_defaults {
         "-Wno-unused-parameter",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
+    local_include_dirs: [
+        "",
+    ],
 }
 cc_defaults {
     name: "third_party_zlib_zlib_adler32_simd",
@@ -3391,7 +3227,7 @@ cc_defaults {
     cflags: [
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -3432,14 +3268,12 @@ cc_defaults {
             cflags: [
                 "-DADLER32_SIMD_SSSE3",
                 "-DX86_NOT_WINDOWS",
-                "-Wno-max-tokens",
             ],
         },
         x86: {
             cflags: [
                 "-DADLER32_SIMD_SSSE3",
                 "-DX86_NOT_WINDOWS",
-                "-Wno-max-tokens",
             ],
         },
         arm: {
@@ -3471,7 +3305,7 @@ cc_defaults {
     cflags: [
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -3506,18 +3340,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_library_static {
     name: "chrome_zlib",
@@ -3548,7 +3370,7 @@ cc_library_static {
     cflags: [
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -3593,7 +3415,6 @@ cc_library_static {
                 "-DINFLATE_CHUNK_SIMD_SSE2",
                 "-DX86_NOT_WINDOWS",
                 "-Wno-incompatible-pointer-types",
-                "-Wno-max-tokens",
             ],
         },
         x86: {
@@ -3604,7 +3425,6 @@ cc_library_static {
                 "-DINFLATE_CHUNK_SIMD_SSE2",
                 "-DX86_NOT_WINDOWS",
                 "-Wno-incompatible-pointer-types",
-                "-Wno-max-tokens",
             ],
         },
         arm: {
@@ -3651,7 +3471,7 @@ cc_library_static {
     cflags: [
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -3686,18 +3506,6 @@ cc_library_static {
         "-Wno-unused-parameter",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     stl: "libc++_static",
@@ -3727,7 +3535,7 @@ cc_defaults {
     cflags: [
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -3766,13 +3574,11 @@ cc_defaults {
         x86_64: {
             cflags: [
                 "-DANGLE_IS_64_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         x86: {
             cflags: [
                 "-DANGLE_IS_32_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         arm: {
@@ -3788,18 +3594,14 @@ cc_defaults {
     },
 }
 cc_defaults {
-    name: "third_party_abseil_cpp_absl_container_have_sse",
     stl: "libc++_static",
-    local_include_dirs: [
-        "",
-        "third_party/abseil-cpp/",
-    ],
     sdk_version: "28",
+    name: "third_party_abseil_cpp_absl_container_have_sse",
     cflags: [
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -3834,18 +3636,10 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
+    local_include_dirs: [
+        "",
+        "third_party/abseil-cpp/",
+    ],
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_container_hashtablez_sampler",
@@ -3863,7 +3657,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -3898,18 +3692,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_base",
         "third_party_abseil_cpp_absl_base_core_headers",
@@ -3933,7 +3715,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -3971,18 +3753,6 @@ cc_defaults {
     defaults: [
         "third_party_abseil_cpp_absl_base_config",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_container_hash_policy_traits",
@@ -3996,7 +3766,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -4034,18 +3804,6 @@ cc_defaults {
     defaults: [
         "third_party_abseil_cpp_absl_meta_type_traits",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_container_common",
@@ -4059,7 +3817,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -4098,18 +3856,6 @@ cc_defaults {
         "third_party_abseil_cpp_absl_meta_type_traits",
         "third_party_abseil_cpp_absl_types_optional",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_container_raw_hash_set",
@@ -4126,7 +3872,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -4161,18 +3907,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_config",
         "third_party_abseil_cpp_absl_base_core_headers",
@@ -4203,7 +3937,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -4243,18 +3977,6 @@ cc_defaults {
         "third_party_abseil_cpp_absl_container_container_memory",
         "third_party_abseil_cpp_absl_container_raw_hash_set",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_numeric_representation",
@@ -4268,7 +3990,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -4306,18 +4028,6 @@ cc_defaults {
     defaults: [
         "third_party_abseil_cpp_absl_base_config",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_strings_str_format_internal",
@@ -4339,7 +4049,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -4374,18 +4084,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_config",
         "third_party_abseil_cpp_absl_base_core_headers",
@@ -4411,7 +4109,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -4449,18 +4147,6 @@ cc_defaults {
     defaults: [
         "third_party_abseil_cpp_absl_strings_str_format_internal",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_strings_cordz_update_scope",
@@ -4474,7 +4160,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -4516,18 +4202,6 @@ cc_defaults {
         "third_party_abseil_cpp_absl_strings_cordz_info",
         "third_party_abseil_cpp_absl_strings_cordz_update_tracker",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_strings_cordz_update_tracker",
@@ -4541,7 +4215,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -4579,18 +4253,6 @@ cc_defaults {
     defaults: [
         "third_party_abseil_cpp_absl_base_config",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_strings_cordz_statistics",
@@ -4604,7 +4266,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -4643,18 +4305,6 @@ cc_defaults {
         "third_party_abseil_cpp_absl_base_config",
         "third_party_abseil_cpp_absl_strings_cordz_update_tracker",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_time_internal_cctz_time_zone",
@@ -4679,7 +4329,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -4714,18 +4364,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_config",
         "third_party_abseil_cpp_absl_time_internal_cctz_civil_time",
@@ -4746,7 +4384,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -4781,18 +4419,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_config",
     ],
@@ -4816,7 +4442,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -4851,18 +4477,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_base",
         "third_party_abseil_cpp_absl_base_core_headers",
@@ -4885,7 +4499,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -4925,18 +4539,6 @@ cc_defaults {
         "third_party_abseil_cpp_absl_base_raw_logging_internal",
         "third_party_abseil_cpp_absl_time_time",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_synchronization_graphcycles_internal",
@@ -4953,7 +4555,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -4988,18 +4590,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_base",
         "third_party_abseil_cpp_absl_base_base_internal",
@@ -5024,7 +4614,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -5059,18 +4649,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_base",
         "third_party_abseil_cpp_absl_base_config",
@@ -5092,7 +4670,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -5127,18 +4705,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_base",
         "third_party_abseil_cpp_absl_base_config",
@@ -5166,7 +4732,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -5201,18 +4767,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_base",
         "third_party_abseil_cpp_absl_base_base_internal",
@@ -5243,7 +4797,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -5278,18 +4832,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_atomic_hook",
         "third_party_abseil_cpp_absl_base_base",
@@ -5321,7 +4863,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -5356,18 +4898,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_base",
         "third_party_abseil_cpp_absl_base_config",
@@ -5392,7 +4922,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -5427,18 +4957,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_config",
         "third_party_abseil_cpp_absl_base_core_headers",
@@ -5462,7 +4980,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -5497,18 +5015,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_config",
         "third_party_abseil_cpp_absl_base_core_headers",
@@ -5531,7 +5037,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -5566,18 +5072,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_base",
         "third_party_abseil_cpp_absl_base_config",
@@ -5609,7 +5103,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -5644,18 +5138,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_config",
         "third_party_abseil_cpp_absl_base_core_headers",
@@ -5676,7 +5158,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -5711,18 +5193,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_config",
         "third_party_abseil_cpp_absl_base_core_headers",
@@ -5742,7 +5212,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -5785,18 +5255,6 @@ cc_defaults {
         "third_party_abseil_cpp_absl_types_span",
         "third_party_abseil_cpp_absl_utility_utility",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_strings_cord_internal",
@@ -5814,7 +5272,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -5849,18 +5307,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_base_internal",
         "third_party_abseil_cpp_absl_base_config",
@@ -5887,7 +5333,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -5926,18 +5372,6 @@ cc_defaults {
         "third_party_abseil_cpp_absl_base_base_internal",
         "third_party_abseil_cpp_absl_meta_type_traits",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_types_span",
@@ -5951,7 +5385,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -5992,18 +5426,6 @@ cc_defaults {
         "third_party_abseil_cpp_absl_base_throw_delegate",
         "third_party_abseil_cpp_absl_meta_type_traits",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_container_inlined_vector_internal",
@@ -6017,7 +5439,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -6059,18 +5481,6 @@ cc_defaults {
         "third_party_abseil_cpp_absl_meta_type_traits",
         "third_party_abseil_cpp_absl_types_span",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_container_inlined_vector",
@@ -6084,7 +5494,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -6126,18 +5536,6 @@ cc_defaults {
         "third_party_abseil_cpp_absl_container_inlined_vector_internal",
         "third_party_abseil_cpp_absl_memory_memory",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_strings_cord",
@@ -6154,7 +5552,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -6189,18 +5587,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_base",
         "third_party_abseil_cpp_absl_base_config",
@@ -6238,7 +5624,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -6273,18 +5659,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_config",
         "third_party_abseil_cpp_absl_base_raw_logging_internal",
@@ -6302,7 +5676,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -6345,18 +5719,6 @@ cc_defaults {
         "third_party_abseil_cpp_absl_types_bad_variant_access",
         "third_party_abseil_cpp_absl_utility_utility",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_types_bad_optional_access",
@@ -6373,7 +5735,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -6408,18 +5770,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_config",
         "third_party_abseil_cpp_absl_base_raw_logging_internal",
@@ -6437,7 +5787,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -6481,18 +5831,6 @@ cc_defaults {
         "third_party_abseil_cpp_absl_types_bad_optional_access",
         "third_party_abseil_cpp_absl_utility_utility",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_strings_internal",
@@ -6511,7 +5849,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -6546,18 +5884,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_config",
         "third_party_abseil_cpp_absl_base_core_headers",
@@ -6593,7 +5919,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -6628,18 +5954,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_base",
         "third_party_abseil_cpp_absl_base_config",
@@ -6666,7 +5980,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -6705,18 +6019,6 @@ cc_defaults {
         "third_party_abseil_cpp_absl_base_config",
         "third_party_abseil_cpp_absl_base_core_headers",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_numeric_int128",
@@ -6733,7 +6035,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -6768,18 +6070,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_config",
         "third_party_abseil_cpp_absl_base_core_headers",
@@ -6801,7 +6091,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -6836,18 +6126,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_config",
         "third_party_abseil_cpp_absl_base_endian",
@@ -6869,7 +6147,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -6904,18 +6182,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_config",
         "third_party_abseil_cpp_absl_base_core_headers",
@@ -6934,7 +6200,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -6972,18 +6238,6 @@ cc_defaults {
     defaults: [
         "third_party_abseil_cpp_absl_utility_utility",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_base_throw_delegate",
@@ -7000,7 +6254,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -7035,18 +6289,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_config",
         "third_party_abseil_cpp_absl_base_raw_logging_internal",
@@ -7064,7 +6306,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -7108,18 +6350,6 @@ cc_defaults {
         "third_party_abseil_cpp_absl_container_compressed_tuple",
         "third_party_abseil_cpp_absl_memory_memory",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_base_errno_saver",
@@ -7133,7 +6363,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -7171,18 +6401,6 @@ cc_defaults {
     defaults: [
         "third_party_abseil_cpp_absl_base_config",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_base_spinlock_wait",
@@ -7199,7 +6417,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -7234,18 +6452,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_base_internal",
         "third_party_abseil_cpp_absl_base_core_headers",
@@ -7267,7 +6473,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -7302,18 +6508,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_atomic_hook",
         "third_party_abseil_cpp_absl_base_config",
@@ -7336,7 +6530,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -7371,18 +6565,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_config",
         "third_party_abseil_cpp_absl_base_core_headers",
@@ -7400,7 +6582,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -7439,18 +6621,6 @@ cc_defaults {
         "third_party_abseil_cpp_absl_base_config",
         "third_party_abseil_cpp_absl_base_core_headers",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_base_atomic_hook",
@@ -7464,7 +6634,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -7503,18 +6673,6 @@ cc_defaults {
         "third_party_abseil_cpp_absl_base_config",
         "third_party_abseil_cpp_absl_base_core_headers",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_base_base",
@@ -7535,7 +6693,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -7570,18 +6728,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_atomic_hook",
         "third_party_abseil_cpp_absl_base_base_internal",
@@ -7606,7 +6752,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -7646,18 +6792,6 @@ cc_defaults {
         "third_party_abseil_cpp_absl_base_config",
         "third_party_abseil_cpp_absl_base_core_headers",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_hash_hash",
@@ -7674,7 +6808,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -7709,18 +6843,6 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
     defaults: [
         "third_party_abseil_cpp_absl_base_config",
         "third_party_abseil_cpp_absl_base_core_headers",
@@ -7748,7 +6870,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -7789,18 +6911,6 @@ cc_defaults {
         "third_party_abseil_cpp_absl_strings_cord",
         "third_party_abseil_cpp_absl_strings_strings",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_base_base_internal",
@@ -7814,7 +6924,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -7853,18 +6963,6 @@ cc_defaults {
         "third_party_abseil_cpp_absl_base_config",
         "third_party_abseil_cpp_absl_meta_type_traits",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_utility_utility",
@@ -7878,7 +6976,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -7918,18 +7016,6 @@ cc_defaults {
         "third_party_abseil_cpp_absl_base_config",
         "third_party_abseil_cpp_absl_meta_type_traits",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_memory_memory",
@@ -7943,7 +7029,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -7982,18 +7068,6 @@ cc_defaults {
         "third_party_abseil_cpp_absl_base_core_headers",
         "third_party_abseil_cpp_absl_meta_type_traits",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_container_container_memory",
@@ -8007,7 +7081,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -8048,18 +7122,6 @@ cc_defaults {
         "third_party_abseil_cpp_absl_meta_type_traits",
         "third_party_abseil_cpp_absl_utility_utility",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_meta_type_traits",
@@ -8073,7 +7135,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -8111,18 +7173,6 @@ cc_defaults {
     defaults: [
         "third_party_abseil_cpp_absl_base_config",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_base_core_headers",
@@ -8136,7 +7186,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -8174,32 +7224,16 @@ cc_defaults {
     defaults: [
         "third_party_abseil_cpp_absl_base_config",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
-    name: "third_party_abseil_cpp_absl_base_config",
     stl: "libc++_static",
-    local_include_dirs: [
-        "",
-        "third_party/abseil-cpp/",
-    ],
     sdk_version: "28",
+    name: "third_party_abseil_cpp_absl_base_config",
     cflags: [
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -8234,18 +7268,10 @@ cc_defaults {
         "-Wno-unused-variable",
         "-fno-unwind-tables",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
+    local_include_dirs: [
+        "",
+        "third_party/abseil-cpp/",
+    ],
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_algorithm_algorithm",
@@ -8259,7 +7285,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -8297,18 +7323,6 @@ cc_defaults {
     defaults: [
         "third_party_abseil_cpp_absl_base_config",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_algorithm_container",
@@ -8322,7 +7336,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -8362,18 +7376,6 @@ cc_defaults {
         "third_party_abseil_cpp_absl_base_core_headers",
         "third_party_abseil_cpp_absl_meta_type_traits",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     name: "third_party_abseil_cpp_absl_container_flat_hash_map",
@@ -8387,7 +7389,7 @@ cc_defaults {
         "-DABSL_ALLOCATOR_NOTHROW=1",
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -8429,18 +7431,6 @@ cc_defaults {
         "third_party_abseil_cpp_absl_container_raw_hash_map",
         "third_party_abseil_cpp_absl_memory_memory",
     ],
-    arch: {
-        x86_64: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-        x86: {
-            cflags: [
-                "-Wno-max-tokens",
-            ],
-        },
-    },
 }
 cc_defaults {
     stl: "libc++_static",
@@ -8503,7 +7493,7 @@ cc_library_static {
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
         "-DANGLE_USE_ABSEIL",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -8542,13 +7532,11 @@ cc_library_static {
         x86_64: {
             cflags: [
                 "-DANGLE_IS_64_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         x86: {
             cflags: [
                 "-DANGLE_IS_32_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         arm: {
@@ -8714,7 +7702,7 @@ cc_defaults {
         "-DANGLE_SHARED_LIBVULKAN=1",
         "-DANGLE_USE_ABSEIL",
         "-DANGLE_USE_CUSTOM_VULKAN_CMD_BUFFERS=1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -8755,13 +7743,11 @@ cc_defaults {
         x86_64: {
             cflags: [
                 "-DANGLE_IS_64_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         x86: {
             cflags: [
                 "-DANGLE_IS_32_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         arm: {
@@ -8842,7 +7828,7 @@ cc_defaults {
         "-DANGLE_SHARED_LIBVULKAN=1",
         "-DANGLE_USE_ABSEIL",
         "-DANGLE_USE_CUSTOM_VULKAN_CMD_BUFFERS=1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -8883,13 +7869,11 @@ cc_defaults {
         x86_64: {
             cflags: [
                 "-DANGLE_IS_64_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         x86: {
             cflags: [
                 "-DANGLE_IS_32_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         arm: {
@@ -8918,7 +7902,7 @@ cc_defaults {
     cflags: [
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -8957,13 +7941,11 @@ cc_defaults {
         x86_64: {
             cflags: [
                 "-DANGLE_IS_64_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         x86: {
             cflags: [
                 "-DANGLE_IS_32_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         arm: {
@@ -9004,7 +7986,7 @@ cc_defaults {
     cflags: [
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DHAVE_SYS_UIO_H",
@@ -9043,13 +8025,11 @@ cc_defaults {
         x86_64: {
             cflags: [
                 "-DANGLE_IS_64_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         x86: {
             cflags: [
                 "-DANGLE_IS_32_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         arm: {
@@ -9137,7 +8117,7 @@ cc_library_shared {
         "-DANGLE_SHARED_LIBVULKAN=1",
         "-DANGLE_USE_ABSEIL",
         "-DANGLE_USE_CUSTOM_VULKAN_CMD_BUFFERS=1",
-        "-DCR_CLANG_REVISION=\"llvmorg-13-init-11999-g50c0aaed-1\"",
+        "-DCR_CLANG_REVISION=\"llvmorg-13-init-12576-g643b6407-1\"",
         "-DCR_LIBCXX_REVISION=8fa87946779682841e21e2da977eccfb6cb3bded",
         "-DDYNAMIC_ANNOTATIONS_ENABLED=0",
         "-DEGL_EGLEXT_PROTOTYPES",
@@ -9185,13 +8165,11 @@ cc_library_shared {
         x86_64: {
             cflags: [
                 "-DANGLE_IS_64_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         x86: {
             cflags: [
                 "-DANGLE_IS_32_BIT_CPU",
-                "-Wno-max-tokens",
             ],
         },
         arm: {
