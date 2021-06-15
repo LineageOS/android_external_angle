@@ -185,6 +185,7 @@ cc_library_shared {
         "angle_preprocessor",
         "angle_translator",
         "chrome_zlib",
+        "cpufeatures",
         "third_party_vulkan_deps_spirv_tools_src_spvtools",
         "third_party_vulkan_deps_spirv_tools_src_spvtools_val",
         "third_party_zlib_google_compression_utils_portable",
@@ -318,6 +319,7 @@ cc_library_shared {
         "angle_preprocessor",
         "angle_translator",
         "chrome_zlib",
+        "cpufeatures",
         "third_party_vulkan_deps_spirv_tools_src_spvtools",
         "third_party_vulkan_deps_spirv_tools_src_spvtools_val",
         "third_party_zlib_google_compression_utils_portable",
@@ -1003,6 +1005,7 @@ cc_defaults {
         "angle_gpu_info_util",
         "angle_image_util",
         "chrome_zlib",
+        "cpufeatures",
         "third_party_zlib_google_compression_utils_portable",
     ],
     local_include_dirs: [
@@ -3296,7 +3299,6 @@ cc_defaults {
     stl: "libc++_static",
     local_include_dirs: [
         "",
-        "third_party/android_ndk/sources/android/cpufeatures/",
     ],
     srcs: [
         "third_party/android_ndk/sources/android/cpufeatures/cpu-features.c",
@@ -3344,9 +3346,11 @@ cc_defaults {
 cc_library_static {
     name: "chrome_zlib",
     stl: "libc++_static",
+    static_libs: [
+        "cpufeatures",
+    ],
     local_include_dirs: [
         "",
-        "third_party/android_ndk/sources/android/cpufeatures/",
         "third_party/zlib/",
     ],
     srcs: [
@@ -3446,7 +3450,6 @@ cc_library_static {
         },
     },
     defaults: [
-        "third_party_android_ndk_cpu_features",
         "third_party_zlib_zlib_adler32_simd",
         "third_party_zlib_zlib_arm_crc32",
         "third_party_zlib_zlib_crc32_simd",
@@ -3459,6 +3462,7 @@ cc_library_static {
     stl: "libc++_static",
     static_libs: [
         "chrome_zlib",
+        "cpufeatures",
     ],
     local_include_dirs: [
         "",
@@ -3511,6 +3515,7 @@ cc_defaults {
     stl: "libc++_static",
     static_libs: [
         "chrome_zlib",
+        "cpufeatures",
         "third_party_zlib_google_compression_utils_portable",
     ],
     sdk_version: "28",
@@ -7585,6 +7590,7 @@ cc_defaults {
         "angle_preprocessor",
         "angle_translator",
         "chrome_zlib",
+        "cpufeatures",
         "third_party_vulkan_deps_spirv_tools_src_spvtools",
         "third_party_vulkan_deps_spirv_tools_src_spvtools_val",
         "third_party_zlib_google_compression_utils_portable",
@@ -7797,6 +7803,7 @@ cc_defaults {
         "angle_preprocessor",
         "angle_translator",
         "chrome_zlib",
+        "cpufeatures",
         "third_party_vulkan_deps_spirv_tools_src_spvtools",
         "third_party_vulkan_deps_spirv_tools_src_spvtools_val",
         "third_party_zlib_google_compression_utils_portable",
@@ -8073,6 +8080,7 @@ cc_library_shared {
         "angle_preprocessor",
         "angle_translator",
         "chrome_zlib",
+        "cpufeatures",
         "third_party_vulkan_deps_spirv_tools_src_spvtools",
         "third_party_vulkan_deps_spirv_tools_src_spvtools_val",
         "third_party_zlib_google_compression_utils_portable",
