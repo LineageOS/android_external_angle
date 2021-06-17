@@ -86,8 +86,8 @@ class TSymbol : angle::NonCopyable
                       SymbolClass symbolClass)
         : mName(name),
           mUniqueId(id),
-          mSymbolType(symbolType),
           mExtensions(CreateExtensionList(extensions)),
+          mSymbolType(symbolType),
           mSymbolClass(symbolClass)
     {}
 
@@ -95,13 +95,15 @@ class TSymbol : angle::NonCopyable
 
   private:
     const TSymbolUniqueId mUniqueId;
-    const SymbolType mSymbolType;
     const std::array<TExtension, 3u> mExtensions;
+    const SymbolType mSymbolType : 4;
 
     // We use this instead of having virtual functions for querying the class in order to support
     // constexpr symbols.
-    const SymbolClass mSymbolClass;
+    const SymbolClass mSymbolClass : 4;
 };
+
+static_assert(sizeof(TSymbol) <= 24, "Size check failed");
 
 // Variable.
 // May store the value of a constant variable of any type (float, int, bool or struct).
@@ -343,9 +345,9 @@ class TFunction : public TSymbol
                   SymbolClass::Function),
           mParametersVector(nullptr),
           mParameters(parameters),
-          mParamCount(paramCount),
           returnType(retType),
           mMangledName(nullptr),
+          mParamCount(paramCount),
           mOp(op),
           defined(false),
           mHasPrototypeDeclaration(false),
@@ -364,9 +366,9 @@ class TFunction : public TSymbol
         : TSymbol(id, name, SymbolType::BuiltIn, extensions, SymbolClass::Function),
           mParametersVector(nullptr),
           mParameters(parameters),
-          mParamCount(paramCount),
           returnType(retType),
           mMangledName(nullptr),
+          mParamCount(paramCount),
           mOp(op),
           defined(false),
           mHasPrototypeDeclaration(false),
@@ -379,13 +381,13 @@ class TFunction : public TSymbol
     typedef TVector<const TVariable *> TParamVector;
     TParamVector *mParametersVector;
     const TVariable *const *mParameters;
-    size_t mParamCount;
     const TType *const returnType;
     mutable ImmutableString mMangledName;
+    size_t mParamCount : 32;
     const TOperator mOp;  // Only set for built-ins
-    bool defined;
-    bool mHasPrototypeDeclaration;
-    bool mKnownToNotHaveSideEffects;
+    bool defined : 1;
+    bool mHasPrototypeDeclaration : 1;
+    bool mKnownToNotHaveSideEffects : 1;
 };
 
 }  // namespace sh

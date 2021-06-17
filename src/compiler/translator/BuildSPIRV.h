@@ -9,6 +9,7 @@
 #ifndef COMPILER_TRANSLATOR_BUILDSPIRV_H_
 #define COMPILER_TRANSLATOR_BUILDSPIRV_H_
 
+#include "common/FixedVector.h"
 #include "common/hash_utils.h"
 #include "common/spirv/spirv_instruction_builder_autogen.h"
 #include "compiler/translator/Compiler.h"
@@ -32,6 +33,11 @@ struct SpirvType
     // except for non-block non-array types.
     TLayoutBlockStorage blockStorage = EbsUnspecified;
 
+    // If a structure is used in two I/O blocks or output varyings with and without the invariant
+    // qualifier, it would also have to generate two SPIR-V types, as its fields' Invariant
+    // decorations would be different.
+    bool isInvariant = false;
+
     // Otherwise, it's a basic type + column, row and array dimensions, or it's an image
     // declaration.
     //
@@ -45,9 +51,8 @@ struct SpirvType
     // - `matrixPacking` only applies to members of a struct
     TBasicType type = EbtFloat;
 
-    uint8_t primarySize                = 1;
-    uint8_t secondarySize              = 1;
-    TLayoutMatrixPacking matrixPacking = EmpColumnMajor;
+    uint8_t primarySize   = 1;
+    uint8_t secondarySize = 1;
 
     TSpan<const unsigned int> arraySizes;
 
@@ -91,6 +96,9 @@ struct SpirvTypeHash
         ASSERT(type.blockStorage == sh::EbsUnspecified || type.block != nullptr ||
                !type.arraySizes.empty());
 
+        // Invariant must only affect the type if it's a block type.
+        ASSERT(!type.isInvariant || type.block != nullptr);
+
         size_t result = 0;
 
         if (!type.arraySizes.empty())
@@ -102,20 +110,19 @@ struct SpirvTypeHash
         if (type.block != nullptr)
         {
             return result ^ angle::ComputeGenericHash(&type.block, sizeof(type.block)) ^
-                   type.blockStorage;
+                   static_cast<size_t>(type.isInvariant) ^ (type.blockStorage << 1);
         }
 
         static_assert(sh::EbtLast < 256, "Basic type doesn't fit in uint8_t");
         static_assert(sh::EbsLast < 8, "Block storage doesn't fit in 3 bits");
         static_assert(sh::EiifLast < 32, "Image format doesn't fit in 5 bits");
-        static_assert(sh::EmpLast < 4, "Matrix packing doesn't fit in 2 bits");
         ASSERT(type.primarySize > 0 && type.primarySize <= 4);
         ASSERT(type.secondarySize > 0 && type.secondarySize <= 4);
 
         const uint8_t properties[4] = {
             static_cast<uint8_t>(type.type),
             static_cast<uint8_t>((type.primarySize - 1) | (type.secondarySize - 1) << 2 |
-                                 type.isSamplerBaseImage << 4 | type.matrixPacking << 5),
+                                 type.isSamplerBaseImage << 4),
             static_cast<uint8_t>(type.blockStorage | type.imageInternalFormat << 3),
             // Padding because ComputeGenericHash expects a key size divisible by 4
         };
@@ -152,9 +159,22 @@ struct SpirvTypeData
     // applicable).
     uint32_t baseAlignment;
     uint32_t sizeInStorageBlock;
-    // The matrix stride, if matrix or array of matrix.
-    uint32_t matrixStride;
 };
+
+// Decorations to be applied to variable or intermediate ids which are not part of the SPIR-V type
+// and are not specific enough (like DescriptorSet) to be handled automatically.  Currently, these
+// are:
+//
+//     RelaxedPrecision: used to implement |lowp| and |mediump|
+//     NoContraction: used to implement |precise|.  TODO: support this.  It requires the precise
+//                    property to be promoted through the nodes in the AST, which currently isn't.
+//                    http://anglebug.com/4889
+//     Invariant: used to implement |invariant|, which is applied to output variables.
+//
+// Note that Invariant applies to variables and NoContraction to arithmetic instructions, so they
+// are mutually exclusive and a maximum of 2 decorations are possible.  FixedVector::push_back will
+// ASSERT if the given size is ever not enough.
+using SpirvDecorations = angle::FixedVector<spv::Decoration, 2>;
 
 // A block of code.  SPIR-V produces forward references to blocks, such as OpBranchConditional
 // specifying the id of the if and else blocks, each of those referencing the id of the block after
@@ -213,11 +233,13 @@ class SPIRVBuilder : angle::NonCopyable
   public:
     SPIRVBuilder(TCompiler *compiler,
                  ShCompileOptions compileOptions,
+                 bool forceHighp,
                  ShHashFunction64 hashFunction,
                  NameMap &nameMap)
         : mCompiler(compiler),
           mCompileOptions(compileOptions),
           mShaderType(gl::FromGLenum<gl::ShaderType>(compiler->getShaderType())),
+          mDisableRelaxedPrecision(forceHighp),
           mNextAvailableId(1),
           mHashFunction(hashFunction),
           mNameMap(nameMap),
@@ -226,12 +248,19 @@ class SPIRVBuilder : angle::NonCopyable
           mNextUnusedOutputLocation(0)
     {}
 
-    spirv::IdRef getNewId();
+    spirv::IdRef getNewId(const SpirvDecorations &decorations);
+    TLayoutBlockStorage getBlockStorage(const TType &type) const;
     SpirvType getSpirvType(const TType &type, TLayoutBlockStorage blockStorage) const;
     const SpirvTypeData &getTypeData(const TType &type, TLayoutBlockStorage blockStorage);
-    const SpirvTypeData &getSpirvTypeData(const SpirvType &type, const char *blockName);
+    const SpirvTypeData &getSpirvTypeData(const SpirvType &type, const TSymbol *block);
     spirv::IdRef getTypePointerId(spirv::IdRef typeId, spv::StorageClass storageClass);
     spirv::IdRef getFunctionTypeId(spirv::IdRef returnTypeId, const spirv::IdRefList &paramTypeIds);
+
+    // Decorations that may apply to intermediate instructions (in addition to variables).
+    SpirvDecorations getDecorations(const TType &type);
+
+    // Extended instructions
+    spirv::IdRef getExtInstImportIdStd();
 
     spirv::Blob *getSpirvDebug() { return &mSpirvDebug; }
     spirv::Blob *getSpirvDecorations() { return &mSpirvDecorations; }
@@ -246,6 +275,12 @@ class SPIRVBuilder : angle::NonCopyable
                !mSpirvCurrentFunctionBlocks.back().isTerminated);
         return &mSpirvCurrentFunctionBlocks.back().body;
     }
+    spirv::IdRef getSpirvCurrentFunctionBlockId()
+    {
+        ASSERT(!mSpirvCurrentFunctionBlocks.empty() &&
+               !mSpirvCurrentFunctionBlocks.back().isTerminated);
+        return mSpirvCurrentFunctionBlocks.back().labelId;
+    }
     bool isCurrentFunctionBlockTerminated() const
     {
         ASSERT(!mSpirvCurrentFunctionBlocks.empty());
@@ -258,16 +293,18 @@ class SPIRVBuilder : angle::NonCopyable
     }
     SpirvConditional *getCurrentConditional() { return &mConditionalStack.back(); }
 
+    bool isInvariantOutput(const TType &type) const;
+
     void addCapability(spv::Capability capability);
     void setEntryPointId(spirv::IdRef id);
     void addEntryPointInterfaceVariableId(spirv::IdRef id);
     void writePerVertexBuiltIns(const TType &type, spirv::IdRef typeId);
     void writeInterfaceVariableDecorations(const TType &type, spirv::IdRef variableId);
-
-    uint32_t calculateBaseAlignmentAndSize(const SpirvType &type,
-                                           uint32_t *sizeInStorageBlockOut,
-                                           uint32_t *matrixStrideOut);
-    uint32_t calculateSizeAndWriteOffsetDecorations(const SpirvType &type, spirv::IdRef typeId);
+    void writeBranchConditional(spirv::IdRef conditionValue,
+                                spirv::IdRef trueBlock,
+                                spirv::IdRef falseBlock,
+                                spirv::IdRef mergeBlock);
+    void writeBranchConditionalBlockEnd();
 
     spirv::IdRef getBoolConstant(bool value);
     spirv::IdRef getUintConstant(uint32_t value);
@@ -276,13 +313,14 @@ class SPIRVBuilder : angle::NonCopyable
     spirv::IdRef getCompositeConstant(spirv::IdRef typeId, const spirv::IdRefList &values);
 
     // Helpers to start and end a function.
-    void startNewFunction(spirv::IdRef functionId, const char *name);
+    void startNewFunction(spirv::IdRef functionId, const TFunction *func);
     void assembleSpirvFunctionBlocks();
 
     // Helper to declare a variable.  Function-local variables must be placed in the first block of
     // the current function.
     spirv::IdRef declareVariable(spirv::IdRef typeId,
                                  spv::StorageClass storageClass,
+                                 const SpirvDecorations &decorations,
                                  spirv::IdRef *initializerId,
                                  const char *name);
     // Helper to declare specialization constants.
@@ -306,7 +344,13 @@ class SPIRVBuilder : angle::NonCopyable
     spirv::Blob getSpirv();
 
   private:
-    SpirvTypeData declareType(const SpirvType &type, const char *blockName);
+    SpirvTypeData declareType(const SpirvType &type, const TSymbol *block);
+
+    const SpirvTypeData &getFieldTypeDataForAlignmentAndSize(const TType &type,
+                                                             TLayoutBlockStorage blockStorage);
+    uint32_t calculateBaseAlignmentAndSize(const SpirvType &type, uint32_t *sizeInStorageBlockOut);
+    uint32_t calculateSizeAndWriteOffsetDecorations(const SpirvType &type, spirv::IdRef typeId);
+    void writeMemberDecorations(const SpirvType &type, spirv::IdRef typeId);
 
     // Helpers for type declaration.
     void getImageTypeParameters(TBasicType type,
@@ -329,8 +373,9 @@ class SPIRVBuilder : angle::NonCopyable
     void generateExecutionModes(spirv::Blob *blob);
 
     ANGLE_MAYBE_UNUSED TCompiler *mCompiler;
-    ANGLE_MAYBE_UNUSED ShCompileOptions mCompileOptions;
+    ShCompileOptions mCompileOptions;
     gl::ShaderType mShaderType;
+    const bool mDisableRelaxedPrecision;
 
     // Capabilities the shader is using.  Accumulated as the instructions are generated.  The Shader
     // capability is unconditionally generated, so it's not tracked.
@@ -340,6 +385,9 @@ class SPIRVBuilder : angle::NonCopyable
     // generated.  Used for the OpEntryPoint instruction.
     spirv::IdRefList mEntryPointInterfaceList;
     spirv::IdRef mEntryPointId;
+
+    // Id of imported instructions, if used.
+    spirv::IdRef mExtInstImportIdStd;
 
     // Current ID bound, used to allocate new ids.
     spirv::IdRef mNextAvailableId;
