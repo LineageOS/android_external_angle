@@ -28,6 +28,7 @@
 #include "compiler/translator/tree_ops/RewriteDfdy.h"
 #include "compiler/translator/tree_ops/RewriteStructSamplers.h"
 #include "compiler/translator/tree_ops/vulkan/DeclarePerVertexBlocks.h"
+#include "compiler/translator/tree_ops/vulkan/EmulateFragColorData.h"
 #include "compiler/translator/tree_ops/vulkan/FlagSamplersWithTexelFetch.h"
 #include "compiler/translator/tree_ops/vulkan/MonomorphizeUnsupportedFunctionsInVulkanGLSL.h"
 #include "compiler/translator/tree_ops/vulkan/ReplaceForShaderFramebufferFetch.h"
@@ -234,11 +235,8 @@ ANGLE_NO_DISCARD bool RotateAndFlipBuiltinVariable(TCompiler *compiler,
     TIntermBinary *plusPivot   = new TIntermBinary(EOpAdd, inverseXY, pivot->deepCopy());
 
     // Create the corrected variable and copy the value of the original builtin.
-    TIntermSequence sequence;
-    sequence.push_back(builtinRef->deepCopy());
-    TIntermAggregate *aggregate =
-        TIntermAggregate::CreateConstructor(builtin->getType(), &sequence);
-    TIntermBinary *assignment = new TIntermBinary(EOpInitialize, flippedBuiltinRef, aggregate);
+    TIntermBinary *assignment =
+        new TIntermBinary(EOpAssign, flippedBuiltinRef, builtinRef->deepCopy());
 
     // Create an assignment to the replaced variable's .xy.
     TIntermSwizzle *correctedXY =
@@ -337,7 +335,8 @@ ANGLE_NO_DISCARD bool AddBresenhamEmulationVS(TCompiler *compiler,
     TIntermConstantUnion *scaleConstant = CreateFloatNode(static_cast<float>(1 << subpixelBits));
     TIntermBinary *windowScaled =
         new TIntermBinary(EOpVectorTimesScalar, CreateTempSymbolNode(windowCoords), scaleConstant);
-    TIntermUnary *windowRounded = new TIntermUnary(EOpRound, windowScaled, nullptr);
+    TIntermTyped *windowRounded =
+        CreateBuiltInUnaryFunctionCallNode("round", windowScaled, *symbolTable, 300);
     TIntermBinary *windowRoundedBack =
         new TIntermBinary(EOpDiv, windowRounded, scaleConstant->deepCopy());
     TVariable *clampedWindowCoords = CreateTempVariable(symbolTable, vec2Type);
@@ -675,8 +674,10 @@ ANGLE_NO_DISCARD bool AddBresenhamEmulationFS(TCompiler *compiler,
     TIntermDeclaration *pDecl     = CreateTempInitDeclarationNode(p, windowPosition);
 
     // vec2 d = dFdx(p) + dFdy(p)
-    TIntermUnary *dfdx        = new TIntermUnary(EOpDFdx, new TIntermSymbol(p), nullptr);
-    TIntermUnary *dfdy        = new TIntermUnary(EOpDFdy, new TIntermSymbol(p), nullptr);
+    TIntermTyped *dfdx =
+        CreateBuiltInUnaryFunctionCallNode("dFdx", new TIntermSymbol(p), *symbolTable, 300);
+    TIntermTyped *dfdy =
+        CreateBuiltInUnaryFunctionCallNode("dFdy", new TIntermSymbol(p), *symbolTable, 300);
     TIntermBinary *dfsum      = new TIntermBinary(EOpAdd, dfdx, dfdy);
     TVariable *d              = CreateTempVariable(symbolTable, vec2Type);
     TIntermDeclaration *dDecl = CreateTempInitDeclarationNode(d, dfsum);
@@ -708,8 +709,9 @@ ANGLE_NO_DISCARD bool AddBresenhamEmulationFS(TCompiler *compiler,
     TIntermBinary *ddfp = new TIntermBinary(EOpMul, dd, fp);
     TIntermBinary *pf   = new TIntermBinary(EOpSub, new TIntermSymbol(p), new TIntermSymbol(f));
     TIntermBinary *expr = new TIntermBinary(EOpAdd, pf, ddfp);
-    TIntermUnary *absd  = new TIntermUnary(EOpAbs, expr, nullptr);
-    TVariable *i        = CreateTempVariable(symbolTable, vec2Type);
+
+    TIntermTyped *absd        = CreateBuiltInUnaryFunctionCallNode("abs", expr, *symbolTable, 100);
+    TVariable *i              = CreateTempVariable(symbolTable, vec2Type);
     TIntermDeclaration *iDecl = CreateTempInitDeclarationNode(i, absd);
 
     // Using a small epsilon value ensures that we don't suffer from numerical instability when
@@ -1048,67 +1050,24 @@ bool TranslatorVulkan::translateImpl(TInfoSinkBase &sink,
                 }
             }
 
-            bool hasGLFragColor          = false;
-            bool hasGLFragData           = false;
-            bool usePreRotation          = (compileOptions & SH_ADD_PRE_ROTATION) != 0;
-            bool hasGLSampleMask         = false;
-            bool hasGLSecondaryFragColor = false;
-            bool hasGLSecondaryFragData  = false;
+            bool usePreRotation  = (compileOptions & SH_ADD_PRE_ROTATION) != 0;
+            bool hasGLSampleMask = false;
 
             for (const ShaderVariable &outputVar : mOutputVariables)
             {
-                if (outputVar.name == "gl_FragColor")
-                {
-                    ASSERT(!hasGLFragColor);
-                    hasGLFragColor = true;
-                    continue;
-                }
-                else if (outputVar.name == "gl_FragData")
-                {
-                    ASSERT(!hasGLFragData);
-                    hasGLFragData = true;
-                    continue;
-                }
-                else if (outputVar.name == "gl_SampleMask")
+                if (outputVar.name == "gl_SampleMask")
                 {
                     ASSERT(!hasGLSampleMask);
                     hasGLSampleMask = true;
                     continue;
                 }
-                else if (outputVar.name == "gl_SecondaryFragColorEXT")
-                {
-                    ASSERT(!hasGLSecondaryFragColor);
-                    hasGLSecondaryFragColor = true;
-                    continue;
-                }
-                else if (outputVar.name == "gl_SecondaryFragDataEXT")
-                {
-                    ASSERT(!hasGLSecondaryFragData);
-                    hasGLSecondaryFragData = true;
-                    continue;
-                }
             }
 
-            // Declare gl_FragColor and glFragData as webgl_FragColor and webgl_FragData
-            // if it's core profile shaders and they are used.
-            ASSERT(!((hasGLFragColor || hasGLSecondaryFragColor) &&
-                     (hasGLFragData || hasGLSecondaryFragData)));
-            if (hasGLFragColor)
+            // Emulate gl_FragColor and gl_FragData with normal output variables.
+            mValidateASTOptions.validateVariableReferences = false;
+            if (!EmulateFragColorData(this, root, &getSymbolTable()))
             {
-                sink << "layout(location = 0) out vec4 webgl_FragColor;\n";
-            }
-            if (hasGLFragData)
-            {
-                sink << "layout(location = 0) out vec4 webgl_FragData[gl_MaxDrawBuffers];\n";
-            }
-            if (hasGLSecondaryFragColor)
-            {
-                sink << "layout(location = 0, index = 1) out vec4 angle_SecondaryFragColor;\n";
-            }
-            if (hasGLSecondaryFragData)
-            {
-                sink << "layout(location = 0, index = 1) out vec4 angle_SecondaryFragData["
-                     << getResources().MaxDualSourceDrawBuffers << "];\n";
+                return false;
             }
 
             if (usesPointCoord)
@@ -1342,7 +1301,7 @@ bool TranslatorVulkan::translate(TIntermBlock *root,
     }
 
 #if defined(ANGLE_ENABLE_DIRECT_SPIRV_GENERATION)
-    constexpr ShCompileOptions kUnsupportedTransformations = SH_ADD_BRESENHAM_LINE_RASTER_EMULATION;
+    constexpr ShCompileOptions kUnsupportedTransformations = SH_CLAMP_POINT_SIZE;
     if ((compileOptions & SH_GENERATE_SPIRV_DIRECTLY) != 0 &&
         ((getShaderType() == GL_VERTEX_SHADER &&
           (compileOptions & kUnsupportedTransformations) == 0) ||
@@ -1355,7 +1314,7 @@ bool TranslatorVulkan::translate(TIntermBlock *root,
             return false;
         }
 
-        return OutputSPIRV(this, root, compileOptions);
+        return OutputSPIRV(this, root, compileOptions, precisionEmulation);
     }
 #endif
 
