@@ -12,6 +12,9 @@
 #include "libANGLE/CLObject.h"
 #include "libANGLE/renderer/CLDeviceImpl.h"
 
+#include "common/Spinlock.h"
+#include "common/SynchronizedValue.h"
+
 #include <functional>
 
 namespace cl
@@ -59,7 +62,7 @@ class Device final : public _cl_device_id, public Object
     const rx::CLDeviceImpl::Ptr mImpl;
     const rx::CLDeviceImpl::Info mInfo;
 
-    CommandQueue *mDefaultCommandQueue = nullptr;
+    angle::SynchronizedValue<CommandQueue *, angle::Spinlock> mDefaultCommandQueue = nullptr;
 
     friend class CommandQueue;
     friend class Platform;
@@ -87,12 +90,12 @@ inline const rx::CLDeviceImpl::Info &Device::getInfo() const
 
 inline cl_version Device::getVersion() const
 {
-    return mInfo.mVersion;
+    return mInfo.version;
 }
 
 inline bool Device::isVersionOrNewer(cl_uint major, cl_uint minor) const
 {
-    return mInfo.mVersion >= CL_MAKE_VERSION(major, minor, 0u);
+    return mInfo.version >= CL_MAKE_VERSION(major, minor, 0u);
 }
 
 template <typename T>

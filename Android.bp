@@ -1618,6 +1618,7 @@ cc_defaults {
         "third_party/vulkan-deps/glslang/src/glslang/MachineIndependent/RemoveTree.cpp",
         "third_party/vulkan-deps/glslang/src/glslang/MachineIndependent/Scan.cpp",
         "third_party/vulkan-deps/glslang/src/glslang/MachineIndependent/ShaderLang.cpp",
+        "third_party/vulkan-deps/glslang/src/glslang/MachineIndependent/SpirvIntrinsics.cpp",
         "third_party/vulkan-deps/glslang/src/glslang/MachineIndependent/SymbolTable.cpp",
         "third_party/vulkan-deps/glslang/src/glslang/MachineIndependent/Versions.cpp",
         "third_party/vulkan-deps/glslang/src/glslang/MachineIndependent/attribute.cpp",
