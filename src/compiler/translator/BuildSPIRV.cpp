@@ -976,7 +976,7 @@ void SPIRVBuilder::nextConditionalBlock()
     SpirvConditional &conditional = mConditionalStack.back();
 
     ASSERT(conditional.nextBlockToWrite < conditional.blockIds.size());
-    spirv::IdRef blockId = conditional.blockIds[conditional.nextBlockToWrite++];
+    const spirv::IdRef blockId = conditional.blockIds[conditional.nextBlockToWrite++];
 
     // The previous block must have properly terminated.
     ASSERT(isCurrentFunctionBlockTerminated());
@@ -1007,6 +1007,43 @@ bool SPIRVBuilder::isInLoop() const
     }
 
     return false;
+}
+
+spirv::IdRef SPIRVBuilder::getBreakTargetId() const
+{
+    for (size_t index = mConditionalStack.size(); index > 0; --index)
+    {
+        const SpirvConditional &conditional = mConditionalStack[index - 1];
+
+        if (conditional.isBreakable)
+        {
+            // The target of break; is always the merge block, and the merge block is always the
+            // last block.
+            return conditional.blockIds.back();
+        }
+    }
+
+    UNREACHABLE();
+    return spirv::IdRef{};
+}
+
+spirv::IdRef SPIRVBuilder::getContinueTargetId() const
+{
+    for (size_t index = mConditionalStack.size(); index > 0; --index)
+    {
+        const SpirvConditional &conditional = mConditionalStack[index - 1];
+
+        if (conditional.isContinuable)
+        {
+            // The target of continue; is always the block before merge, so it's the one before
+            // last.
+            ASSERT(conditional.blockIds.size() > 2);
+            return conditional.blockIds[conditional.blockIds.size() - 2];
+        }
+    }
+
+    UNREACHABLE();
+    return spirv::IdRef{};
 }
 
 uint32_t SPIRVBuilder::nextUnusedBinding()
@@ -1250,6 +1287,44 @@ void SPIRVBuilder::writeLoopBodyEnd(spirv::IdRef continueBlock)
     }
 
     // Start the next block, which is %merge or if while, %continue.
+    nextConditionalBlock();
+}
+
+void SPIRVBuilder::writeSwitch(spirv::IdRef conditionValue,
+                               spirv::IdRef defaultBlock,
+                               const spirv::PairLiteralIntegerIdRefList &targetPairList,
+                               spirv::IdRef mergeBlock)
+{
+    // Generate the following:
+    //
+    //     OpSelectionMerge %mergeBlock None
+    //     OpSwitch %conditionValue %defaultBlock A %ABlock B %BBlock ...
+    //
+    spirv::WriteSelectionMerge(getSpirvCurrentFunctionBlock(), mergeBlock,
+                               spv::SelectionControlMaskNone);
+    spirv::WriteSwitch(getSpirvCurrentFunctionBlock(), conditionValue, defaultBlock,
+                       targetPairList);
+    terminateCurrentFunctionBlock();
+
+    // Start the next case block.
+    nextConditionalBlock();
+}
+
+void SPIRVBuilder::writeSwitchCaseBlockEnd()
+{
+    if (!isCurrentFunctionBlockTerminated())
+    {
+        // If a case does not end in branch, insert a branch to the next block, implementing
+        // fallthrough.  For the last block, the branch target would automatically be the merge
+        // block.
+        const SpirvConditional *conditional = getCurrentConditional();
+        const spirv::IdRef nextBlock        = conditional->blockIds[conditional->nextBlockToWrite];
+
+        spirv::WriteBranch(getSpirvCurrentFunctionBlock(), nextBlock);
+        terminateCurrentFunctionBlock();
+    }
+
+    // Move on to the next block.
     nextConditionalBlock();
 }
 
