@@ -591,8 +591,9 @@ void ValidationState_t::RegisterStorageClassConsumer(
                 *message =
                     errorVUID +
                     "in Vulkan evironment, Output Storage Class must not be "
-                    "used in RayGenerationKHR, IntersectionKHR, AnyHitKHR, "
-                    "ClosestHitKHR, MissKHR, or CallableKHR execution models";
+                    "used in GLCompute, RayGenerationKHR, IntersectionKHR, "
+                    "AnyHitKHR, ClosestHitKHR, MissKHR, or CallableKHR "
+                    "execution models";
               }
               return false;
             }
@@ -1824,6 +1825,8 @@ std::string ValidationState_t::VkErrorID(uint32_t id,
       return VUID_WRAP(VUID-StandaloneSpirv-OpMemoryBarrier-04732);
     case 4733:
       return VUID_WRAP(VUID-StandaloneSpirv-OpMemoryBarrier-04733);
+    case 4780:
+      return VUID_WRAP(VUID-StandaloneSpirv-Result-04780);
     default:
       return "";  // unknown id
   }

@@ -558,6 +558,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     void restoreFinishedRenderPass(vk::Framebuffer *framebuffer);
 
     uint32_t getCurrentSubpassIndex() const;
+    uint32_t getCurrentViewCount() const;
 
     egl::ContextPriority getContextPriority() const override { return mContextPriority; }
     angle::Result startRenderPass(gl::Rectangle renderArea,
@@ -589,6 +590,9 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     angle::Result endRenderPassQuery(QueryVk *queryVk);
     void pauseRenderPassQueriesIfActive();
     angle::Result resumeRenderPassQueriesIfActive();
+    bool doesPrimitivesGeneratedQuerySupportRasterizerDiscard() const;
+    bool isEmulatingRasterizerDiscardDuringPrimitivesGeneratedQuery(
+        bool isPrimitivesGeneratedQueryActive) const;
 
     // Used by QueryVk to share query helpers between transform feedback queries.
     QueryVk *getActiveRenderPassQuery(gl::QueryType queryType) const;
@@ -874,6 +878,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
                                               VkPipelineBindPoint bindPoint,
                                               DriverUniformsDescriptorSet *driverUniforms);
     angle::Result handleDirtyDescriptorSetsImpl(vk::CommandBuffer *commandBuffer);
+    void handleDirtyGraphicsScissorImpl(bool isPrimitivesGeneratedQueryActive);
 
     angle::Result allocateDriverUniforms(size_t driverUniformsSize,
                                          DriverUniformsDescriptorSet *driverUniforms,
@@ -951,6 +956,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
 
     void updateSampleShadingWithRasterizationSamples(const uint32_t rasterizationSamples);
     void updateRasterizationSamples(const uint32_t rasterizationSamples);
+    void updateRasterizerDiscardEnabled(bool isPrimitivesGeneratedQueryActive);
 
     SpecConstUsageBits getCurrentProgramSpecConstUsageBits() const;
     void updateGraphicsPipelineDescWithSpecConstUsageBits(SpecConstUsageBits usageBits);

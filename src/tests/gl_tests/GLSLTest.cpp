@@ -11007,6 +11007,173 @@ void main()
     glDeleteShader(shader);
 }
 
+// Test that initializing global variables with complex constants work
+TEST_P(GLSLTest_ES3, InitGlobalComplexConstant)
+{
+    constexpr char kFS[] = R"(#version 300 es
+precision highp float;
+out vec4 color;
+
+struct T
+{
+    float f;
+};
+
+struct S
+{
+    vec4 v;
+    mat3x4 m[2];
+    T t;
+};
+
+S s = S(
+        vec4(0, 1, 2, 3),
+        mat3x4[2](
+                  mat3x4(
+                         vec4(4, 5, 6, 7),
+                         vec4(8, 9, 10, 11),
+                         vec4(12, 13, 14, 15)
+                  ),
+                  mat3x4(
+                         vec4(16, 17, 18, 19),
+                         vec4(20, 21, 22, 23),
+                         vec4(24, 25, 26, 27)
+                  )
+        ),
+        T(28.0)
+       );
+
+void main()
+{
+    vec4 result = vec4(0, 1, 0, 1);
+
+    if (s.v != vec4(0, 1, 2, 3))
+        result = vec4(1, 0, 0, 0);
+
+    for (int index = 0; index < 2; ++index)
+    {
+        for (int column = 0; column < 3; ++column)
+        {
+            int expect = index * 12 + column * 4 + 4;
+            if (s.m[index][column] != vec4(expect, expect + 1, expect + 2, expect + 3))
+                result = vec4(float(index + 1) / 2.0, 0, float(column + 1) / 3.0, 1);
+        }
+    }
+
+    if (s.t.f != 28.0)
+        result = vec4(0, 0, 1, 0);
+
+    color = result;
+})";
+
+    ANGLE_GL_PROGRAM(program, essl3_shaders::vs::Simple(), kFS);
+
+    drawQuad(program, essl3_shaders::PositionAttrib(), 0.5f);
+    EXPECT_GL_NO_ERROR();
+
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green);
+}
+
+class GLSLTestLoops : public GLSLTest
+{
+  protected:
+    void runTest(const char *fs)
+    {
+        ANGLE_GL_PROGRAM(program, essl3_shaders::vs::Simple(), fs);
+
+        drawQuad(program, essl3_shaders::PositionAttrib(), 0.5f);
+        EXPECT_GL_NO_ERROR();
+
+        EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green);
+    }
+};
+
+// Test basic for loops
+TEST_P(GLSLTestLoops, BasicFor)
+{
+    constexpr char kFS[] = R"(#version 300 es
+precision mediump float;
+out vec4 color;
+
+void main()
+{
+    int result = 0;
+    for (int i = 0; i < 10; ++i)
+        for (int j = 0; j < 8; ++j)
+        {
+            for (int k = 0; k < 2; ++k, ++j) ++result;
+            for (int k = 0; k < 3; ++k)      ++result;
+            for (int k = 0; k < 0; ++k)      ++result;
+        }
+
+    color = result == 150 ? vec4(0, 1, 0, 1) : vec4(1, 0, 0, 1);
+})";
+
+    runTest(kFS);
+}
+
+// Test basic while loops
+TEST_P(GLSLTestLoops, BasicWhile)
+{
+    constexpr char kFS[] = R"(#version 300 es
+precision mediump float;
+out vec4 color;
+
+void main()
+{
+    int result = 0;
+    int i = 0;
+    while (i < 10)
+    {
+        int j = 0;
+        while (j < 8)
+        {
+            int k = 0;
+            while (k < 2) { ++result; ++k; ++j; }
+            while (k < 5) { ++result; ++k; }
+            while (k < 4) { ++result; }
+            ++j;
+        }
+        ++i;
+    }
+
+    color = result == 150 ? vec4(0, 1, 0, 1) : vec4(1, 0, 0, 1);
+})";
+
+    runTest(kFS);
+}
+
+// Test basic do-while loops
+TEST_P(GLSLTestLoops, BasicDoWhile)
+{
+    constexpr char kFS[] = R"(#version 300 es
+precision mediump float;
+out vec4 color;
+
+void main()
+{
+    int result = 0;
+    int i = 0;
+    do
+    {
+        int j = 0;
+        do
+        {
+            int k = 0;
+            do { ++result; ++k; ++j; } while (k < 2);
+            do { ++result; ++k;      } while (k < 5);
+            do { ++result;           } while (k < 3);
+            ++j;
+        } while (j < 8);
+        ++i;
+    } while (i < 10);
+
+    color = result == 180 ? vec4(0, 1, 0, 1) : vec4(1, 0, 0, 1);
+})";
+
+    runTest(kFS);
+}
+
 }  // anonymous namespace
 
 ANGLE_INSTANTIATE_TEST_ES2_AND_ES3(GLSLTest);
@@ -11015,6 +11182,9 @@ ANGLE_INSTANTIATE_TEST_ES2_AND_ES3(GLSLTestNoValidation);
 
 GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(GLSLTest_ES3);
 ANGLE_INSTANTIATE_TEST_ES3(GLSLTest_ES3);
+
+GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(GLSLTestLoops);
+ANGLE_INSTANTIATE_TEST_ES3_AND(GLSLTestLoops, WithDirectSPIRVGeneration(ES3_VULKAN()));
 
 ANGLE_INSTANTIATE_TEST_ES2(WebGLGLSLTest);
 

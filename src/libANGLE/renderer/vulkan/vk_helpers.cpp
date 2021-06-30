@@ -603,7 +603,7 @@ uint8_t GetContentDefinedLayerRangeBits(uint32_t layerStart,
                                         uint32_t maxLayerCount)
 {
     uint8_t layerRangeBits = layerCount >= maxLayerCount ? static_cast<uint8_t>(~0u)
-                                                         : angle::Bit<uint8_t>(layerCount) - 1;
+                                                         : angle::BitMask<uint8_t>(layerCount);
     layerRangeBits <<= layerStart;
 
     return layerRangeBits;
@@ -2680,18 +2680,22 @@ void DynamicQueryPool::destroy(VkDevice device)
     destroyEntryPool();
 }
 
-angle::Result DynamicQueryPool::allocateQuery(ContextVk *contextVk, QueryHelper *queryOut)
+angle::Result DynamicQueryPool::allocateQuery(ContextVk *contextVk,
+                                              QueryHelper *queryOut,
+                                              uint32_t queryCount)
 {
     ASSERT(!queryOut->valid());
 
-    if (mCurrentFreeEntry >= mPoolSize)
+    if (mCurrentFreeEntry + queryCount > mPoolSize)
     {
         // No more queries left in this pool, create another one.
         ANGLE_TRY(allocateNewPool(contextVk));
     }
 
-    uint32_t queryIndex = mCurrentFreeEntry++;
-    queryOut->init(this, mCurrentPool, queryIndex);
+    uint32_t queryIndex = mCurrentFreeEntry;
+    mCurrentFreeEntry += queryCount;
+
+    queryOut->init(this, mCurrentPool, queryIndex, queryCount);
 
     return angle::Result::Continue;
 }
@@ -2723,6 +2727,11 @@ angle::Result DynamicQueryPool::allocateNewPool(ContextVk *contextVk)
     queryPoolInfo.queryCount            = mPoolSize;
     queryPoolInfo.pipelineStatistics    = 0;
 
+    if (mQueryType == VK_QUERY_TYPE_PIPELINE_STATISTICS)
+    {
+        queryPoolInfo.pipelineStatistics = VK_QUERY_PIPELINE_STATISTIC_CLIPPING_INVOCATIONS_BIT;
+    }
+
     QueryPool queryPool;
 
     ANGLE_VK_TRY(contextVk, queryPool.init(contextVk->getDevice(), queryPoolInfo));
@@ -2730,8 +2739,27 @@ angle::Result DynamicQueryPool::allocateNewPool(ContextVk *contextVk)
     return allocateNewEntryPool(contextVk, std::move(queryPool));
 }
 
+// QueryResult implementation
+void QueryResult::setResults(uint64_t *results, uint32_t queryCount)
+{
+    ASSERT(mResults[0] == 0 && mResults[1] == 0);
+
+    // Accumulate the query results.  For multiview, where multiple query indices are used to return
+    // the results, it's undefined how the results are distributed between indices, but the sum is
+    // guaranteed to be the desired result.
+    for (uint32_t query = 0; query < queryCount; ++query)
+    {
+        for (uint32_t perQueryIndex = 0; perQueryIndex < mIntsPerResult; ++perQueryIndex)
+        {
+            mResults[perQueryIndex] += results[query * mIntsPerResult + perQueryIndex];
+        }
+    }
+}
+
 // QueryHelper implementation
-QueryHelper::QueryHelper() : mDynamicQueryPool(nullptr), mQueryPoolIndex(0), mQuery(0) {}
+QueryHelper::QueryHelper()
+    : mDynamicQueryPool(nullptr), mQueryPoolIndex(0), mQuery(0), mQueryCount(0)
+{}
 
 QueryHelper::~QueryHelper() {}
 
@@ -2740,11 +2768,13 @@ QueryHelper::QueryHelper(QueryHelper &&rhs)
     : Resource(std::move(rhs)),
       mDynamicQueryPool(rhs.mDynamicQueryPool),
       mQueryPoolIndex(rhs.mQueryPoolIndex),
-      mQuery(rhs.mQuery)
+      mQuery(rhs.mQuery),
+      mQueryCount(rhs.mQueryCount)
 {
     rhs.mDynamicQueryPool = nullptr;
     rhs.mQueryPoolIndex   = 0;
     rhs.mQuery            = 0;
+    rhs.mQueryCount       = 0;
 }
 
 QueryHelper &QueryHelper::operator=(QueryHelper &&rhs)
@@ -2752,16 +2782,21 @@ QueryHelper &QueryHelper::operator=(QueryHelper &&rhs)
     std::swap(mDynamicQueryPool, rhs.mDynamicQueryPool);
     std::swap(mQueryPoolIndex, rhs.mQueryPoolIndex);
     std::swap(mQuery, rhs.mQuery);
+    std::swap(mQueryCount, rhs.mQueryCount);
     return *this;
 }
 
 void QueryHelper::init(const DynamicQueryPool *dynamicQueryPool,
                        const size_t queryPoolIndex,
-                       uint32_t query)
+                       uint32_t query,
+                       uint32_t queryCount)
 {
     mDynamicQueryPool = dynamicQueryPool;
     mQueryPoolIndex   = queryPoolIndex;
     mQuery            = query;
+    mQueryCount       = queryCount;
+
+    ASSERT(mQueryCount <= gl::IMPLEMENTATION_ANGLE_MULTIVIEW_MAX_VIEWS);
 }
 
 void QueryHelper::deinit()
@@ -2769,6 +2804,7 @@ void QueryHelper::deinit()
     mDynamicQueryPool = nullptr;
     mQueryPoolIndex   = 0;
     mQuery            = 0;
+    mQueryCount       = 0;
     mUse.release();
     mUse.init();
 }
@@ -2778,7 +2814,7 @@ void QueryHelper::beginQueryImpl(ContextVk *contextVk,
                                  CommandBuffer *commandBuffer)
 {
     const QueryPool &queryPool = getQueryPool();
-    resetCommandBuffer->resetQueryPool(queryPool.getHandle(), mQuery, 1);
+    resetCommandBuffer->resetQueryPool(queryPool.getHandle(), mQuery, mQueryCount);
     commandBuffer->beginQuery(queryPool.getHandle(), mQuery, 0);
 }
 
@@ -2861,14 +2897,14 @@ void QueryHelper::writeTimestampToPrimary(ContextVk *contextVk, PrimaryCommandBu
     // Note that commands may not be flushed at this point.
 
     const QueryPool &queryPool = getQueryPool();
-    primary->resetQueryPool(queryPool, mQuery, 1);
+    primary->resetQueryPool(queryPool, mQuery, mQueryCount);
     primary->writeTimestamp(VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, queryPool, mQuery);
 }
 
 void QueryHelper::writeTimestamp(ContextVk *contextVk, CommandBuffer *commandBuffer)
 {
     const QueryPool &queryPool = getQueryPool();
-    commandBuffer->resetQueryPool(queryPool.getHandle(), mQuery, 1);
+    commandBuffer->resetQueryPool(queryPool.getHandle(), mQuery, mQueryCount);
     commandBuffer->writeTimestamp(VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, queryPool.getHandle(),
                                   mQuery);
     // timestamp results are available immediately, retain this query so that we get its serial
@@ -2892,11 +2928,8 @@ angle::Result QueryHelper::getUint64ResultNonBlocking(ContextVk *contextVk,
     // wait forever and trigger GPU timeout.
     if (hasSubmittedCommands())
     {
-        VkDevice device                     = contextVk->getDevice();
         constexpr VkQueryResultFlags kFlags = VK_QUERY_RESULT_64_BIT;
-        result =
-            getQueryPool().getResults(device, mQuery, 1, resultOut->getDataSize(),
-                                      resultOut->getPointerToResults(), sizeof(uint64_t), kFlags);
+        result                              = getResultImpl(contextVk, kFlags, resultOut);
     }
     else
     {
@@ -2922,17 +2955,32 @@ angle::Result QueryHelper::getUint64Result(ContextVk *contextVk, QueryResult *re
     ASSERT(valid());
     if (hasSubmittedCommands())
     {
-        VkDevice device                     = contextVk->getDevice();
         constexpr VkQueryResultFlags kFlags = VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT;
-        ANGLE_VK_TRY(contextVk, getQueryPool().getResults(
-                                    device, mQuery, 1, resultOut->getDataSize(),
-                                    resultOut->getPointerToResults(), sizeof(uint64_t), kFlags));
+        ANGLE_VK_TRY(contextVk, getResultImpl(contextVk, kFlags, resultOut));
     }
     else
     {
         *resultOut = 0;
     }
     return angle::Result::Continue;
+}
+
+VkResult QueryHelper::getResultImpl(ContextVk *contextVk,
+                                    const VkQueryResultFlags flags,
+                                    QueryResult *resultOut)
+{
+    std::array<uint64_t, 2 * gl::IMPLEMENTATION_ANGLE_MULTIVIEW_MAX_VIEWS> results;
+
+    VkDevice device = contextVk->getDevice();
+    VkResult result = getQueryPool().getResults(device, mQuery, mQueryCount, sizeof(results),
+                                                results.data(), sizeof(uint64_t), flags);
+
+    if (result == VK_SUCCESS)
+    {
+        resultOut->setResults(results.data(), mQueryCount);
+    }
+
+    return result;
 }
 
 // DynamicSemaphorePool implementation
@@ -5957,7 +6005,7 @@ void ImageHelper::stageSelfAsSubresourceUpdates(ContextVk *contextVk,
 
 {
     // Nothing to do if every level must be skipped
-    if ((~skipLevelsMask & gl::TexLevelMask(angle::Bit<uint32_t>(levelCount) - 1)).none())
+    if ((~skipLevelsMask & gl::TexLevelMask(angle::BitMask<uint32_t>(levelCount))).none())
     {
         return;
     }
@@ -6212,7 +6260,7 @@ angle::Result ImageHelper::flushStagedUpdates(ContextVk *contextVk,
             }
             else
             {
-                const uint64_t subresourceHashRange = angle::Bit<uint64_t>(updateLayerCount) - 1;
+                const uint64_t subresourceHashRange = angle::BitMask<uint64_t>(updateLayerCount);
                 const uint32_t subresourceHashOffset =
                     updateBaseLayer % kMaxParallelSubresourceUpload;
                 const uint64_t subresourceHash =
@@ -6449,7 +6497,7 @@ void ImageHelper::removeSupersededUpdates(ContextVk *contextVk, gl::TexLevelMask
         ASSERT(updateLayerCount <= 64);
         uint64_t updateLayersMask = updateLayerCount >= 64
                                         ? ~static_cast<uint64_t>(0)
-                                        : angle::Bit<uint64_t>(updateLayerCount) - 1;
+                                        : angle::BitMask<uint64_t>(updateLayerCount);
         updateLayersMask <<= updateBaseLayer;
 
         const bool isColorOrDepthSuperseded =
@@ -7129,6 +7177,15 @@ void FramebufferHelper::release(ContextVk *contextVk)
     contextVk->addGarbage(&mFramebuffer);
 }
 
+LayerMode GetLayerMode(const vk::ImageHelper &image, uint32_t layerCount)
+{
+    const uint32_t imageLayerCount = GetImageLayerCountForView(image);
+    const bool allLayers           = layerCount == imageLayerCount;
+
+    ASSERT(allLayers || layerCount > 0 && layerCount <= gl::IMPLEMENTATION_MAX_TEXTURE_LEVELS);
+    return allLayers ? LayerMode::All : static_cast<LayerMode>(layerCount);
+}
+
 // ImageViewHelper implementation.
 ImageViewHelper::ImageViewHelper() : mCurrentMaxLevel(0), mLinearColorspace(true) {}
 
@@ -7146,10 +7203,9 @@ ImageViewHelper::ImageViewHelper(ImageViewHelper &&other) : Resource(std::move(o
     std::swap(mLinearColorspace, other.mLinearColorspace);
 
     std::swap(mPerLevelStencilReadImageViews, other.mPerLevelStencilReadImageViews);
-    std::swap(mLevelDrawImageViews, other.mLevelDrawImageViews);
     std::swap(mLayerLevelDrawImageViews, other.mLayerLevelDrawImageViews);
-    std::swap(mLevelDrawImageViewsLinear, other.mLevelDrawImageViewsLinear);
     std::swap(mLayerLevelDrawImageViewsLinear, other.mLayerLevelDrawImageViewsLinear);
+    std::swap(mSubresourceDrawImageViews, other.mSubresourceDrawImageViews);
     std::swap(mLevelStorageImageViews, other.mLevelStorageImageViews);
     std::swap(mLayerLevelStorageImageViews, other.mLayerLevelStorageImageViews);
     std::swap(mImageViewSerial, other.mImageViewSerial);
@@ -7181,8 +7237,6 @@ void ImageViewHelper::release(RendererVk *renderer)
     ReleaseImageViews(&mPerLevelStencilReadImageViews, &garbage);
 
     // Release the draw views
-    ReleaseImageViews(&mLevelDrawImageViews, &garbage);
-    ReleaseImageViews(&mLevelDrawImageViewsLinear, &garbage);
     for (ImageViewVector &layerViews : mLayerLevelDrawImageViews)
     {
         for (ImageView &imageView : layerViews)
@@ -7204,6 +7258,16 @@ void ImageViewHelper::release(RendererVk *renderer)
             }
         }
     }
+    mLayerLevelDrawImageViewsLinear.clear();
+    for (auto &iter : mSubresourceDrawImageViews)
+    {
+        std::unique_ptr<ImageView> &imageView = iter.second;
+        if (imageView->valid())
+        {
+            garbage.emplace_back(GetGarbage(imageView.get()));
+        }
+    }
+    mSubresourceDrawImageViews.clear();
 
     // Release the storage views
     ReleaseImageViews(&mLevelStorageImageViews, &garbage);
@@ -7217,7 +7281,6 @@ void ImageViewHelper::release(RendererVk *renderer)
             }
         }
     }
-    mLayerLevelDrawImageViewsLinear.clear();
     mLayerLevelStorageImageViews.clear();
 
     if (!garbage.empty())
@@ -7246,8 +7309,6 @@ void ImageViewHelper::destroy(VkDevice device)
     DestroyImageViews(&mPerLevelStencilReadImageViews, device);
 
     // Release the draw views
-    DestroyImageViews(&mLevelDrawImageViews, device);
-    DestroyImageViews(&mLevelDrawImageViewsLinear, device);
     for (ImageViewVector &layerViews : mLayerLevelDrawImageViews)
     {
         for (ImageView &imageView : layerViews)
@@ -7263,6 +7324,13 @@ void ImageViewHelper::destroy(VkDevice device)
             imageView.destroy(device);
         }
     }
+    mLayerLevelDrawImageViewsLinear.clear();
+    for (auto &iter : mSubresourceDrawImageViews)
+    {
+        std::unique_ptr<ImageView> &imageView = iter.second;
+        imageView->destroy(device);
+    }
+    mSubresourceDrawImageViews.clear();
 
     // Release the storage views
     DestroyImageViews(&mLevelStorageImageViews, device);
@@ -7273,7 +7341,6 @@ void ImageViewHelper::destroy(VkDevice device)
             imageView.destroy(device);
         }
     }
-    mLayerLevelDrawImageViewsLinear.clear();
     mLayerLevelStorageImageViews.clear();
 
     mImageViewSerial = kInvalidImageOrBufferViewSerial;
@@ -7529,6 +7596,9 @@ angle::Result ImageViewHelper::getLevelLayerStorageImageView(ContextVk *contextV
 angle::Result ImageViewHelper::getLevelDrawImageView(ContextVk *contextVk,
                                                      const ImageHelper &image,
                                                      LevelIndex levelVk,
+                                                     uint32_t layer,
+                                                     uint32_t layerCount,
+                                                     gl::SrgbWriteControlMode mode,
                                                      const ImageView **imageViewOut)
 {
     ASSERT(image.valid());
@@ -7537,23 +7607,25 @@ angle::Result ImageViewHelper::getLevelDrawImageView(ContextVk *contextVk,
 
     retain(&contextVk->getResourceUseList());
 
-    // Lazily allocate the storage for image views
-    ImageView *imageView = GetLevelImageView(&mLevelDrawImageViews, levelVk, image.getLevelCount());
-    *imageViewOut        = imageView;
+    ImageSubresourceRange range = MakeImageSubresourceDrawRange(
+        image.toGLLevel(levelVk), layer, GetLayerMode(image, layerCount), mode);
 
-    if (imageView->valid())
+    std::unique_ptr<ImageView> &view = mSubresourceDrawImageViews[range];
+    if (view)
     {
+        *imageViewOut = view.get();
         return angle::Result::Continue;
     }
 
-    // Lazily allocate the image view itself.
+    view          = std::make_unique<ImageView>();
+    *imageViewOut = view.get();
+
+    // Lazily allocate the image view.
     // Note that these views are specifically made to be used as framebuffer attachments, and
     // therefore don't have swizzle.
-    const uint32_t layerCount = GetImageLayerCountForView(image);
-    gl::TextureType viewType  = Get2DTextureType(layerCount, image.getSamples());
+    gl::TextureType viewType = Get2DTextureType(layerCount, image.getSamples());
     return image.initLayerImageView(contextVk, viewType, image.getAspectFlags(), gl::SwizzleState(),
-                                    imageView, levelVk, 1, 0, layerCount,
-                                    gl::SrgbWriteControlMode::Default);
+                                    view.get(), levelVk, 1, layer, layerCount, mode);
 }
 
 angle::Result ImageViewHelper::getLevelLayerDrawImageView(ContextVk *contextVk,
@@ -7602,14 +7674,46 @@ ImageOrBufferViewSubresourceSerial ImageViewHelper::getSubresourceSerial(
     ASSERT(mImageViewSerial.valid());
 
     ImageOrBufferViewSubresourceSerial serial;
-    serial.viewSerial = mImageViewSerial;
-    SetBitField(serial.subresource.level, levelGL.get());
-    SetBitField(serial.subresource.levelCount, levelCount);
-    SetBitField(serial.subresource.layer, layer);
-    SetBitField(serial.subresource.singleLayer, layerMode == LayerMode::Single ? 1 : 0);
-    SetBitField(serial.subresource.srgbDecodeMode, srgbDecodeMode);
-    SetBitField(serial.subresource.srgbOverrideMode, srgbOverrideMode);
+    serial.viewSerial  = mImageViewSerial;
+    serial.subresource = MakeImageSubresourceReadRange(levelGL, levelCount, layer, layerMode,
+                                                       srgbDecodeMode, srgbOverrideMode);
     return serial;
+}
+
+ImageSubresourceRange MakeImageSubresourceReadRange(gl::LevelIndex level,
+                                                    uint32_t levelCount,
+                                                    uint32_t layer,
+                                                    LayerMode layerMode,
+                                                    SrgbDecodeMode srgbDecodeMode,
+                                                    gl::SrgbOverride srgbOverrideMode)
+{
+    ImageSubresourceRange range;
+
+    SetBitField(range.level, level.get());
+    SetBitField(range.levelCount, levelCount);
+    SetBitField(range.layer, layer);
+    SetBitField(range.layerMode, layerMode);
+    SetBitField(range.srgbDecodeMode, srgbDecodeMode);
+    SetBitField(range.srgbMode, srgbOverrideMode);
+
+    return range;
+}
+
+ImageSubresourceRange MakeImageSubresourceDrawRange(gl::LevelIndex level,
+                                                    uint32_t layer,
+                                                    LayerMode layerMode,
+                                                    gl::SrgbWriteControlMode srgbWriteControlMode)
+{
+    ImageSubresourceRange range;
+
+    SetBitField(range.level, level.get());
+    SetBitField(range.levelCount, 1);
+    SetBitField(range.layer, layer);
+    SetBitField(range.layerMode, layerMode);
+    SetBitField(range.srgbDecodeMode, 0);
+    SetBitField(range.srgbMode, srgbWriteControlMode);
+
+    return range;
 }
 
 // BufferViewHelper implementation.

@@ -104,6 +104,9 @@ template("angle_common_test_utils") {
       "//third_party/googletest:gtest",
     ]
     sources = [
+      "$angle_root/third_party/renderdoc/src/renderdoc_app.h",
+      "test_utils/RenderDoc.cpp",
+      "test_utils/RenderDoc.h",
       "test_utils/angle_test_configs.cpp",
       "test_utils/angle_test_configs.h",
       "test_utils/angle_test_instantiate.cpp",
@@ -380,6 +383,12 @@ if (is_win || is_linux || is_chromeos || is_android || is_apple) {
 if (build_angle_perftests) {
   import("angle_perftests.gni")
 
+  config("angle_trace_perftests_config") {
+    if (build_angle_trace_perf_tests) {
+      defines = [ "ANGLE_TRACE_PERF_TESTS" ]
+    }
+  }
+
   angle_source_set("angle_trace_perftests") {
     testonly = true
 
@@ -399,6 +408,7 @@ if (build_angle_perftests) {
         "$angle_root/util:angle_png_utils",
         "restricted_traces:angle_restricted_traces",
       ]
+      public_configs = [ ":angle_trace_perftests_config" ]
       suppressed_configs +=
           [ "$angle_root:constructor_and_destructor_warnings" ]
     }

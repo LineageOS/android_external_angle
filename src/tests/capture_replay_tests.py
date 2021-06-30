@@ -188,32 +188,21 @@ class SubProcess():
 class ChildProcessesManager():
 
     @classmethod
-    def _GetGnAndNinjaAbsolutePaths(self, depot_tools_path):
-
-        def find_depot_tools_from_env():
-            depot_tools_name = "depot_tools"
-            if platform == "win32":
-                paths = os.environ["PATH"].split(";")
-            else:
-                paths = os.environ["PATH"].split(":")
-            for path in paths:
-                if path.endswith(depot_tools_name):
-                    return path
-            logging.exception("No gn or ninja found on system")
+    def _GetGnAndNinjaAbsolutePaths(self):
 
         def winext(name, ext):
             return ("%s.%s" % (name, ext)) if platform == "win32" else name
 
-        path = depot_tools_path if depot_tools_path else find_depot_tools_from_env()
+        path = os.path.join('third_party', 'depot_tools')
         return os.path.join(path, winext('gn', 'bat')), os.path.join(path, winext('ninja', 'exe'))
 
-    def __init__(self, depot_tools_path):
+    def __init__(self):
         # a dictionary of Subprocess, with pid as key
         self.subprocesses = {}
         # list of Python multiprocess.Process handles
         self.workers = []
 
-        self._gn_path, self._ninja_path = self._GetGnAndNinjaAbsolutePaths(depot_tools_path)
+        self._gn_path, self._ninja_path = self._GetGnAndNinjaAbsolutePaths()
 
     def RunSubprocess(self, command, env=None, pipe_stdout=True, timeout=None):
         proc = SubProcess(command, env, pipe_stdout)
@@ -297,13 +286,16 @@ class ChildProcessesManager():
                 j_value = min(j_value, 500)
 
             cmd.append('%d' % j_value)
+        else:
+            cmd.append('-l')
+            cmd.append('%d' % os.cpu_count())
 
         cmd += ['-C', build_dir, target]
         return self.RunSubprocess(cmd, pipe_stdout=pipe_stdout)
 
 
-def GetTestsListForFilter(test_path, filter):
-    cmd = [test_path, "--list-tests", "--gtest_filter=%s" % filter]
+def GetTestsListForFilter(args, test_path, filter):
+    cmd = GetRunCommand(args, test_path) + ["--list-tests", "--gtest_filter=%s" % filter]
     info('Getting test list from "%s"' % " ".join(cmd))
     return subprocess.check_output(cmd, text=True)
 
@@ -321,7 +313,6 @@ def GetSkippedTestPatterns():
 
 
 def ParseTestNamesFromTestList(output):
-
     def SkipTest(skipped_test_patterns, test):
         for skipped_test_pattern in skipped_test_patterns:
             if fnmatch.fnmatch(test, skipped_test_pattern):
@@ -346,6 +337,13 @@ def ParseTestNamesFromTestList(output):
 
     info('Found %s tests and %d skipped tests.' % (len(tests), skips))
     return tests
+
+
+def GetRunCommand(args, command):
+    if args.xvfb:
+        return ['vpython', 'testing/xvfb.py', command]
+    else:
+        return [command]
 
 
 class GroupedResult():
@@ -414,7 +412,7 @@ class TestBatchResult():
             else:
                 if grouped_result.resultcode == GroupedResult.CompileFailed:
                     self.repr_str += TestBatchResult.ExtractErrors(grouped_result.output)
-                else:
+                elif grouped_result.resultcode != GroupedResult.Passed:
                     self.repr_str += TestBatchResult.GetAbbreviatedOutput(grouped_result.output)
 
     def ExtractErrors(output):
@@ -428,7 +426,6 @@ class TestBatchResult():
         return "".join(error_lines)
 
     def GetAbbreviatedOutput(output):
-
         # Get all lines after and including the last occurance of "Run".
         lines = output.splitlines()
         line_count = 0
@@ -489,13 +486,9 @@ class TestBatch():
 
     CAPTURE_FRAME_END = 100
 
-    def __init__(self, use_goma, batch_count, keep_temp_files, goma_dir, verbose):
-        self.use_goma = use_goma
+    def __init__(self, args):
+        self.args = args
         self.tests = []
-        self.batch_count = batch_count
-        self.keep_temp_files = keep_temp_files
-        self.goma_dir = goma_dir
-        self.verbose = verbose
         self.results = []
 
     def SetWorkerId(self, worker_id):
@@ -509,23 +502,21 @@ class TestBatch():
         env = os.environ.copy()
         env['ANGLE_CAPTURE_FRAME_END'] = '{}'.format(self.CAPTURE_FRAME_END)
         env['ANGLE_CAPTURE_SERIALIZE_STATE'] = '1'
+        env['ANGLE_FEATURE_OVERRIDES_ENABLED'] = 'forceRobustResourceInit'
         env['ANGLE_CAPTURE_ENABLED'] = '1'
 
         info('Setting ANGLE_CAPTURE_OUT_DIR to %s' % self.trace_folder_path)
         env['ANGLE_CAPTURE_OUT_DIR'] = self.trace_folder_path
 
-        if not self.keep_temp_files:
+        if not self.args.keep_temp_files:
             ClearFolderContent(self.trace_folder_path)
         filt = ':'.join([test.full_test_name for test in self.tests])
 
-        if args.xvfb:
-            cmd = ['vpython', 'testing/xvfb.py', test_exe_path]
-        else:
-            cmd = [test_exe_path]
+        cmd = GetRunCommand(args, test_exe_path)
         filter_string = '--gtest_filter=%s' % filt
         cmd += [filter_string, '--angle-per-test-capture-label']
 
-        if self.verbose:
+        if self.args.verbose:
             info("Run capture: '{} {}'".format(test_exe_path, filter_string))
 
         returncode, output = child_processes_manager.RunSubprocess(
@@ -554,25 +545,24 @@ class TestBatch():
                     skipped_tests))
         return continued_tests
 
-    def BuildReplay(self, args, replay_build_dir, composite_file_id, tests,
-                    child_processes_manager):
+    def BuildReplay(self, replay_build_dir, composite_file_id, tests, child_processes_manager):
         # write gni file that holds all the traces files in a list
         self.CreateGNIFile(composite_file_id, tests)
         # write header and cpp composite files, which glue the trace files with
         # CaptureReplayTests.cpp
         self.CreateTestsCompositeFiles(composite_file_id, tests)
 
-        gn_args = [("angle_build_capture_replay_tests", "true"),
+        gn_args = [("angle_build_capture_replay_tests", "true"), ("symbol_level", "1"),
                    ("angle_capture_replay_test_trace_dir", '"%s"' % self.trace_dir),
                    ("angle_capture_replay_composite_file_id", str(composite_file_id))]
-        returncode, output = child_processes_manager.RunGNGen(args, replay_build_dir, True,
+        returncode, output = child_processes_manager.RunGNGen(self.args, replay_build_dir, True,
                                                               gn_args)
         if returncode != 0:
             self.results.append(
                 GroupedResult(GroupedResult.CompileFailed, "Build replay failed at gn generation",
                               output, tests))
             return False
-        returncode, output = child_processes_manager.RunNinja(args, replay_build_dir,
+        returncode, output = child_processes_manager.RunNinja(self.args, replay_build_dir,
                                                               REPLAY_BINARY, True)
         if returncode != 0:
             self.results.append(
@@ -586,12 +576,11 @@ class TestBatch():
         env['ANGLE_CAPTURE_ENABLED'] = '0'
         env['ANGLE_FEATURE_OVERRIDES_ENABLED'] = 'enable_capture_limits'
 
-        if self.verbose:
+        if self.args.verbose:
             info("Run Replay: {}".format(replay_exe_path))
 
-        returncode, output = child_processes_manager.RunSubprocess([replay_exe_path],
-                                                                   env,
-                                                                   timeout=SUBPROCESS_TIMEOUT)
+        returncode, output = child_processes_manager.RunSubprocess(
+            GetRunCommand(self.args, replay_exe_path), env, timeout=SUBPROCESS_TIMEOUT)
         if returncode == -1:
             cmd = replay_exe_path
             self.results.append(
@@ -600,7 +589,7 @@ class TestBatch():
             return
         elif returncode == -2:
             self.results.append(
-                GroupedResult(GroupedResult.TimedOut, "Replay run timed out", "", tests))
+                GroupedResult(GroupedResult.TimedOut, "Replay run timed out", output, tests))
             return
 
         output_lines = output.splitlines()
@@ -614,16 +603,15 @@ class TestBatch():
                     passes.append(self.FindTestByLabel(words[1]))
                 else:
                     fails.append(self.FindTestByLabel(words[1]))
-                    if self.verbose:
-                        print("Context comparison failed: {}".format(
-                            self.FindTestByLabel(words[1])))
-                        self.PrintContextDiff(replay_build_dir, words[1])
+                    logging.info("Context comparison failed: {}".format(
+                        self.FindTestByLabel(words[1])))
+                    self.PrintContextDiff(replay_build_dir, words[1])
 
                 count += 1
         if len(passes) > 0:
-            self.results.append(GroupedResult(GroupedResult.Passed, "", "", passes))
+            self.results.append(GroupedResult(GroupedResult.Passed, "", output, passes))
         if len(fails) > 0:
-            self.results.append(GroupedResult(GroupedResult.Failed, "", "", fails))
+            self.results.append(GroupedResult(GroupedResult.Failed, "", output, fails))
 
     def PrintContextDiff(self, replay_build_dir, test_name):
         frame = 1
@@ -650,7 +638,7 @@ class TestBatch():
         return None
 
     def AddTest(self, test):
-        assert len(self.tests) <= self.batch_count
+        assert len(self.tests) <= self.args.batch_count
         test.index = len(self.tests)
         self.tests.append(test)
 
@@ -715,7 +703,7 @@ class TestBatch():
         return iter(self.tests)
 
     def GetResults(self):
-        return TestBatchResult(self.results, self.verbose)
+        return TestBatchResult(self.results, self.args.verbose)
 
 
 def ClearFolderContent(path):
@@ -734,7 +722,7 @@ def RunTests(args, worker_id, job_queue, result_list, message_queue):
     replay_build_dir = os.path.join(args.out_dir, 'Replay%d' % worker_id)
     replay_exec_path = os.path.join(replay_build_dir, REPLAY_BINARY)
 
-    child_processes_manager = ChildProcessesManager(args.depot_tools_path)
+    child_processes_manager = ChildProcessesManager()
     # used to differentiate between multiple composite files when there are multiple test batchs
     # running on the same worker and --deleted_trace is set to False
     composite_file_id = 1
@@ -756,9 +744,9 @@ def RunTests(args, worker_id, job_queue, result_list, message_queue):
                 result_list.append(test_batch.GetResults())
                 message_queue.put(str(test_batch.GetResults()))
                 continue
-            success = test_batch.BuildReplay(args, replay_build_dir, composite_file_id,
-                                             continued_tests, child_processes_manager)
-            if test_batch.keep_temp_files:
+            success = test_batch.BuildReplay(replay_build_dir, composite_file_id, continued_tests,
+                                             child_processes_manager)
+            if args.keep_temp_files:
                 composite_file_id += 1
             if not success:
                 result_list.append(test_batch.GetResults())
@@ -816,7 +804,7 @@ def DeleteTraceFolders(folder_num):
 
 
 def main(args):
-    child_processes_manager = ChildProcessesManager(args.depot_tools_path)
+    child_processes_manager = ChildProcessesManager()
     try:
         start_time = time.time()
         # set the number of workers to be cpu_count - 1 (since the main process already takes up a
@@ -841,7 +829,7 @@ def main(args):
             return EXIT_FAILURE
         # get a list of tests
         test_path = os.path.join(capture_build_dir, args.test_suite)
-        test_list = GetTestsListForFilter(test_path, args.gtest_filter)
+        test_list = GetTestsListForFilter(args, test_path, args.gtest_filter)
         test_names = ParseTestNamesFromTestList(test_list)
         # objects created by manager can be shared by multiple processes. We use it to create
         # collections that are shared by multiple processes such as job queue or result list.
@@ -851,8 +839,7 @@ def main(args):
 
         # put the test batchs into the job queue
         for batch_index in range(test_batch_num):
-            batch = TestBatch(args.use_goma, int(args.batch_count), args.keep_temp_files,
-                              args.goma_dir, args.verbose)
+            batch = TestBatch(args)
             test_index = batch_index
             while test_index < len(test_names):
                 batch.AddTest(Test(test_names[test_index]))
@@ -1009,6 +996,7 @@ if __name__ == "__main__":
     parser.add_argument(
         '--batch-count',
         default=DEFAULT_BATCH_COUNT,
+        type=int,
         help='Number of tests in a batch. Default is %d.' % DEFAULT_BATCH_COUNT)
     parser.add_argument(
         '--keep-temp-files',
@@ -1040,6 +1028,7 @@ if __name__ == "__main__":
         default=DEFAULT_MAX_JOBS,
         type=int,
         help='Maximum number of test processes. Default is %d.' % DEFAULT_MAX_JOBS)
+    # TODO(jmadill): Remove this argument. http://anglebug.com/6102
     parser.add_argument('--depot-tools-path', default=None, help='Path to depot tools')
     parser.add_argument('--xvfb', action='store_true', help='Run with xvfb.')
     args = parser.parse_args()

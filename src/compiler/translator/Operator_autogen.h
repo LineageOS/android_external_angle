@@ -244,6 +244,8 @@ enum TOperator : uint16_t
     EOpUmulExtended,
     EOpImulExtended,
 
+    // Group Texture
+
     // Group TextureFirstVersions
     EOpTexture2D,
     EOpTexture2DProj,
@@ -256,45 +258,29 @@ enum TOperator : uint16_t
     EOpShadow1DProj,
     EOpShadow2D,
     EOpShadow2DProj,
-
-    // Group ARB_texture_rectangle
+    EOpShadow2DEXT,
+    EOpShadow2DProjEXT,
     EOpTexture2DRect,
     EOpTexture2DRectProj,
-    EOpTextureRect,
-    EOpTextureProjRect,
-
-    // Group EXT_shader_texture_lod
     EOpTexture2DGradEXT,
     EOpTexture2DProjGradEXT,
     EOpTextureCubeGradEXT,
+    EOpTextureVideoWEBGL,
 
-    // Group TextureFirstVersionsFS
-    EOpTexture2DFS,
-    EOpTexture2DProjFS,
-    EOpTextureCubeFS,
-    EOpTexture3DFS,
-    EOpTexture3DProjFS,
-    EOpTexture3DLodFS,
-    EOpTexture3DProjLodFS,
-    EOpTexture1DFS,
-    EOpTexture1DProjFS,
-    EOpShadow1DFS,
-    EOpShadow1DProjFS,
-    EOpShadow2DFS,
-    EOpShadow2DProjFS,
+    // Group TextureFirstVersionsBias
+    EOpTexture2DBias,
+    EOpTexture2DProjBias,
+    EOpTextureCubeBias,
+    EOpTexture3DBias,
+    EOpTexture3DProjBias,
+    EOpTexture1DBias,
+    EOpTexture1DProjBias,
+    EOpShadow1DBias,
+    EOpShadow1DProjBias,
+    EOpShadow2DBias,
+    EOpShadow2DProjBias,
 
-    // Group TextureFirstVersionsFSExt
-    EOpTexture2DLodEXTFSExt,
-    EOpTexture2DProjLodEXTFSExt,
-    EOpTextureCubeLodEXTFSExt,
-    EOpShadow2DEXTFSExt,
-    EOpShadow2DProjEXTFSExt,
-    EOpTexture3DFSExt,
-    EOpTexture3DProjFSExt,
-    EOpTexture3DLodFSExt,
-    EOpTexture3DProjLodFSExt,
-
-    // Group TextureFirstVersionsVS
+    // Group TextureFirstVersionsLod
     EOpTexture2DLod,
     EOpTexture2DProjLod,
     EOpTextureCubeLod,
@@ -304,6 +290,24 @@ enum TOperator : uint16_t
     EOpShadow1DProjLod,
     EOpShadow2DLod,
     EOpShadow2DProjLod,
+    EOpTexture3DLod,
+    EOpTexture3DProjLod,
+
+    // Group TextureFirstVersionsLodVS
+    EOpTexture2DLodVS,
+    EOpTexture2DProjLodVS,
+    EOpTextureCubeLodVS,
+    EOpTexture1DLodVS,
+    EOpTexture1DProjLodVS,
+    EOpShadow1DLodVS,
+    EOpShadow1DProjLodVS,
+    EOpShadow2DLodVS,
+    EOpShadow2DProjLodVS,
+
+    // Group TextureFirstVersionsLodFS
+    EOpTexture2DLodEXTFS,
+    EOpTexture2DProjLodEXTFS,
+    EOpTextureCubeLodEXTFS,
 
     // Group TextureNoBias
     EOpTexture,
@@ -337,10 +341,6 @@ enum TOperator : uint16_t
     EOpTextureOffsetBias,
     EOpTextureProjOffsetBias,
 
-    // Group EXT_yuv_target
-    EOpRgb_2_yuv,
-    EOpYuv_2_rgb,
-
     // Group TextureGather
     EOpTextureGather,
 
@@ -359,6 +359,10 @@ enum TOperator : uint16_t
 
     // Group TextureGatherOffsetsComp
     EOpTextureGatherOffsetsComp,
+
+    // Group EXT_YUV_target
+    EOpRgb_2_yuv,
+    EOpYuv_2_rgb,
 
     // Group DerivativesFS
     EOpDFdx,
@@ -453,9 +457,6 @@ enum TOperator : uint16_t
     EOpAnyInvocation,
     EOpAllInvocations,
     EOpAllInvocationsEqual,
-
-    // Group WEBGLVideoTexture
-    EOpTextureVideoWEBGL,
 };
 
 // Returns the string corresponding to the operator in GLSL.  For built-in functions use the
@@ -510,6 +511,10 @@ static inline bool IsTextureGatherOffsets(TOperator op)
 static inline bool IsTextureGather(TOperator op)
 {
     return op >= EOpTextureGather && op <= EOpTextureGatherOffsetsComp;
+}
+static inline bool IsTexture(TOperator op)
+{
+    return op >= EOpTexture2D && op <= EOpTextureGatherOffsetsComp;
 }
 static inline bool IsInterpolationFS(TOperator op)
 {

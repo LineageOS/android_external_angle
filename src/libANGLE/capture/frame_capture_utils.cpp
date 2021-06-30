@@ -287,6 +287,13 @@ void SerializeColorUI(JsonSerializer *json, const ColorUI &color)
     json->addScalar("Alpha", color.alpha);
 }
 
+void SerializeExtents(JsonSerializer *json, const gl::Extents &extents)
+{
+    json->addScalar("Width", extents.width);
+    json->addScalar("Height", extents.height);
+    json->addScalar("Depth", extents.depth);
+}
+
 template <class ObjectType>
 void SerializeOffsetBindingPointerVector(
     JsonSerializer *json,
@@ -387,6 +394,11 @@ Result SerializeFramebufferAttachment(const gl::Context *context,
     json->addScalar("ViewIndex", framebufferAttachment.getBaseViewIndex());
     json->addScalar("Samples", framebufferAttachment.getRenderToTextureSamples());
 
+    {
+        GroupScope extentsGroup(json, "Extents");
+        SerializeExtents(json, framebufferAttachment.getSize());
+    }
+
     if (framebufferAttachment.type() != GL_TEXTURE &&
         framebufferAttachment.type() != GL_RENDERBUFFER)
     {
@@ -398,10 +410,18 @@ Result SerializeFramebufferAttachment(const gl::Context *context,
             framebuffer->setReadBuffer(framebufferAttachment.getBinding());
             ANGLE_TRY(framebuffer->syncState(context, GL_FRAMEBUFFER, gl::Command::Other));
         }
-        MemoryBuffer *pixelsPtr = nullptr;
-        ANGLE_TRY(ReadPixelsFromAttachment(context, framebuffer, framebufferAttachment,
-                                           scratchBuffer, &pixelsPtr));
-        json->addBlob("Data", pixelsPtr->data(), pixelsPtr->size());
+
+        if (framebufferAttachment.initState() == gl::InitState::Initialized)
+        {
+            MemoryBuffer *pixelsPtr = nullptr;
+            ANGLE_TRY(ReadPixelsFromAttachment(context, framebuffer, framebufferAttachment,
+                                               scratchBuffer, &pixelsPtr));
+            json->addBlob("Data", pixelsPtr->data(), pixelsPtr->size());
+        }
+        else
+        {
+            json->addCString("Data", "Not initialized");
+        }
         // Reset framebuffer state
         framebuffer->setReadBuffer(prevReadBufferState);
     }
@@ -742,12 +762,19 @@ Result SerializeBuffer(const gl::Context *context,
 {
     GroupScope group(json, "Buffer");
     SerializeBufferState(json, buffer->getState());
-    MemoryBuffer *dataPtr = nullptr;
-    ANGLE_CHECK_GL_ALLOC(
-        const_cast<gl::Context *>(context),
-        scratchBuffer->getInitialized(static_cast<size_t>(buffer->getSize()), &dataPtr, 0));
-    ANGLE_TRY(buffer->getSubData(context, 0, dataPtr->size(), dataPtr->data()));
-    json->addBlob("data", dataPtr->data(), dataPtr->size());
+    if (buffer->getSize())
+    {
+        MemoryBuffer *dataPtr = nullptr;
+        ANGLE_CHECK_GL_ALLOC(
+            const_cast<gl::Context *>(context),
+            scratchBuffer->getInitialized(static_cast<size_t>(buffer->getSize()), &dataPtr, 0));
+        ANGLE_TRY(buffer->getSubData(context, 0, dataPtr->size(), dataPtr->data()));
+        json->addBlob("data", dataPtr->data(), dataPtr->size());
+    }
+    else
+    {
+        json->addCString("data", "null");
+    }
     return Result::Continue;
 }
 void SerializeColorGeneric(JsonSerializer *json,
@@ -804,13 +831,6 @@ void SerializeSwizzleState(JsonSerializer *json, const gl::SwizzleState &swizzle
     json->addScalar("SwizzleGreen", swizzleState.swizzleGreen);
     json->addScalar("SwizzleBlue", swizzleState.swizzleBlue);
     json->addScalar("SwizzleAlpha", swizzleState.swizzleAlpha);
-}
-
-void SerializeExtents(JsonSerializer *json, const gl::Extents &extents)
-{
-    json->addScalar("Width", extents.width);
-    json->addScalar("Height", extents.height);
-    json->addScalar("Depth", extents.depth);
 }
 
 void SerializeInternalFormat(JsonSerializer *json, const gl::InternalFormat *internalFormat)
@@ -1163,10 +1183,17 @@ Result SerializeTextureData(JsonSerializer *json,
         gl::PixelPackState packState;
         packState.alignment = 1;
 
-        ANGLE_TRY(texture->getTexImage(context, packState, nullptr, index.getTarget(),
-                                       index.getLevelIndex(), getFormat, getType,
-                                       texelsPtr->data()));
-        json->addBlob("Texels", texelsPtr->data(), texelsPtr->size());
+        if (texture->getState().getInitState() == gl::InitState::Initialized)
+        {
+            ANGLE_TRY(texture->getTexImage(context, packState, nullptr, index.getTarget(),
+                                           index.getLevelIndex(), getFormat, getType,
+                                           texelsPtr->data()));
+            json->addBlob("Texels", texelsPtr->data(), texelsPtr->size());
+        }
+        else
+        {
+            json->addCString("Texels", "not initialized");
+        }
     }
     return Result::Continue;
 }

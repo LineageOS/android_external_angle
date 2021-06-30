@@ -613,12 +613,14 @@ void ToSubpassDescription2(const VkSubpassDescription &desc,
                            const gl::DrawBuffersVector<VkAttachmentReference2KHR> &colorRefs,
                            const gl::DrawBuffersVector<VkAttachmentReference2KHR> &resolveRefs,
                            const VkAttachmentReference2KHR &depthStencilRef,
+                           uint32_t viewMask,
                            VkSubpassDescription2KHR *desc2Out)
 {
     *desc2Out                         = {};
     desc2Out->sType                   = VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_2_KHR;
     desc2Out->flags                   = desc.flags;
     desc2Out->pipelineBindPoint       = desc.pipelineBindPoint;
+    desc2Out->viewMask                = viewMask;
     desc2Out->inputAttachmentCount    = static_cast<uint32_t>(inputRefs.size());
     desc2Out->pInputAttachments       = !inputRefs.empty() ? inputRefs.data() : nullptr;
     desc2Out->colorAttachmentCount    = static_cast<uint32_t>(colorRefs.size());
@@ -645,6 +647,7 @@ void ToSubpassDependency2(const VkSubpassDependency &dep, VkSubpassDependency2KH
 angle::Result CreateRenderPass2(Context *context,
                                 const VkRenderPassCreateInfo &createInfo,
                                 const VkSubpassDescriptionDepthStencilResolve &depthStencilResolve,
+                                const VkRenderPassMultiviewCreateInfo &multiviewInfo,
                                 bool unresolveDepth,
                                 bool unresolveStencil,
                                 bool isRenderToTexture,
@@ -730,7 +733,7 @@ angle::Result CreateRenderPass2(Context *context,
 
         // Convert subpass itself.
         ToSubpassDescription2(desc, inputRefs, colorRefs, resolveRefs, depthStencilRef,
-                              &subpassDescriptions[subpass]);
+                              multiviewInfo.pViewMasks[subpass], &subpassDescriptions[subpass]);
     }
 
     VkMultisampledRenderToSingleSampledInfoEXT renderToTextureInfo = {};
@@ -774,6 +777,8 @@ angle::Result CreateRenderPass2(Context *context,
     createInfo2.pSubpasses                 = subpassDescriptions.data();
     createInfo2.dependencyCount            = static_cast<uint32_t>(subpassDependencies.size());
     createInfo2.pDependencies = !subpassDependencies.empty() ? subpassDependencies.data() : nullptr;
+    createInfo2.correlatedViewMaskCount = multiviewInfo.correlationMaskCount;
+    createInfo2.pCorrelatedViewMasks    = multiviewInfo.pCorrelationMasks;
 
     // Initialize the render pass.
     ANGLE_VK_TRY(context, renderPass->init2(context->getDevice(), createInfo2));
@@ -1197,12 +1202,33 @@ angle::Result InitializeRenderPassFromDesc(ContextVk *contextVk,
         createInfo.pDependencies   = subpassDependencies.data();
     }
 
+    SubpassVector<uint32_t> viewMasks(subpassDesc.size(),
+                                      angle::BitMask<uint32_t>(desc.viewCount()));
+    VkRenderPassMultiviewCreateInfo multiviewInfo = {};
+    multiviewInfo.sType        = VK_STRUCTURE_TYPE_RENDER_PASS_MULTIVIEW_CREATE_INFO;
+    multiviewInfo.subpassCount = createInfo.subpassCount;
+    multiviewInfo.pViewMasks   = viewMasks.data();
+
+    if (desc.viewCount() > 0)
+    {
+        // For VR, the views are correlated, so this would be an optimization.  However, an
+        // application can also use multiview for example to render to all 6 faces of a cubemap, in
+        // which case the views are actually not so correlated.  In the absence of any hints from
+        // the application (TODO: verify that extension has no hints), we have to decide on one or
+        // the other.  Since VR is more expensive, the views are marked as correlated to optimize
+        // that use case.
+        multiviewInfo.correlationMaskCount = 1;
+        multiviewInfo.pCorrelationMasks    = viewMasks.data();
+
+        createInfo.pNext = &multiviewInfo;
+    }
+
     // If depth/stencil resolve is used, we need to create the render pass with
     // vkCreateRenderPass2KHR.  Same when using the VK_EXT_multisampled_render_to_single_sampled
     // extension.
     if (depthStencilResolve.pDepthStencilResolveAttachment != nullptr || desc.isRenderToTexture())
     {
-        ANGLE_TRY(CreateRenderPass2(contextVk, createInfo, depthStencilResolve,
+        ANGLE_TRY(CreateRenderPass2(contextVk, createInfo, depthStencilResolve, multiviewInfo,
                                     desc.hasDepthUnresolveAttachment(),
                                     desc.hasStencilUnresolveAttachment(), desc.isRenderToTexture(),
                                     renderToTextureSamples, &renderPassHelper->getRenderPass()));
@@ -1368,28 +1394,6 @@ RenderPassDesc::RenderPassDesc(const RenderPassDesc &other)
     memcpy(this, &other, sizeof(RenderPassDesc));
 }
 
-void RenderPassDesc::setSamples(GLint samples)
-{
-    SetBitField(mLogSamples, PackSampleCount(samples));
-}
-
-void RenderPassDesc::setFramebufferFetchMode(bool hasFramebufferFetch)
-{
-    SetBitField(mHasFramebufferFetch, hasFramebufferFetch);
-}
-
-void RenderPassDesc::updateRenderToTexture(bool isRenderToTexture)
-{
-    if (isRenderToTexture)
-    {
-        mAttachmentFormats.back() |= kIsRenderToTexture;
-    }
-    else
-    {
-        mAttachmentFormats.back() &= ~kIsRenderToTexture;
-    }
-}
-
 void RenderPassDesc::packColorAttachment(size_t colorIndexGL, angle::FormatID formatID)
 {
     ASSERT(colorIndexGL < mAttachmentFormats.size());
@@ -1404,9 +1408,7 @@ void RenderPassDesc::packColorAttachment(size_t colorIndexGL, angle::FormatID fo
     SetBitField(packedFormat, formatID);
 
     // Set color attachment range such that it covers the range from index 0 through last active
-    // index.  Additionally, a few bits at the end of the array are used for other purposes, so we
-    // need the last format to use only a few bits.  These are the reasons why we need depth/stencil
-    // to be packed last.
+    // index.  This is the reasons why we need depth/stencil to be packed last.
     SetBitField(mColorAttachmentRange, std::max<size_t>(mColorAttachmentRange, colorIndexGL + 1));
 }
 
@@ -1425,11 +1427,7 @@ void RenderPassDesc::packColorAttachmentGap(size_t colorIndexGL)
 
 void RenderPassDesc::packDepthStencilAttachment(angle::FormatID formatID)
 {
-    // Though written as Count, there is only ever a single depth/stencil attachment.
     ASSERT(!hasDepthStencilAttachment());
-
-    // 3 bits are used to store the depth/stencil attachment format.
-    ASSERT(static_cast<uint8_t>(formatID) <= kDepthStencilFormatStorageMask);
 
     size_t index = depthStencilAttachmentIndex();
     ASSERT(index < mAttachmentFormats.size());
@@ -1442,7 +1440,7 @@ void RenderPassDesc::packColorResolveAttachment(size_t colorIndexGL)
 {
     ASSERT(isColorAttachmentEnabled(colorIndexGL));
     ASSERT(!mColorResolveAttachmentMask.test(colorIndexGL));
-    ASSERT(mLogSamples > 0);
+    ASSERT(mSamples > 1);
     mColorResolveAttachmentMask.set(colorIndexGL);
 }
 
@@ -1467,33 +1465,21 @@ void RenderPassDesc::packDepthStencilResolveAttachment()
     ASSERT(hasDepthStencilAttachment());
     ASSERT(!hasDepthStencilResolveAttachment());
 
-    static_assert((kDepthStencilFormatStorageMask & kResolveDepthStencilFlag) == 0,
-                  "Collision in depth/stencil format and flag bits");
-
-    mAttachmentFormats.back() |= kResolveDepthStencilFlag;
+    mResolveDepthStencil = true;
 }
 
 void RenderPassDesc::packDepthStencilUnresolveAttachment(bool unresolveDepth, bool unresolveStencil)
 {
     ASSERT(hasDepthStencilAttachment());
 
-    static_assert(
-        (kDepthStencilFormatStorageMask & (kUnresolveDepthFlag | kUnresolveStencilFlag)) == 0,
-        "Collision in depth/stencil format and flag bits");
-
-    if (unresolveDepth)
-    {
-        mAttachmentFormats.back() |= kUnresolveDepthFlag;
-    }
-    if (unresolveStencil)
-    {
-        mAttachmentFormats.back() |= kUnresolveStencilFlag;
-    }
+    mUnresolveDepth   = unresolveDepth;
+    mUnresolveStencil = unresolveStencil;
 }
 
 void RenderPassDesc::removeDepthStencilUnresolveAttachment()
 {
-    mAttachmentFormats.back() &= ~(kUnresolveDepthFlag | kUnresolveStencilFlag);
+    mUnresolveDepth   = false;
+    mUnresolveStencil = false;
 }
 
 RenderPassDesc &RenderPassDesc::operator=(const RenderPassDesc &other)
@@ -1504,14 +1490,7 @@ RenderPassDesc &RenderPassDesc::operator=(const RenderPassDesc &other)
 
 void RenderPassDesc::setWriteControlMode(gl::SrgbWriteControlMode mode)
 {
-    if (mode == gl::SrgbWriteControlMode::Default)
-    {
-        mAttachmentFormats.back() &= ~kSrgbWriteControlFlag;
-    }
-    else
-    {
-        mAttachmentFormats.back() |= kSrgbWriteControlFlag;
-    }
+    SetBitField(mSrgbWriteControl, mode);
 }
 
 size_t RenderPassDesc::hash() const
@@ -1981,7 +1960,8 @@ angle::Result GraphicsPipelineDesc::initializePipeline(
     if (contextVk->getFeatures().supportsTransformFeedbackExtension.enabled)
     {
         rasterStreamState.rasterizationStream = 0;
-        rasterState.pNext                     = &rasterLineState;
+        *pNextPtr                             = &rasterStreamState;
+        pNextPtr                              = &rasterStreamState.pNext;
     }
 
     // Multisample state.

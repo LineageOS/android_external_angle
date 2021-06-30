@@ -1045,9 +1045,14 @@ namespace Spv
             IOPipesINTEL = 5943,
             BlockingPipesINTEL = 5945,
             FPGARegINTEL = 5948,
+            DotProductInputAllKHR = 6016,
+            DotProductInput4x8BitKHR = 6017,
+            DotProductInput4x8BitPackedKHR = 6018,
+            DotProductKHR = 6019,
             AtomicFloat32AddEXT = 6033,
             AtomicFloat64AddEXT = 6034,
             LongConstantCompositeINTEL = 6089,
+            AtomicFloat16AddEXT = 6095,
         }
 
         public enum RayFlagsShift
@@ -1145,6 +1150,11 @@ namespace Spv
             SAT = 1,
             SAT_ZERO = 2,
             SAT_SYM = 3,
+        }
+
+        public enum PackedVectorFormat
+        {
+            PackedVectorFormat4x8BitKHR = 0,
         }
 
         public enum Op
@@ -1505,6 +1515,12 @@ namespace Spv
             OpConvertUToAccelerationStructureKHR = 4447,
             OpIgnoreIntersectionKHR = 4448,
             OpTerminateRayKHR = 4449,
+            OpSDotKHR = 4450,
+            OpUDotKHR = 4451,
+            OpSUDotKHR = 4452,
+            OpSDotAccSatKHR = 4453,
+            OpUDotAccSatKHR = 4454,
+            OpSUDotAccSatKHR = 4455,
             OpTypeRayQueryKHR = 4472,
             OpRayQueryInitializeKHR = 4473,
             OpRayQueryTerminateKHR = 4474,

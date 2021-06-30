@@ -55,6 +55,8 @@ class ParamBuffer final : angle::NonCopyable
     template <typename T>
     void addValueParam(const char *paramName, ParamType paramType, T paramValue);
     template <typename T>
+    void setValueParamAtIndex(const char *paramName, ParamType paramType, T paramValue, int index);
+    template <typename T>
     void addEnumParam(const char *paramName,
                       gl::GLenumGroup enumGroup,
                       ParamType paramType,
@@ -390,6 +392,7 @@ class FrameCapture final : angle::NonCopyable
     void maybeCaptureDrawElementsClientData(const gl::Context *context,
                                             CallCapture &call,
                                             size_t instanceCount);
+    void updateCopyImageSubData(CallCapture &call);
 
     static void ReplayCall(gl::Context *context,
                            ReplayContext *replayContext,
@@ -504,6 +507,19 @@ void ParamBuffer::addValueParam(const char *paramName, ParamType paramType, T pa
 }
 
 template <typename T>
+void ParamBuffer::setValueParamAtIndex(const char *paramName,
+                                       ParamType paramType,
+                                       T paramValue,
+                                       int index)
+{
+    ASSERT(mParamCaptures.size() > static_cast<size_t>(index));
+
+    ParamCapture capture(paramName, paramType);
+    InitParamValue(paramType, paramValue, &capture.value);
+    mParamCaptures[index] = std::move(capture);
+}
+
+template <typename T>
 void ParamBuffer::addEnumParam(const char *paramName,
                                gl::GLenumGroup enumGroup,
                                ParamType paramType,
@@ -573,6 +589,16 @@ template <>
 void WriteParamValueReplay<ParamType::TvoidConstPointer>(std::ostream &os,
                                                          const CallCapture &call,
                                                          const void *value);
+
+template <>
+void WriteParamValueReplay<ParamType::TGLfloatConstPointer>(std::ostream &os,
+                                                            const CallCapture &call,
+                                                            const GLfloat *value);
+
+template <>
+void WriteParamValueReplay<ParamType::TGLuintConstPointer>(std::ostream &os,
+                                                           const CallCapture &call,
+                                                           const GLuint *value);
 
 template <>
 void WriteParamValueReplay<ParamType::TGLDEBUGPROCKHR>(std::ostream &os,
@@ -669,6 +695,11 @@ void WriteParamValueReplay<ParamType::TGLeglImageOES>(std::ostream &os,
                                                       const CallCapture &call,
                                                       GLeglImageOES value);
 
+template <>
+void WriteParamValueReplay<ParamType::TGLubyte>(std::ostream &os,
+                                                const CallCapture &call,
+                                                GLubyte value);
+
 // General fallback for any unspecific type.
 template <ParamType ParamT, typename T>
 void WriteParamValueReplay(std::ostream &os, const CallCapture &call, T value)
@@ -682,7 +713,7 @@ void CaptureTextureAndSamplerParameter_params(GLenum pname,
                                               const T *param,
                                               angle::ParamCapture *paramCapture)
 {
-    if (pname == GL_TEXTURE_BORDER_COLOR)
+    if (pname == GL_TEXTURE_BORDER_COLOR || pname == GL_TEXTURE_CROP_RECT_OES)
     {
         CaptureMemory(param, sizeof(T) * 4, paramCapture);
     }

@@ -161,10 +161,16 @@ struct FeaturesVk : FeatureSetBase
         "VkDevice supports the EGL_ANDROID_native_fence_sync extension", &members,
         "http://anglebug.com/2517"};
 
-    // Whether the VkDevice can support imageCubeArray feature properly.
+    // Whether the VkDevice can support the imageCubeArray feature properly.
     Feature supportsImageCubeArray = {"supportsImageCubeArray", FeatureCategory::VulkanFeatures,
                                       "VkDevice supports the imageCubeArray feature properly",
                                       &members, "http://anglebug.com/3584"};
+
+    // Whether the VkDevice supports the pipelineStatisticsQuery feature.
+    Feature supportsPipelineStatisticsQuery = {
+        "supportsPipelineStatisticsQuery", FeatureCategory::VulkanFeatures,
+        "VkDevice supports the pipelineStatisticsQuery feature", &members,
+        "http://anglebug.com/5430"};
 
     // Whether the VkDevice supports the VK_EXT_shader_stencil_export extension, which is used to
     // perform multisampled resolve of stencil buffer.  A multi-step workaround is used instead if
@@ -221,6 +227,11 @@ struct FeaturesVk : FeatureSetBase
         "supportsMultisampledRenderToSingleSampled", FeatureCategory::VulkanFeatures,
         "VkDevice supports the VK_EXT_multisampled_render_to_single_sampled extension", &members,
         "http://anglebug.com/4836"};
+
+    // Whether the VkDevice supports the VK_KHR_multiview extension.  http://anglebug.com/6048
+    Feature supportsMultiview = {"supportsMultiview", FeatureCategory::VulkanFeatures,
+                                 "VkDevice supports the VK_KHR_multiview extension", &members,
+                                 "http://anglebug.com/6048"};
 
     // VK_PRESENT_MODE_FIFO_KHR causes random timeouts on Linux Intel. http://anglebug.com/3153
     Feature disableFifoPresentMode = {"disableFifoPresentMode", FeatureCategory::VulkanWorkarounds,
@@ -494,6 +505,12 @@ struct FeaturesVk : FeatureSetBase
     Feature directSPIRVGeneration = {"directSPIRVGeneration", FeatureCategory::VulkanFeatures,
                                      "Direct translation to SPIR-V.", &members,
                                      "http://anglebug.com/4889"};
+
+    // Whether SPIR-V should be generated with workarounds for buggy drivers.
+    Feature directSPIRVGenerationWorkarounds = {
+        "directSPIRVGenerationWorkarounds", FeatureCategory::VulkanWorkarounds,
+        "Work around driver bugs when translating to SPIR-V.", &members,
+        "http://anglebug.com/6110"};
 
     // Whether we should use driver uniforms over specialization constants for some shader
     // modifications like yflip and rotation.

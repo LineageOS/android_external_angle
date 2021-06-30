@@ -211,9 +211,11 @@ bool GetClientArraysEnabled(const egl::AttributeMap &attribs)
     return (attribs.get(EGL_CONTEXT_CLIENT_ARRAYS_ENABLED_ANGLE, EGL_TRUE) == EGL_TRUE);
 }
 
-bool GetRobustResourceInit(const egl::AttributeMap &attribs)
+bool GetRobustResourceInit(egl::Display *display, const egl::AttributeMap &attribs)
 {
-    return (attribs.get(EGL_ROBUST_RESOURCE_INITIALIZATION_ANGLE, EGL_FALSE) == EGL_TRUE);
+    const angle::FrontendFeatures &frontendFeatures = display->getFrontendFeatures();
+    return (frontendFeatures.forceRobustResourceInit.enabled ||
+            attribs.get(EGL_ROBUST_RESOURCE_INITIALIZATION_ANGLE, EGL_FALSE) == EGL_TRUE);
 }
 
 EGLenum GetContextPriority(const egl::AttributeMap &attribs)
@@ -325,7 +327,7 @@ Context::Context(egl::Display *display,
              GetDebug(attribs),
              GetBindGeneratesResource(attribs),
              GetClientArraysEnabled(attribs),
-             GetRobustResourceInit(attribs),
+             GetRobustResourceInit(display, attribs),
              memoryProgramCache != nullptr,
              GetContextPriority(attribs)),
       mShared(shareContext != nullptr),
@@ -3732,6 +3734,8 @@ void Context::initCaps()
 
     ANGLE_LIMIT_CAP(mState.mCaps.maxSampleMaskWords, MAX_SAMPLE_MASK_WORDS);
 
+    ANGLE_LIMIT_CAP(mState.mExtensions.maxViews, IMPLEMENTATION_ANGLE_MULTIVIEW_MAX_VIEWS);
+
     ANGLE_LIMIT_CAP(mState.mExtensions.maxDualSourceDrawBuffers,
                     IMPLEMENTATION_MAX_DUAL_SOURCE_DRAW_BUFFERS);
 
@@ -3806,6 +3810,10 @@ void Context::initCaps()
         mSkipValidation                       = false;
         mState.mExtensions.noError            = mSkipValidation;
         mState.mExtensions.robustClientMemory = !mSkipValidation;
+
+        INFO() << "Disabling GL_OES_depth32 during capture, which is not widely supported on "
+                  "mobile";
+        mState.mExtensions.depth32OES = false;
     }
 
     // Disable support for OES_get_program_binary
@@ -3814,6 +3822,7 @@ void Context::initCaps()
         mState.mExtensions.getProgramBinaryOES = false;
         mState.mCaps.shaderBinaryFormats.clear();
         mState.mCaps.programBinaryFormats.clear();
+        mMemoryProgramCache = nullptr;
     }
 
 #undef ANGLE_LIMIT_CAP

@@ -70,12 +70,16 @@ class Library : angle::NonCopyable
 // (e.g. opengl32.dll)
 enum class SearchType
 {
+    // Try to find the library in the application directory
     ApplicationDir,
-    SystemDir
+    // Load the library from the system directories
+    SystemDir,
+    // Get a reference to an already loaded shared library.
+    AlreadyLoaded,
 };
 
 Library *OpenSharedLibrary(const char *libraryName, SearchType searchType);
-Library *OpenSharedLibraryWithExtension(const char *libraryName);
+Library *OpenSharedLibraryWithExtension(const char *libraryName, SearchType searchType);
 
 // Returns true if the process is currently being debugged.
 bool IsDebuggerAttached();

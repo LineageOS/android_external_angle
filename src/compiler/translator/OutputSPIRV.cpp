@@ -77,8 +77,9 @@ struct AccessChain
     // dynamicComponent will contain the id of the index.
     spirv::IdRef dynamicComponent;
 
-    // Type of expression before swizzle is applied, after swizzle is applied and after dynamic
-    // component is applied.
+    // Type of base expression, before swizzle is applied, after swizzle is applied and after
+    // dynamic component is applied.
+    spirv::IdRef baseTypeId;
     spirv::IdRef preSwizzleTypeId;
     spirv::IdRef postSwizzleTypeId;
     spirv::IdRef postDynamicComponentTypeId;
@@ -205,6 +206,9 @@ class OutputSPIRVTraverser : public TIntermTraverser
     spirv::IdRef createConstant(const TType &type,
                                 TBasicType expectedBasicType,
                                 const TConstantUnion *constUnion);
+    spirv::IdRef createComplexConstant(const TType &type,
+                                       spirv::IdRef typeId,
+                                       const spirv::IdRefList &parameters);
     spirv::IdRef createConstructor(TIntermAggregate *node, spirv::IdRef typeId);
     spirv::IdRef createArrayOrStructConstructor(TIntermAggregate *node,
                                                 spirv::IdRef typeId,
@@ -224,6 +228,7 @@ class OutputSPIRVTraverser : public TIntermTraverser
     spirv::IdRef createConstructorMatrixFromMatrix(TIntermAggregate *node,
                                                    spirv::IdRef typeId,
                                                    const spirv::IdRefList &parameters);
+    spirv::IdRefList loadAllParams(TIntermOperator *node);
     void extractComponents(TIntermAggregate *node,
                            size_t componentCount,
                            const spirv::IdRefList &parameters,
@@ -232,11 +237,16 @@ class OutputSPIRVTraverser : public TIntermTraverser
     void startShortCircuit(TIntermBinary *node);
     spirv::IdRef endShortCircuit(TIntermBinary *node, spirv::IdRef *typeId);
 
+    spirv::IdRef visitOperator(TIntermOperator *node, spirv::IdRef resultTypeId);
+    spirv::IdRef createIncrementDecrement(TIntermOperator *node, spirv::IdRef resultTypeId);
+    spirv::IdRef createAtomicBuiltIn(TIntermOperator *node, spirv::IdRef resultTypeId);
+    spirv::IdRef createTextureBuiltIn(TIntermOperator *node, spirv::IdRef resultTypeId);
+    spirv::IdRef createImageBuiltIn(TIntermOperator *node, spirv::IdRef resultTypeId);
+
     spirv::IdRef createFunctionCall(TIntermAggregate *node, spirv::IdRef resultTypeId);
-    spirv::IdRef createAtomicBuiltIn(TIntermAggregate *node, spirv::IdRef resultTypeId);
 
     ANGLE_MAYBE_UNUSED TCompiler *mCompiler;
-    ANGLE_MAYBE_UNUSED ShCompileOptions mCompileOptions;
+    ShCompileOptions mCompileOptions;
 
     SPIRVBuilder mBuilder;
 
@@ -309,12 +319,19 @@ spv::StorageClass GetStorageClass(const TType &type)
 
         case EvqVertexID:
         case EvqInstanceID:
+        case EvqFragCoord:
+        case EvqFrontFacing:
+        case EvqPointCoord:
+        case EvqHelperInvocation:
         case EvqNumWorkGroups:
         case EvqWorkGroupID:
         case EvqLocalInvocationID:
         case EvqGlobalInvocationID:
         case EvqLocalInvocationIndex:
             return spv::StorageClassInput;
+
+        case EvqFragDepth:
+            return spv::StorageClassOutput;
 
         default:
             // TODO: http://anglebug.com/4889
@@ -357,55 +374,67 @@ spirv::IdRef OutputSPIRVTraverser::getSymbolIdAndStorageClass(const TSymbol *sym
     // This must be an implicitly defined variable, define it now.
     const char *name               = nullptr;
     spv::BuiltIn builtInDecoration = spv::BuiltInMax;
-    SpirvType spirvType;
 
     switch (type.getQualifier())
     {
         case EvqVertexID:
             name              = "gl_VertexIndex";
             builtInDecoration = spv::BuiltInVertexIndex;
-            spirvType.type    = EbtInt;
             break;
         case EvqInstanceID:
             name              = "gl_InstanceIndex";
             builtInDecoration = spv::BuiltInInstanceIndex;
-            spirvType.type    = EbtInt;
             break;
+
+        // Fragment shader built-ins
+        case EvqFragCoord:
+            name              = "gl_FragCoord";
+            builtInDecoration = spv::BuiltInFragCoord;
+            break;
+        case EvqFrontFacing:
+            name              = "gl_FrontFacing";
+            builtInDecoration = spv::BuiltInFrontFacing;
+            break;
+        case EvqPointCoord:
+            name              = "gl_PointCoord";
+            builtInDecoration = spv::BuiltInPointCoord;
+            break;
+        case EvqFragDepth:
+            name              = "gl_FragDepth";
+            builtInDecoration = spv::BuiltInFragDepth;
+            break;
+        case EvqHelperInvocation:
+            name              = "gl_HelperInvocation";
+            builtInDecoration = spv::BuiltInHelperInvocation;
+            break;
+
+        // Compute shader built-ins
         case EvqNumWorkGroups:
-            name                  = "gl_NumWorkGroups";
-            builtInDecoration     = spv::BuiltInNumWorkgroups;
-            spirvType.type        = EbtUInt;
-            spirvType.primarySize = 3;
+            name              = "gl_NumWorkGroups";
+            builtInDecoration = spv::BuiltInNumWorkgroups;
             break;
         case EvqWorkGroupID:
-            name                  = "gl_WorkGroupID";
-            builtInDecoration     = spv::BuiltInWorkgroupId;
-            spirvType.type        = EbtUInt;
-            spirvType.primarySize = 3;
+            name              = "gl_WorkGroupID";
+            builtInDecoration = spv::BuiltInWorkgroupId;
             break;
         case EvqLocalInvocationID:
-            name                  = "gl_LocalInvocationID";
-            builtInDecoration     = spv::BuiltInLocalInvocationId;
-            spirvType.type        = EbtUInt;
-            spirvType.primarySize = 3;
+            name              = "gl_LocalInvocationID";
+            builtInDecoration = spv::BuiltInLocalInvocationId;
             break;
         case EvqGlobalInvocationID:
-            name                  = "gl_GlobalInvocationID";
-            builtInDecoration     = spv::BuiltInGlobalInvocationId;
-            spirvType.type        = EbtUInt;
-            spirvType.primarySize = 3;
+            name              = "gl_GlobalInvocationID";
+            builtInDecoration = spv::BuiltInGlobalInvocationId;
             break;
         case EvqLocalInvocationIndex:
             name              = "gl_LocalInvocationIndex";
             builtInDecoration = spv::BuiltInLocalInvocationIndex;
-            spirvType.type    = EbtUInt;
             break;
         default:
             // TODO: more built-ins.  http://anglebug.com/4889
             UNIMPLEMENTED();
     }
 
-    const spirv::IdRef typeId = mBuilder.getSpirvTypeData(spirvType, nullptr).id;
+    const spirv::IdRef typeId = mBuilder.getTypeData(type, EbsUnspecified).id;
     const spirv::IdRef varId  = mBuilder.declareVariable(
         typeId, *storageClass, mBuilder.getDecorations(type), nullptr, name);
 
@@ -428,6 +457,7 @@ void OutputSPIRVTraverser::nodeDataInitLValue(NodeData *data,
     // Initialize the access chain as an lvalue.  Useful when an access chain is resolved, but needs
     // to be replaced by a reference to a temporary variable holding the result.
     data->baseId                       = baseId;
+    data->accessChain.baseTypeId       = typeId;
     data->accessChain.preSwizzleTypeId = typeId;
     data->accessChain.storageClass     = storageClass;
     data->accessChain.baseBlockStorage = blockStorage;
@@ -442,6 +472,7 @@ void OutputSPIRVTraverser::nodeDataInitRValue(NodeData *data,
     // Initialize the access chain as an rvalue.  Useful when an access chain is resolved, and needs
     // to be replaced by a reference to it.
     data->baseId                       = baseId;
+    data->accessChain.baseTypeId       = typeId;
     data->accessChain.preSwizzleTypeId = typeId;
 }
 
@@ -621,9 +652,9 @@ spirv::IdRef OutputSPIRVTraverser::accessChainLoad(NodeData *data,
             else
             {
                 // Create a temp variable to hold the rvalue so an access chain can be made on it.
-                const spirv::IdRef tempVar = mBuilder.declareVariable(
-                    accessChain.preSwizzleTypeId, spv::StorageClassFunction, decorations, nullptr,
-                    "indexable");
+                const spirv::IdRef tempVar =
+                    mBuilder.declareVariable(accessChain.baseTypeId, spv::StorageClassFunction,
+                                             decorations, nullptr, "indexable");
 
                 // Write the rvalue into the temp variable
                 spirv::WriteStore(mBuilder.getSpirvCurrentFunctionBlock(), tempVar, loadResult,
@@ -889,12 +920,41 @@ spirv::IdRef OutputSPIRVTraverser::createConstant(const TType &type,
     // If this is a composite, create a composite constant from the components.
     if (type.getBasicType() == EbtStruct || componentIds.size() > 1)
     {
-        return mBuilder.getCompositeConstant(typeId, componentIds);
+        return createComplexConstant(type, typeId, componentIds);
     }
 
     // Otherwise return the sole component.
     ASSERT(componentIds.size() == 1);
     return componentIds[0];
+}
+
+spirv::IdRef OutputSPIRVTraverser::createComplexConstant(const TType &type,
+                                                         spirv::IdRef typeId,
+                                                         const spirv::IdRefList &parameters)
+{
+    if (type.isMatrix() && !type.isArray())
+    {
+        // Matrices are constructed from its columns.
+        spirv::IdRefList columnIds;
+
+        SpirvType columnType            = mBuilder.getSpirvType(type, EbsUnspecified);
+        columnType.primarySize          = columnType.secondarySize;
+        columnType.secondarySize        = 1;
+        const spirv::IdRef columnTypeId = mBuilder.getSpirvTypeData(columnType, nullptr).id;
+
+        for (int columnIndex = 0; columnIndex < type.getCols(); ++columnIndex)
+        {
+            auto columnParametersStart = parameters.begin() + columnIndex * type.getRows();
+            spirv::IdRefList columnParameters(columnParametersStart,
+                                              columnParametersStart + type.getRows());
+
+            columnIds.push_back(mBuilder.getCompositeConstant(columnTypeId, columnParameters));
+        }
+
+        return mBuilder.getCompositeConstant(typeId, columnIds);
+    }
+
+    return mBuilder.getCompositeConstant(typeId, parameters);
 }
 
 spirv::IdRef OutputSPIRVTraverser::createConstructor(TIntermAggregate *node, spirv::IdRef typeId)
@@ -903,22 +963,8 @@ spirv::IdRef OutputSPIRVTraverser::createConstructor(TIntermAggregate *node, spi
     const TIntermSequence &arguments = *node->getSequence();
     const TType &arg0Type            = arguments[0]->getAsTyped()->getType();
 
-    const size_t parameterCount = node->getChildCount();
-    spirv::IdRefList parameters;
-
-    for (size_t paramIndex = 0; paramIndex < parameterCount; ++paramIndex)
-    {
-        // Take each constructor argument that is visited and evaluate it as rvalue
-        NodeData &param = mNodeData[mNodeData.size() - parameterCount + paramIndex];
-
-        const spirv::IdRef paramValue = accessChainLoad(
-            &param,
-            mBuilder.getDecorations(node->getChildNode(paramIndex)->getAsTyped()->getType()));
-
-        // TODO: handle mismatching types.  http://anglebug.com/6000
-
-        parameters.push_back(paramValue);
-    }
+    // Take each constructor argument that is visited and evaluate it as rvalue
+    spirv::IdRefList parameters = loadAllParams(node);
 
     // Constructors in GLSL can take various shapes, resulting in different translations to SPIR-V
     // (in each case, if the parameter doesn't match the type being constructed, it must be cast):
@@ -950,6 +996,12 @@ spirv::IdRef OutputSPIRVTraverser::createConstructor(TIntermAggregate *node, spi
     //
     // Additionally, array and structs are constructed by OpCompositeConstruct followed by ids of
     // each parameter which must enumerate every individual element / field.
+
+    // In some cases, constructors with constant value are not folded.  That is handled here.
+    if (node->hasConstantValue())
+    {
+        return createComplexConstant(node->getType(), typeId, parameters);
+    }
 
     if (type.isArray() || type.getStruct() != nullptr)
     {
@@ -1069,6 +1121,7 @@ spirv::IdRef OutputSPIRVTraverser::createConstructorMatrixFromScalar(
     spirv::IdRefList columnIds;
 
     SpirvType columnType            = mBuilder.getSpirvType(type, EbsUnspecified);
+    columnType.primarySize          = columnType.secondarySize;
     columnType.secondarySize        = 1;
     const spirv::IdRef columnTypeId = mBuilder.getSpirvTypeData(columnType, nullptr).id;
 
@@ -1116,6 +1169,7 @@ spirv::IdRef OutputSPIRVTraverser::createConstructorMatrixFromVectors(
     spirv::IdRefList columnIds;
 
     SpirvType columnType            = mBuilder.getSpirvType(type, EbsUnspecified);
+    columnType.primarySize          = columnType.secondarySize;
     columnType.secondarySize        = 1;
     const spirv::IdRef columnTypeId = mBuilder.getSpirvTypeData(columnType, nullptr).id;
 
@@ -1174,6 +1228,7 @@ spirv::IdRef OutputSPIRVTraverser::createConstructorMatrixFromMatrix(
     spirv::IdRefList columnIds;
 
     SpirvType columnType            = mBuilder.getSpirvType(type, EbsUnspecified);
+    columnType.primarySize          = columnType.secondarySize;
     columnType.secondarySize        = 1;
     const spirv::IdRef columnTypeId = mBuilder.getSpirvTypeData(columnType, nullptr).id;
 
@@ -1276,6 +1331,28 @@ spirv::IdRef OutputSPIRVTraverser::createConstructorMatrixFromMatrix(
     return result;
 }
 
+spirv::IdRefList OutputSPIRVTraverser::loadAllParams(TIntermOperator *node)
+{
+    const size_t parameterCount = node->getChildCount();
+    spirv::IdRefList parameters;
+
+    for (size_t paramIndex = 0; paramIndex < parameterCount; ++paramIndex)
+    {
+        // Take each parameter that is visited and evaluate it as rvalue
+        NodeData &param = mNodeData[mNodeData.size() - parameterCount + paramIndex];
+
+        const spirv::IdRef paramValue = accessChainLoad(
+            &param,
+            mBuilder.getDecorations(node->getChildNode(paramIndex)->getAsTyped()->getType()));
+
+        // TODO: handle mismatching types.  http://anglebug.com/6000
+
+        parameters.push_back(paramValue);
+    }
+
+    return parameters;
+}
+
 void OutputSPIRVTraverser::extractComponents(TIntermAggregate *node,
                                              size_t componentCount,
                                              const spirv::IdRefList &parameters,
@@ -1366,7 +1443,7 @@ void OutputSPIRVTraverser::startShortCircuit(TIntermBinary *node)
     // |if| construct in preparation for visiting |right|.
 
     // Load |left| and replace the access chain with an rvalue that's the result.
-    spirv::IdRef typeId = getAccessChainTypeId(&mNodeData.back());
+    const spirv::IdRef typeId = getAccessChainTypeId(&mNodeData.back());
     const spirv::IdRef left =
         accessChainLoad(&mNodeData.back(), mBuilder.getDecorations(node->getLeft()->getType()));
     nodeDataInitRValue(&mNodeData.back(), left, typeId);
@@ -1378,12 +1455,12 @@ void OutputSPIRVTraverser::startShortCircuit(TIntermBinary *node)
     mBuilder.startConditional(2, false, false);
 
     // Generate the branch instructions.
-    SpirvConditional *conditional = mBuilder.getCurrentConditional();
+    const SpirvConditional *conditional = mBuilder.getCurrentConditional();
 
     const spirv::IdRef mergeBlock = conditional->blockIds.back();
     const spirv::IdRef ifBlock    = conditional->blockIds.front();
-    spirv::IdRef trueBlock        = node->getOp() == EOpLogicalAnd ? ifBlock : mergeBlock;
-    spirv::IdRef falseBlock       = node->getOp() == EOpLogicalOr ? ifBlock : mergeBlock;
+    const spirv::IdRef trueBlock  = node->getOp() == EOpLogicalAnd ? ifBlock : mergeBlock;
+    const spirv::IdRef falseBlock = node->getOp() == EOpLogicalOr ? ifBlock : mergeBlock;
 
     // Note that no logical not is necessary.  For ||, the branch will target the merge block in the
     // true case.
@@ -1471,15 +1548,23 @@ spirv::IdRef OutputSPIRVTraverser::createFunctionCall(TIntermAggregate *node,
         spirv::IdRef paramValue;
         SpirvDecorations decorations = mBuilder.getDecorations(paramType);
 
-        if (IsOpaqueType(paramType.getBasicType()) || paramQualifier == EvqConst ||
-            IsAccessChainUnindexedLValue(param))
+        if (IsOpaqueType(paramType.getBasicType()) || paramQualifier == EvqConst)
         {
-            // The following parameters are passed directly:
+            // The following parameters are passed as rvalue:
             //
             // - Opaque uniforms,
             // - const parameters,
-            // - unindexed lvalues.
             paramValue = accessChainLoad(&param, decorations);
+        }
+        else if (IsAccessChainUnindexedLValue(param) &&
+                 (mCompileOptions & SH_GENERATE_SPIRV_WORKAROUNDS) == 0)
+        {
+            // The following parameters are passed directly:
+            //
+            // - unindexed lvalues.
+            //
+            // This optimization is not applied on buggy drivers.  http://anglebug.com/6110.
+            paramValue = param.baseId;
         }
         else
         {
@@ -1545,7 +1630,866 @@ spirv::IdRef OutputSPIRVTraverser::createFunctionCall(TIntermAggregate *node,
     return result;
 }
 
-spirv::IdRef OutputSPIRVTraverser::createAtomicBuiltIn(TIntermAggregate *node,
+bool IsShortCircuitNeeded(TIntermOperator *node)
+{
+    TOperator op = node->getOp();
+
+    // Short circuit is only necessary for && and ||.
+    if (op != EOpLogicalAnd && op != EOpLogicalOr)
+    {
+        return false;
+    }
+
+    ASSERT(node->getChildCount() == 2);
+
+    // If the right hand side does not have side effects, short-circuiting is unnecessary.
+    // TODO: experiment with the performance of OpLogicalAnd/Or vs short-circuit based on the
+    // complexity of the right hand side expression.  We could potentially only allow
+    // OpLogicalAnd/Or if the right hand side is a constant or an access chain and have more complex
+    // expressions be placed inside an if block.  http://anglebug.com/4889
+    return node->getChildNode(1)->getAsTyped()->hasSideEffects();
+}
+
+using WriteUnaryOp      = void (*)(spirv::Blob *blob,
+                              spirv::IdResultType idResultType,
+                              spirv::IdResult idResult,
+                              spirv::IdRef operand);
+using WriteBinaryOp     = void (*)(spirv::Blob *blob,
+                               spirv::IdResultType idResultType,
+                               spirv::IdResult idResult,
+                               spirv::IdRef operand1,
+                               spirv::IdRef operand2);
+using WriteTernaryOp    = void (*)(spirv::Blob *blob,
+                                spirv::IdResultType idResultType,
+                                spirv::IdResult idResult,
+                                spirv::IdRef operand1,
+                                spirv::IdRef operand2,
+                                spirv::IdRef operand3);
+using WriteQuaternaryOp = void (*)(spirv::Blob *blob,
+                                   spirv::IdResultType idResultType,
+                                   spirv::IdResult idResult,
+                                   spirv::IdRef operand1,
+                                   spirv::IdRef operand2,
+                                   spirv::IdRef operand3,
+                                   spirv::IdRef operand4);
+using WriteAtomicOp     = void (*)(spirv::Blob *blob,
+                               spirv::IdResultType idResultType,
+                               spirv::IdResult idResult,
+                               spirv::IdRef pointer,
+                               spirv::IdScope scope,
+                               spirv::IdMemorySemantics semantics,
+                               spirv::IdRef value);
+
+spirv::IdRef OutputSPIRVTraverser::visitOperator(TIntermOperator *node, spirv::IdRef resultTypeId)
+{
+    // Handle special groups.
+    const TOperator op = node->getOp();
+    if (op == EOpPostIncrement || op == EOpPreIncrement || op == EOpPostDecrement ||
+        op == EOpPreDecrement)
+    {
+        return createIncrementDecrement(node, resultTypeId);
+    }
+    if (BuiltInGroup::IsAtomicMemory(op) || BuiltInGroup::IsImageAtomic(op))
+    {
+        return createAtomicBuiltIn(node, resultTypeId);
+    }
+    if (BuiltInGroup::IsTexture(op))
+    {
+        return createTextureBuiltIn(node, resultTypeId);
+    }
+    if (BuiltInGroup::IsImage(op))
+    {
+        return createImageBuiltIn(node, resultTypeId);
+    }
+
+    const size_t childCount  = node->getChildCount();
+    TIntermTyped *firstChild = node->getChildNode(0)->getAsTyped();
+
+    const TType &firstOperandType = firstChild->getType();
+    const TBasicType basicType    = firstOperandType.getBasicType();
+    const bool isFloat            = basicType == EbtFloat || basicType == EbtDouble;
+    const bool isUnsigned         = basicType == EbtUInt;
+    const bool isBool             = basicType == EbtBool;
+    // Whether the operation needs to be applied column by column.
+    TIntermBinary *asBinary = node->getAsBinaryNode();
+    bool operateOnColumns   = asBinary && (asBinary->getLeft()->getType().isMatrix() ||
+                                         asBinary->getRight()->getType().isMatrix());
+    // Whether the operands need to be swapped in the (binary) instruction
+    bool binarySwapOperands = false;
+    // Whether the scalar operand needs to be extended to match the other operand which is a vector
+    // (in a binary operation).
+    bool binaryExtendScalarToVector = true;
+
+    WriteUnaryOp writeUnaryOp           = nullptr;
+    WriteBinaryOp writeBinaryOp         = nullptr;
+    WriteTernaryOp writeTernaryOp       = nullptr;
+    WriteQuaternaryOp writeQuaternaryOp = nullptr;
+
+    // Some operators are implemented with an extended instruction.
+    spv::GLSLstd450 extendedInst = spv::GLSLstd450Bad;
+
+    switch (op)
+    {
+        case EOpNegative:
+            if (isFloat)
+                writeUnaryOp = spirv::WriteFNegate;
+            else
+                writeUnaryOp = spirv::WriteSNegate;
+            break;
+        case EOpPositive:
+            // This is a noop.
+            return accessChainLoad(&mNodeData.back(), mBuilder.getDecorations(firstOperandType));
+
+        case EOpLogicalNot:
+        case EOpNotComponentWise:
+            writeUnaryOp = spirv::WriteLogicalNot;
+            break;
+        case EOpBitwiseNot:
+            writeUnaryOp = spirv::WriteNot;
+            break;
+
+        case EOpAdd:
+        case EOpAddAssign:
+            if (isFloat)
+                writeBinaryOp = spirv::WriteFAdd;
+            else
+                writeBinaryOp = spirv::WriteIAdd;
+            break;
+        case EOpSub:
+        case EOpSubAssign:
+            if (isFloat)
+                writeBinaryOp = spirv::WriteFSub;
+            else
+                writeBinaryOp = spirv::WriteISub;
+            break;
+        case EOpMul:
+        case EOpMulAssign:
+        case EOpMatrixCompMult:
+            if (isFloat)
+                writeBinaryOp = spirv::WriteFMul;
+            else
+                writeBinaryOp = spirv::WriteIMul;
+            break;
+        case EOpDiv:
+        case EOpDivAssign:
+            if (isFloat)
+                writeBinaryOp = spirv::WriteFDiv;
+            else if (isUnsigned)
+                writeBinaryOp = spirv::WriteUDiv;
+            else
+                writeBinaryOp = spirv::WriteSDiv;
+            break;
+        case EOpIMod:
+        case EOpIModAssign:
+            if (isFloat)
+                writeBinaryOp = spirv::WriteFMod;
+            else if (isUnsigned)
+                writeBinaryOp = spirv::WriteUMod;
+            else
+                writeBinaryOp = spirv::WriteSMod;
+            break;
+
+        case EOpEqual:
+        case EOpEqualComponentWise:
+            // TODO: handle vector, matrix and other complex comparisons.  EOpEqual must use OpAll
+            // to reduce to a bool.  http://anglebug.com/4889.
+            if (isFloat)
+                writeBinaryOp = spirv::WriteFOrdEqual;
+            else if (isBool)
+                writeBinaryOp = spirv::WriteLogicalEqual;
+            else
+                writeBinaryOp = spirv::WriteIEqual;
+            break;
+        case EOpNotEqual:
+        case EOpNotEqualComponentWise:
+            // TODO: handle vector, matrix and other complex comparisons.  EOpNotEqual must use
+            // OpAny to reduce to a bool.  http://anglebug.com/4889.
+            if (isFloat)
+                writeBinaryOp = spirv::WriteFUnordNotEqual;
+            else if (isBool)
+                writeBinaryOp = spirv::WriteLogicalNotEqual;
+            else
+                writeBinaryOp = spirv::WriteINotEqual;
+            break;
+        case EOpLessThan:
+        case EOpLessThanComponentWise:
+            if (isFloat)
+                writeBinaryOp = spirv::WriteFOrdLessThan;
+            else if (isUnsigned)
+                writeBinaryOp = spirv::WriteULessThan;
+            else
+                writeBinaryOp = spirv::WriteSLessThan;
+            break;
+        case EOpGreaterThan:
+        case EOpGreaterThanComponentWise:
+            if (isFloat)
+                writeBinaryOp = spirv::WriteFOrdGreaterThan;
+            else if (isUnsigned)
+                writeBinaryOp = spirv::WriteUGreaterThan;
+            else
+                writeBinaryOp = spirv::WriteSGreaterThan;
+            break;
+        case EOpLessThanEqual:
+        case EOpLessThanEqualComponentWise:
+            if (isFloat)
+                writeBinaryOp = spirv::WriteFOrdLessThanEqual;
+            else if (isUnsigned)
+                writeBinaryOp = spirv::WriteULessThanEqual;
+            else
+                writeBinaryOp = spirv::WriteSLessThanEqual;
+            break;
+        case EOpGreaterThanEqual:
+        case EOpGreaterThanEqualComponentWise:
+            if (isFloat)
+                writeBinaryOp = spirv::WriteFOrdGreaterThanEqual;
+            else if (isUnsigned)
+                writeBinaryOp = spirv::WriteUGreaterThanEqual;
+            else
+                writeBinaryOp = spirv::WriteSGreaterThanEqual;
+            break;
+
+        case EOpVectorTimesScalar:
+        case EOpVectorTimesScalarAssign:
+            if (isFloat)
+            {
+                writeBinaryOp      = spirv::WriteVectorTimesScalar;
+                binarySwapOperands = node->getChildNode(1)->getAsTyped()->getType().isVector();
+                binaryExtendScalarToVector = false;
+            }
+            else
+                writeBinaryOp = spirv::WriteIMul;
+            break;
+        case EOpVectorTimesMatrix:
+        case EOpVectorTimesMatrixAssign:
+            writeBinaryOp    = spirv::WriteVectorTimesMatrix;
+            operateOnColumns = false;
+            break;
+        case EOpMatrixTimesVector:
+            writeBinaryOp    = spirv::WriteMatrixTimesVector;
+            operateOnColumns = false;
+            break;
+        case EOpMatrixTimesScalar:
+        case EOpMatrixTimesScalarAssign:
+            writeBinaryOp      = spirv::WriteMatrixTimesScalar;
+            binarySwapOperands = asBinary->getRight()->getType().isMatrix();
+            operateOnColumns   = false;
+            break;
+        case EOpMatrixTimesMatrix:
+        case EOpMatrixTimesMatrixAssign:
+            writeBinaryOp    = spirv::WriteMatrixTimesMatrix;
+            operateOnColumns = false;
+            break;
+
+        case EOpLogicalOr:
+            ASSERT(!IsShortCircuitNeeded(node));
+            binaryExtendScalarToVector = false;
+            writeBinaryOp              = spirv::WriteLogicalOr;
+            break;
+        case EOpLogicalXor:
+            binaryExtendScalarToVector = false;
+            writeBinaryOp              = spirv::WriteLogicalNotEqual;
+            break;
+        case EOpLogicalAnd:
+            ASSERT(!IsShortCircuitNeeded(node));
+            binaryExtendScalarToVector = false;
+            writeBinaryOp              = spirv::WriteLogicalAnd;
+            break;
+
+        case EOpBitShiftLeft:
+        case EOpBitShiftLeftAssign:
+            writeBinaryOp = spirv::WriteShiftLeftLogical;
+            break;
+        case EOpBitShiftRight:
+        case EOpBitShiftRightAssign:
+            if (isUnsigned)
+                writeBinaryOp = spirv::WriteShiftRightLogical;
+            else
+                writeBinaryOp = spirv::WriteShiftRightArithmetic;
+            break;
+        case EOpBitwiseAnd:
+        case EOpBitwiseAndAssign:
+            writeBinaryOp = spirv::WriteBitwiseAnd;
+            break;
+        case EOpBitwiseXor:
+        case EOpBitwiseXorAssign:
+            writeBinaryOp = spirv::WriteBitwiseXor;
+            break;
+        case EOpBitwiseOr:
+        case EOpBitwiseOrAssign:
+            writeBinaryOp = spirv::WriteBitwiseOr;
+            break;
+
+        case EOpRadians:
+            extendedInst = spv::GLSLstd450Radians;
+            break;
+        case EOpDegrees:
+            extendedInst = spv::GLSLstd450Degrees;
+            break;
+        case EOpSin:
+            extendedInst = spv::GLSLstd450Sin;
+            break;
+        case EOpCos:
+            extendedInst = spv::GLSLstd450Cos;
+            break;
+        case EOpTan:
+            extendedInst = spv::GLSLstd450Tan;
+            break;
+        case EOpAsin:
+            extendedInst = spv::GLSLstd450Asin;
+            break;
+        case EOpAcos:
+            extendedInst = spv::GLSLstd450Acos;
+            break;
+        case EOpAtan:
+            extendedInst = spv::GLSLstd450Atan;
+            break;
+        case EOpSinh:
+            extendedInst = spv::GLSLstd450Sinh;
+            break;
+        case EOpCosh:
+            extendedInst = spv::GLSLstd450Cosh;
+            break;
+        case EOpTanh:
+            extendedInst = spv::GLSLstd450Tanh;
+            break;
+        case EOpAsinh:
+            extendedInst = spv::GLSLstd450Asinh;
+            break;
+        case EOpAcosh:
+            extendedInst = spv::GLSLstd450Acosh;
+            break;
+        case EOpAtanh:
+            extendedInst = spv::GLSLstd450Atanh;
+            break;
+
+        case EOpPow:
+            extendedInst = spv::GLSLstd450Pow;
+            break;
+        case EOpExp:
+            extendedInst = spv::GLSLstd450Exp;
+            break;
+        case EOpLog:
+            extendedInst = spv::GLSLstd450Log;
+            break;
+        case EOpExp2:
+            extendedInst = spv::GLSLstd450Exp2;
+            break;
+        case EOpLog2:
+            extendedInst = spv::GLSLstd450Log2;
+            break;
+        case EOpSqrt:
+            extendedInst = spv::GLSLstd450Sqrt;
+            break;
+        case EOpInversesqrt:
+            extendedInst = spv::GLSLstd450InverseSqrt;
+            break;
+
+        case EOpAbs:
+            if (isFloat)
+                extendedInst = spv::GLSLstd450FAbs;
+            else
+                extendedInst = spv::GLSLstd450SAbs;
+            break;
+        case EOpSign:
+            if (isFloat)
+                extendedInst = spv::GLSLstd450FSign;
+            else
+                extendedInst = spv::GLSLstd450SSign;
+            break;
+        case EOpFloor:
+            extendedInst = spv::GLSLstd450Floor;
+            break;
+        case EOpTrunc:
+            extendedInst = spv::GLSLstd450Trunc;
+            break;
+        case EOpRound:
+            extendedInst = spv::GLSLstd450Round;
+            break;
+        case EOpRoundEven:
+            extendedInst = spv::GLSLstd450RoundEven;
+            break;
+        case EOpCeil:
+            extendedInst = spv::GLSLstd450Ceil;
+            break;
+        case EOpFract:
+            extendedInst = spv::GLSLstd450Fract;
+            break;
+        case EOpMod:
+            if (isFloat)
+                writeBinaryOp = spirv::WriteFMod;
+            else if (isUnsigned)
+                writeBinaryOp = spirv::WriteUMod;
+            else
+                writeBinaryOp = spirv::WriteSMod;
+            break;
+        case EOpMin:
+            if (isFloat)
+                extendedInst = spv::GLSLstd450FMin;
+            else if (isUnsigned)
+                extendedInst = spv::GLSLstd450UMin;
+            else
+                extendedInst = spv::GLSLstd450SMin;
+            break;
+        case EOpMax:
+            if (isFloat)
+                extendedInst = spv::GLSLstd450FMax;
+            else if (isUnsigned)
+                extendedInst = spv::GLSLstd450UMax;
+            else
+                extendedInst = spv::GLSLstd450SMax;
+            break;
+        case EOpClamp:
+            if (isFloat)
+                extendedInst = spv::GLSLstd450FClamp;
+            else if (isUnsigned)
+                extendedInst = spv::GLSLstd450UClamp;
+            else
+                extendedInst = spv::GLSLstd450SClamp;
+            break;
+        case EOpMix:
+            if (node->getChildNode(childCount - 1)->getAsTyped()->getType().getBasicType() ==
+                EbtBool)
+            {
+                writeTernaryOp = spirv::WriteSelect;
+            }
+            else
+            {
+                ASSERT(isFloat);
+                extendedInst = spv::GLSLstd450FMix;
+            }
+            break;
+        case EOpStep:
+            extendedInst = spv::GLSLstd450Step;
+            break;
+        case EOpSmoothstep:
+            extendedInst = spv::GLSLstd450SmoothStep;
+            break;
+        case EOpModf:
+            // TODO: modf has an out parameter.  http://anglebug.com/4889.
+            UNIMPLEMENTED();
+            break;
+        case EOpIsnan:
+            writeUnaryOp = spirv::WriteIsNan;
+            break;
+        case EOpIsinf:
+            writeUnaryOp = spirv::WriteIsInf;
+            break;
+        case EOpFloatBitsToInt:
+        case EOpFloatBitsToUint:
+        case EOpIntBitsToFloat:
+        case EOpUintBitsToFloat:
+            writeUnaryOp = spirv::WriteBitcast;
+            break;
+        case EOpFma:
+            extendedInst = spv::GLSLstd450Fma;
+            break;
+        case EOpFrexp:
+            // TODO: frexp has an out parameter.  http://anglebug.com/4889.
+            UNIMPLEMENTED();
+            break;
+        case EOpLdexp:
+            extendedInst = spv::GLSLstd450Ldexp;
+            break;
+        case EOpPackSnorm2x16:
+            extendedInst = spv::GLSLstd450PackSnorm2x16;
+            break;
+        case EOpPackUnorm2x16:
+            extendedInst = spv::GLSLstd450PackUnorm2x16;
+            break;
+        case EOpPackHalf2x16:
+            extendedInst = spv::GLSLstd450PackHalf2x16;
+            break;
+        case EOpUnpackSnorm2x16:
+            extendedInst = spv::GLSLstd450UnpackSnorm2x16;
+            break;
+        case EOpUnpackUnorm2x16:
+            extendedInst = spv::GLSLstd450UnpackUnorm2x16;
+            break;
+        case EOpUnpackHalf2x16:
+            extendedInst = spv::GLSLstd450UnpackHalf2x16;
+            break;
+        case EOpPackUnorm4x8:
+            extendedInst = spv::GLSLstd450PackUnorm4x8;
+            break;
+        case EOpPackSnorm4x8:
+            extendedInst = spv::GLSLstd450PackSnorm4x8;
+            break;
+        case EOpUnpackUnorm4x8:
+            extendedInst = spv::GLSLstd450UnpackUnorm4x8;
+            break;
+        case EOpUnpackSnorm4x8:
+            extendedInst = spv::GLSLstd450UnpackSnorm4x8;
+            break;
+        case EOpPackDouble2x32:
+        case EOpUnpackDouble2x32:
+            // TODO: support desktop GLSL.  http://anglebug.com/4889
+            UNIMPLEMENTED();
+            break;
+
+        case EOpLength:
+            extendedInst = spv::GLSLstd450Length;
+            break;
+        case EOpDistance:
+            extendedInst = spv::GLSLstd450Distance;
+            break;
+        case EOpDot:
+            // Use normal multiplication for scalars.
+            if (firstOperandType.isScalar())
+            {
+                if (isFloat)
+                    writeBinaryOp = spirv::WriteFMul;
+                else
+                    writeBinaryOp = spirv::WriteIMul;
+            }
+            else
+            {
+                writeBinaryOp = spirv::WriteDot;
+            }
+            break;
+        case EOpCross:
+            extendedInst = spv::GLSLstd450Cross;
+            break;
+        case EOpNormalize:
+            extendedInst = spv::GLSLstd450Normalize;
+            break;
+        case EOpFaceforward:
+            extendedInst = spv::GLSLstd450FaceForward;
+            break;
+        case EOpReflect:
+            extendedInst = spv::GLSLstd450Reflect;
+            break;
+        case EOpRefract:
+            extendedInst = spv::GLSLstd450Refract;
+            break;
+
+        case EOpFtransform:
+            // TODO: support desktop GLSL.  http://anglebug.com/4889
+            UNIMPLEMENTED();
+            break;
+
+        case EOpOuterProduct:
+            writeBinaryOp = spirv::WriteOuterProduct;
+            break;
+        case EOpTranspose:
+            writeUnaryOp = spirv::WriteTranspose;
+            break;
+        case EOpDeterminant:
+            extendedInst = spv::GLSLstd450Determinant;
+            break;
+        case EOpInverse:
+            extendedInst = spv::GLSLstd450MatrixInverse;
+            break;
+
+        case EOpAny:
+            writeUnaryOp = spirv::WriteAny;
+            break;
+        case EOpAll:
+            writeUnaryOp = spirv::WriteAll;
+            break;
+
+        case EOpBitfieldExtract:
+            if (isUnsigned)
+                writeTernaryOp = spirv::WriteBitFieldUExtract;
+            else
+                writeTernaryOp = spirv::WriteBitFieldSExtract;
+            break;
+        case EOpBitfieldInsert:
+            writeQuaternaryOp = spirv::WriteBitFieldInsert;
+            break;
+        case EOpBitfieldReverse:
+            writeUnaryOp = spirv::WriteBitReverse;
+            break;
+        case EOpBitCount:
+            writeUnaryOp = spirv::WriteBitCount;
+            break;
+        case EOpFindLSB:
+            extendedInst = spv::GLSLstd450FindILsb;
+            break;
+        case EOpFindMSB:
+            if (isUnsigned)
+                extendedInst = spv::GLSLstd450FindUMsb;
+            else
+                extendedInst = spv::GLSLstd450FindSMsb;
+            break;
+        case EOpUaddCarry:
+            // TODO: uaddCarry has an out parameter.  http://anglebug.com/4889.
+            UNIMPLEMENTED();
+            break;
+        case EOpUsubBorrow:
+            // TODO: usubBorrow has an out parameter.  http://anglebug.com/4889.
+            UNIMPLEMENTED();
+            break;
+        case EOpUmulExtended:
+            // TODO: umulExtended has an out parameter.  http://anglebug.com/4889.
+            UNIMPLEMENTED();
+            break;
+        case EOpImulExtended:
+            // TODO: imulExtended has an out parameter.  http://anglebug.com/4889.
+            UNIMPLEMENTED();
+            break;
+
+        case EOpRgb_2_yuv:
+        case EOpYuv_2_rgb:
+            // TODO: There doesn't seem to be an equivalent in SPIR-V, and should likley be emulated
+            // as an AST transformation.  Not supported by the Vulkan at the moment.
+            // http://anglebug.com/4889.
+            UNIMPLEMENTED();
+            break;
+
+        case EOpDFdx:
+            writeUnaryOp = spirv::WriteDPdx;
+            break;
+        case EOpDFdy:
+            writeUnaryOp = spirv::WriteDPdy;
+            break;
+        case EOpFwidth:
+            writeUnaryOp = spirv::WriteFwidth;
+            break;
+        case EOpDFdxFine:
+            writeUnaryOp = spirv::WriteDPdxFine;
+            break;
+        case EOpDFdyFine:
+            writeUnaryOp = spirv::WriteDPdyFine;
+            break;
+        case EOpDFdxCoarse:
+            writeUnaryOp = spirv::WriteDPdxCoarse;
+            break;
+        case EOpDFdyCoarse:
+            writeUnaryOp = spirv::WriteDPdyCoarse;
+            break;
+        case EOpFwidthFine:
+            writeUnaryOp = spirv::WriteFwidthFine;
+            break;
+        case EOpFwidthCoarse:
+            writeUnaryOp = spirv::WriteFwidthCoarse;
+            break;
+
+            // TODO: for the EOpInterpolate* built-ins, must convert interpolateX(vec.yz) to
+            // interpolate(vec).yz.  This can either be done apriori by an AST transformation, or
+            // simply by taking the base id only when generating the instruction and keeping the
+            // indices/swizzle intact.  http://anglebug.com/4889.
+        case EOpInterpolateAtCentroid:
+            extendedInst = spv::GLSLstd450InterpolateAtCentroid;
+            break;
+        case EOpInterpolateAtSample:
+            extendedInst = spv::GLSLstd450InterpolateAtSample;
+            break;
+        case EOpInterpolateAtOffset:
+            extendedInst = spv::GLSLstd450InterpolateAtOffset;
+            break;
+
+        case EOpNoise1:
+        case EOpNoise2:
+        case EOpNoise3:
+        case EOpNoise4:
+            // TODO: support desktop GLSL.  http://anglebug.com/4889
+            UNIMPLEMENTED();
+            break;
+
+        case EOpSubpassLoad:
+            // TODO: support framebuffer fetch.  http://anglebug.com/4889
+            UNIMPLEMENTED();
+            break;
+
+        case EOpAnyInvocation:
+        case EOpAllInvocations:
+        case EOpAllInvocationsEqual:
+            // TODO: support desktop GLSL.  http://anglebug.com/4889
+            break;
+
+        default:
+            UNREACHABLE();
+    }
+
+    const SpirvDecorations decorations = mBuilder.getDecorations(node->getType());
+    spirv::IdRef result                = mBuilder.getNewId(decorations);
+
+    // Load the parameters.
+    spirv::IdRefList parameters = loadAllParams(node);
+
+    if (operateOnColumns)
+    {
+        // If negating a matrix or multiplying them, do that column by column.
+        spirv::IdRefList columnIds;
+
+        const SpirvDecorations operandDecorations = mBuilder.getDecorations(firstOperandType);
+
+        SpirvType columnType            = mBuilder.getSpirvType(firstOperandType, EbsUnspecified);
+        columnType.primarySize          = columnType.secondarySize;
+        columnType.secondarySize        = 1;
+        const spirv::IdRef columnTypeId = mBuilder.getSpirvTypeData(columnType, nullptr).id;
+
+        if (binarySwapOperands)
+        {
+            std::swap(parameters[0], parameters[1]);
+        }
+
+        // Extract and apply the operator to each column.
+        for (int columnIndex = 0; columnIndex < firstOperandType.getCols(); ++columnIndex)
+        {
+            const spirv::IdRef columnIdA = mBuilder.getNewId(operandDecorations);
+            spirv::WriteCompositeExtract(mBuilder.getSpirvCurrentFunctionBlock(), columnTypeId,
+                                         columnIdA, parameters[0],
+                                         {spirv::LiteralInteger(columnIndex)});
+
+            columnIds.push_back(mBuilder.getNewId(decorations));
+
+            if (writeUnaryOp)
+            {
+                writeUnaryOp(mBuilder.getSpirvCurrentFunctionBlock(), columnTypeId,
+                             columnIds.back(), columnIdA);
+            }
+            else
+            {
+                ASSERT(writeBinaryOp);
+
+                const spirv::IdRef columnIdB = mBuilder.getNewId(operandDecorations);
+                spirv::WriteCompositeExtract(mBuilder.getSpirvCurrentFunctionBlock(), columnTypeId,
+                                             columnIdB, parameters[1],
+                                             {spirv::LiteralInteger(columnIndex)});
+
+                writeBinaryOp(mBuilder.getSpirvCurrentFunctionBlock(), columnTypeId,
+                              columnIds.back(), columnIdA, columnIdB);
+            }
+        }
+
+        // Construct the result.
+        spirv::WriteCompositeConstruct(mBuilder.getSpirvCurrentFunctionBlock(), resultTypeId,
+                                       result, columnIds);
+    }
+    else if (writeUnaryOp)
+    {
+        ASSERT(parameters.size() == 1);
+        writeUnaryOp(mBuilder.getSpirvCurrentFunctionBlock(), resultTypeId, result, parameters[0]);
+    }
+    else if (writeBinaryOp)
+    {
+        ASSERT(parameters.size() == 2);
+
+        // For vector<op>scalar operations that require it, turn the scalar into a vector of the
+        // same size.
+        if (binaryExtendScalarToVector)
+        {
+            const TType &leftType  = node->getChildNode(0)->getAsTyped()->getType();
+            const TType &rightType = node->getChildNode(1)->getAsTyped()->getType();
+
+            if (leftType.isScalar() && rightType.isVector())
+            {
+                parameters[0] =
+                    createConstructorVectorFromScalar(rightType, resultTypeId, {{parameters[0]}});
+            }
+            else if (rightType.isScalar() && leftType.isVector())
+            {
+                parameters[1] =
+                    createConstructorVectorFromScalar(leftType, resultTypeId, {{parameters[1]}});
+            }
+        }
+
+        if (binarySwapOperands)
+        {
+            std::swap(parameters[0], parameters[1]);
+        }
+
+        // Write the operation that combines the left and right values.
+        writeBinaryOp(mBuilder.getSpirvCurrentFunctionBlock(), resultTypeId, result, parameters[0],
+                      parameters[1]);
+    }
+    else if (writeTernaryOp)
+    {
+        ASSERT(parameters.size() == 3);
+
+        // mix(a, b, bool) is the same as bool ? b : a;
+        if (op == EOpMix)
+        {
+            std::swap(parameters[0], parameters[2]);
+        }
+
+        writeTernaryOp(mBuilder.getSpirvCurrentFunctionBlock(), resultTypeId, result, parameters[0],
+                       parameters[1], parameters[2]);
+    }
+    else if (writeQuaternaryOp)
+    {
+        ASSERT(parameters.size() == 4);
+
+        writeQuaternaryOp(mBuilder.getSpirvCurrentFunctionBlock(), resultTypeId, result,
+                          parameters[0], parameters[1], parameters[2], parameters[3]);
+    }
+    else
+    {
+        // It's an extended instruction.
+        ASSERT(extendedInst != spv::GLSLstd450Bad);
+
+        spirv::WriteExtInst(mBuilder.getSpirvCurrentFunctionBlock(), resultTypeId, result,
+                            mBuilder.getExtInstImportIdStd(),
+                            spirv::LiteralExtInstInteger(extendedInst), parameters);
+    }
+
+    // If it's an assignment, store the calculated value.
+    if (IsAssignment(node->getOp()))
+    {
+        ASSERT(mNodeData.size() >= 2);
+        ASSERT(parameters.size() == 2);
+        accessChainStore(&mNodeData[mNodeData.size() - 2], result);
+    }
+
+    return result;
+}
+
+spirv::IdRef OutputSPIRVTraverser::createIncrementDecrement(TIntermOperator *node,
+                                                            spirv::IdRef resultTypeId)
+{
+    TIntermTyped *operand = node->getChildNode(0)->getAsTyped();
+
+    const TType &operandType   = operand->getType();
+    const TBasicType basicType = operandType.getBasicType();
+    const bool isFloat         = basicType == EbtFloat || basicType == EbtDouble;
+
+    // ++ and -- are implemented with binary SPIR-V ops.
+    WriteBinaryOp writeBinaryOp = nullptr;
+
+    switch (node->getOp())
+    {
+        case EOpPostIncrement:
+        case EOpPreIncrement:
+            if (isFloat)
+                writeBinaryOp = spirv::WriteFAdd;
+            else
+                writeBinaryOp = spirv::WriteIAdd;
+            break;
+        case EOpPostDecrement:
+        case EOpPreDecrement:
+            if (isFloat)
+                writeBinaryOp = spirv::WriteFSub;
+            else
+                writeBinaryOp = spirv::WriteISub;
+            break;
+        default:
+            UNREACHABLE();
+    }
+
+    // Load the operand.
+    spirv::IdRef value =
+        accessChainLoad(&mNodeData.back(), mBuilder.getDecorations(operand->getType()));
+
+    spirv::IdRef result    = mBuilder.getNewId(mBuilder.getDecorations(operandType));
+    const spirv::IdRef one = isFloat ? mBuilder.getFloatConstant(1) : mBuilder.getIntConstant(1);
+
+    writeBinaryOp(mBuilder.getSpirvCurrentFunctionBlock(), resultTypeId, result, value, one);
+
+    // The result is always written back.
+    accessChainStore(&mNodeData.back(), result);
+
+    // Initialize the access chain with either the result or the value based on whether pre or
+    // post increment/decrement was used.  The result is always an rvalue.
+    if (node->getOp() == EOpPostIncrement || node->getOp() == EOpPostDecrement)
+    {
+        result = value;
+    }
+
+    return result;
+}
+
+spirv::IdRef OutputSPIRVTraverser::createAtomicBuiltIn(TIntermOperator *node,
                                                        spirv::IdRef resultTypeId)
 {
     // Most atomic instructions are in the form of:
@@ -1559,9 +2503,6 @@ spirv::IdRef OutputSPIRVTraverser::createAtomicBuiltIn(TIntermAggregate *node,
     //                                       Scope MemorySemantics MemorySemantics
     //                                       %value %comparator
     //
-    // TODO: Turn image atomic functions into ops.  Saves generating many built-in variations, and
-    // lets this function handle both.  http://anglebug.com/4889
-
     // In all cases, the first parameter is the pointer, and the rest are rvalues.
     const size_t parameterCount = node->getChildCount();
     spirv::IdRef pointerId;
@@ -1586,40 +2527,47 @@ spirv::IdRef OutputSPIRVTraverser::createAtomicBuiltIn(TIntermAggregate *node,
     const spirv::IdMemorySemantics semanticsId =
         mBuilder.getUintConstant(spv::MemorySemanticsMaskNone);
 
-    using WriteAtomicOp =
-        void (*)(spirv::Blob * blob, spirv::IdResultType idResultType, spirv::IdResult idResult,
-                 spirv::IdRef pointer, spirv::IdScope scope, spirv::IdMemorySemantics semantics,
-                 spirv::IdRef value);
     WriteAtomicOp writeAtomicOp = nullptr;
 
     const spirv::IdRef result = mBuilder.getNewId(mBuilder.getDecorations(node->getType()));
+
+    // TODO: determine isUnsigned correctly for image types.  Should rearrange TBasicType enums to
+    // group images based on basic type and do range check.  http://anglebug.com/4889.
     const bool isUnsigned =
         node->getChildNode(0)->getAsTyped()->getType().getBasicType() == EbtUInt;
 
     switch (node->getOp())
     {
         case EOpAtomicAdd:
+        case EOpImageAtomicAdd:
             writeAtomicOp = spirv::WriteAtomicIAdd;
             break;
         case EOpAtomicMin:
+        case EOpImageAtomicMin:
             writeAtomicOp = isUnsigned ? spirv::WriteAtomicUMin : spirv::WriteAtomicSMin;
             break;
         case EOpAtomicMax:
+        case EOpImageAtomicMax:
             writeAtomicOp = isUnsigned ? spirv::WriteAtomicUMax : spirv::WriteAtomicSMax;
             break;
         case EOpAtomicAnd:
+        case EOpImageAtomicAnd:
             writeAtomicOp = spirv::WriteAtomicAnd;
             break;
         case EOpAtomicOr:
+        case EOpImageAtomicOr:
             writeAtomicOp = spirv::WriteAtomicOr;
             break;
         case EOpAtomicXor:
+        case EOpImageAtomicXor:
             writeAtomicOp = spirv::WriteAtomicXor;
             break;
         case EOpAtomicExchange:
+        case EOpImageAtomicExchange:
             writeAtomicOp = spirv::WriteAtomicExchange;
             break;
         case EOpAtomicCompSwap:
+        case EOpImageAtomicCompSwap:
             // Generate this special instruction right here and early out.  Note again that the
             // value and compare parameters of OpAtomicCompareExchange are in the opposite order
             // from GLSL.
@@ -1638,6 +2586,22 @@ spirv::IdRef OutputSPIRVTraverser::createAtomicBuiltIn(TIntermAggregate *node,
                   semanticsId, parameters[0]);
 
     return result;
+}
+
+spirv::IdRef OutputSPIRVTraverser::createTextureBuiltIn(TIntermOperator *node,
+                                                        spirv::IdRef resultTypeId)
+{
+    // TODO: http://anglebug.com/4889
+    UNIMPLEMENTED();
+    return spirv::IdRef{};
+}
+
+spirv::IdRef OutputSPIRVTraverser::createImageBuiltIn(TIntermOperator *node,
+                                                      spirv::IdRef resultTypeId)
+{
+    // TODO: http://anglebug.com/4889
+    UNIMPLEMENTED();
+    return spirv::IdRef{};
 }
 
 void OutputSPIRVTraverser::visitSymbol(TIntermSymbol *node)
@@ -1794,24 +2758,6 @@ bool OutputSPIRVTraverser::visitSwizzle(Visit visit, TIntermSwizzle *node)
     return true;
 }
 
-bool IsShortCircuitNeeded(TIntermBinary *node)
-{
-    TOperator op = node->getOp();
-
-    // Short circuit is only necessary for && and ||.
-    if (op != EOpLogicalAnd && op != EOpLogicalOr)
-    {
-        return false;
-    }
-
-    // If the right hand side does not have side effects, short-circuiting is unnecessary.
-    // TODO: experiment with the performance of OpLogicalAnd/Or vs short-circuit based on the
-    // complexity of the right hand side expression.  We could potentially only allow
-    // OpLogicalAnd/Or if the right hand side is a constant or an access chain and have more complex
-    // expressions be placed inside an if block.  http://anglebug.com/4889
-    return node->getRight()->hasSideEffects();
-}
-
 bool OutputSPIRVTraverser::visitBinary(Visit visit, TIntermBinary *node)
 {
     // Constants are expected to be folded.
@@ -1881,268 +2827,68 @@ bool OutputSPIRVTraverser::visitBinary(Visit visit, TIntermBinary *node)
     // There are at least two entries, one for the left node and one for the right one.
     ASSERT(mNodeData.size() >= 2);
 
-    // Load the result of the right node right away.
-    spirv::IdRef typeId = getAccessChainTypeId(&mNodeData.back());
-    spirv::IdRef rightValue =
-        accessChainLoad(&mNodeData.back(), mBuilder.getDecorations(node->getRight()->getType()));
-    mNodeData.pop_back();
+    TLayoutBlockStorage blockStorage = EbsUnspecified;
+    if (node->getOp() == EOpIndexIndirect || node->getOp() == EOpAssign)
+    {
+        blockStorage = mNodeData[mNodeData.size() - 2].accessChain.baseBlockStorage;
+    }
+    const spirv::IdRef resultTypeId = mBuilder.getTypeData(node->getType(), blockStorage).id;
 
     // For EOpIndex* operations, push the right value as an index to the left value's access chain.
     // For the other operations, evaluate the expression.
-    NodeData &left = mNodeData.back();
-
-    const TBasicType leftBasicType = node->getLeft()->getType().getBasicType();
-    const bool isFloat             = leftBasicType == EbtFloat || leftBasicType == EbtDouble;
-    const bool isUnsigned          = leftBasicType == EbtUInt;
-    const bool isBool              = leftBasicType == EbtBool;
-
-    // Whether the operands need to be swapped in the instruction
-    bool swapOperands = false;
-    // Whether the scalar operand needs to be extended to match the other operand which is a vector.
-    bool extendScalarToVector = true;
-
-    using WriteBinaryOp =
-        void (*)(spirv::Blob * blob, spirv::IdResultType idResultType, spirv::IdResult idResult,
-                 spirv::IdRef operand1, spirv::IdRef operand2);
-    WriteBinaryOp writeBinaryOp = nullptr;
-
     switch (node->getOp())
     {
         case EOpIndexDirect:
         case EOpIndexDirectStruct:
         case EOpIndexDirectInterfaceBlock:
             UNREACHABLE();
-            return true;
+            break;
         case EOpIndexIndirect:
-            typeId = mBuilder.getTypeData(node->getType(), left.accessChain.baseBlockStorage).id;
+        {
+            // Load the index.
+            const spirv::IdRef rightValue = accessChainLoad(
+                &mNodeData.back(), mBuilder.getDecorations(node->getRight()->getType()));
+            mNodeData.pop_back();
+
             if (!node->getLeft()->getType().isArray() && node->getLeft()->getType().isVector())
             {
-                accessChainPushDynamicComponent(&left, rightValue, typeId);
+                accessChainPushDynamicComponent(&mNodeData.back(), rightValue, resultTypeId);
             }
             else
             {
-                accessChainPush(&left, rightValue, typeId);
+                accessChainPush(&mNodeData.back(), rightValue, resultTypeId);
             }
-            return true;
+            break;
+        }
 
         case EOpAssign:
+        {
+            // Load the right hand side of assignment.
+            const spirv::IdRef rightValue = accessChainLoad(
+                &mNodeData.back(), mBuilder.getDecorations(node->getRight()->getType()));
+            mNodeData.pop_back();
+
             // Store into the access chain.  Since the result of the (a = b) expression is b, change
             // the access chain to an unindexed rvalue which is |rightValue|.
-            accessChainStore(&left, rightValue);
-            nodeDataInitRValue(&left, rightValue, typeId);
-            return true;
+            // TODO: handle mismatching types.  http://anglebug.com/4889.
+            accessChainStore(&mNodeData.back(), rightValue);
+            nodeDataInitRValue(&mNodeData.back(), rightValue, resultTypeId);
+            break;
+        }
 
-        case EOpAdd:
-        case EOpAddAssign:
-            if (isFloat)
-                writeBinaryOp = spirv::WriteFAdd;
-            else
-                writeBinaryOp = spirv::WriteIAdd;
-            break;
-        case EOpSub:
-        case EOpSubAssign:
-            if (isFloat)
-                writeBinaryOp = spirv::WriteFSub;
-            else
-                writeBinaryOp = spirv::WriteISub;
-            break;
-        case EOpMul:
-        case EOpMulAssign:
-            if (isFloat)
-                writeBinaryOp = spirv::WriteFMul;
-            else
-                writeBinaryOp = spirv::WriteIMul;
-            break;
-        case EOpDiv:
-        case EOpDivAssign:
-            if (isFloat)
-                writeBinaryOp = spirv::WriteFDiv;
-            else if (isUnsigned)
-                writeBinaryOp = spirv::WriteUDiv;
-            else
-                writeBinaryOp = spirv::WriteSDiv;
-            break;
-        case EOpIMod:
-        case EOpIModAssign:
-            if (isFloat)
-                writeBinaryOp = spirv::WriteFMod;
-            else if (isUnsigned)
-                writeBinaryOp = spirv::WriteUMod;
-            else
-                writeBinaryOp = spirv::WriteSMod;
-            break;
-
-        case EOpVectorTimesScalar:
-        case EOpVectorTimesScalarAssign:
-            if (isFloat)
-            {
-                writeBinaryOp        = spirv::WriteVectorTimesScalar;
-                swapOperands         = node->getRight()->getType().isVector();
-                extendScalarToVector = false;
-            }
-            else
-                writeBinaryOp = spirv::WriteIMul;
-            break;
-        case EOpVectorTimesMatrix:
-        case EOpVectorTimesMatrixAssign:
-            writeBinaryOp = spirv::WriteVectorTimesMatrix;
-            break;
-        case EOpMatrixTimesVector:
-            writeBinaryOp = spirv::WriteMatrixTimesVector;
-            break;
-        case EOpMatrixTimesScalar:
-        case EOpMatrixTimesScalarAssign:
-            writeBinaryOp = spirv::WriteMatrixTimesScalar;
-            break;
-        case EOpMatrixTimesMatrix:
-        case EOpMatrixTimesMatrixAssign:
-            writeBinaryOp = spirv::WriteMatrixTimesMatrix;
-            break;
-
-        case EOpEqual:
-        case EOpEqualComponentWise:
-            if (isFloat)
-                writeBinaryOp = spirv::WriteFOrdEqual;
-            else if (isBool)
-                writeBinaryOp = spirv::WriteLogicalEqual;
-            else
-                writeBinaryOp = spirv::WriteIEqual;
-            break;
-        case EOpNotEqual:
-        case EOpNotEqualComponentWise:
-            if (isFloat)
-                writeBinaryOp = spirv::WriteFUnordNotEqual;
-            else if (isBool)
-                writeBinaryOp = spirv::WriteLogicalNotEqual;
-            else
-                writeBinaryOp = spirv::WriteINotEqual;
-            break;
-        case EOpLessThan:
-        case EOpLessThanComponentWise:
-            if (isFloat)
-                writeBinaryOp = spirv::WriteFOrdLessThan;
-            else if (isUnsigned)
-                writeBinaryOp = spirv::WriteULessThan;
-            else
-                writeBinaryOp = spirv::WriteSLessThan;
-            break;
-        case EOpGreaterThan:
-        case EOpGreaterThanComponentWise:
-            if (isFloat)
-                writeBinaryOp = spirv::WriteFOrdGreaterThan;
-            else if (isUnsigned)
-                writeBinaryOp = spirv::WriteUGreaterThan;
-            else
-                writeBinaryOp = spirv::WriteSGreaterThan;
-            break;
-        case EOpLessThanEqual:
-        case EOpLessThanEqualComponentWise:
-            if (isFloat)
-                writeBinaryOp = spirv::WriteFOrdLessThanEqual;
-            else if (isUnsigned)
-                writeBinaryOp = spirv::WriteULessThanEqual;
-            else
-                writeBinaryOp = spirv::WriteSLessThanEqual;
-            break;
-        case EOpGreaterThanEqual:
-        case EOpGreaterThanEqualComponentWise:
-            if (isFloat)
-                writeBinaryOp = spirv::WriteFOrdGreaterThanEqual;
-            else if (isUnsigned)
-                writeBinaryOp = spirv::WriteUGreaterThanEqual;
-            else
-                writeBinaryOp = spirv::WriteSGreaterThanEqual;
-            break;
-
-        case EOpLogicalOr:
-            ASSERT(!IsShortCircuitNeeded(node));
-            extendScalarToVector = false;
-            writeBinaryOp        = spirv::WriteLogicalOr;
-            break;
-        case EOpLogicalXor:
-            extendScalarToVector = false;
-            writeBinaryOp        = spirv::WriteLogicalNotEqual;
-            break;
-        case EOpLogicalAnd:
-            ASSERT(!IsShortCircuitNeeded(node));
-            extendScalarToVector = false;
-            writeBinaryOp        = spirv::WriteLogicalAnd;
-            break;
-
-        case EOpBitShiftLeft:
-        case EOpBitShiftLeftAssign:
-            writeBinaryOp = spirv::WriteShiftLeftLogical;
-            break;
-        case EOpBitShiftRight:
-        case EOpBitShiftRightAssign:
-            if (isUnsigned)
-                writeBinaryOp = spirv::WriteShiftRightLogical;
-            else
-                writeBinaryOp = spirv::WriteShiftRightArithmetic;
-            break;
-        case EOpBitwiseAnd:
-        case EOpBitwiseAndAssign:
-            writeBinaryOp = spirv::WriteBitwiseAnd;
-            break;
-        case EOpBitwiseXor:
-        case EOpBitwiseXorAssign:
-            writeBinaryOp = spirv::WriteBitwiseXor;
-            break;
-        case EOpBitwiseOr:
-        case EOpBitwiseOrAssign:
-            writeBinaryOp = spirv::WriteBitwiseOr;
+        case EOpComma:
+            // When the expression a,b is visited, all side effects of a and b are already
+            // processed.  What's left is to to replace the expression with the result of b.  This
+            // is simply done by dropping the left node and placing the right node as the result.
+            mNodeData.erase(mNodeData.begin() + mNodeData.size() - 2);
             break;
 
         default:
-            UNIMPLEMENTED();
+            const spirv::IdRef result = visitOperator(node, resultTypeId);
+            mNodeData.pop_back();
+            nodeDataInitRValue(&mNodeData.back(), result, resultTypeId);
+            // TODO: Handle NoContraction decoration.  http://anglebug.com/4889
             break;
-    }
-
-    if (writeBinaryOp)
-    {
-        // Load the left value.
-        spirv::IdRef leftValue =
-            accessChainLoad(&left, mBuilder.getDecorations(node->getLeft()->getType()));
-
-        typeId = mBuilder.getTypeData(node->getType(), EbsUnspecified).id;
-
-        // For vector<op>scalar operations that require it, turn the scalar into a vector of the
-        // same size.
-        if (extendScalarToVector)
-        {
-            const TType &leftType  = node->getLeft()->getType();
-            const TType &rightType = node->getRight()->getType();
-
-            if (leftType.isScalar() && rightType.isVector())
-            {
-                leftValue = createConstructorVectorFromScalar(rightType, typeId, {{leftValue}});
-            }
-            else if (rightType.isScalar() && leftType.isVector())
-            {
-                rightValue = createConstructorVectorFromScalar(leftType, typeId, {{rightValue}});
-            }
-        }
-
-        if (swapOperands)
-        {
-            std::swap(leftValue, rightValue);
-        }
-
-        // Write the operation that combines the left and right values.
-        spirv::IdRef result = mBuilder.getNewId(mBuilder.getDecorations(node->getType()));
-        writeBinaryOp(mBuilder.getSpirvCurrentFunctionBlock(), typeId, result, leftValue,
-                      rightValue);
-
-        // If it's an assignment, store the calculated value.
-        if (IsAssignment(node->getOp()))
-        {
-            accessChainStore(&left, result);
-        }
-
-        // Replace the access chain with an rvalue that's the result.
-        nodeDataInitRValue(&left, result, typeId);
-
-        // TODO: Handle NoContraction decoration.  http://anglebug.com/4889
     }
 
     return true;
@@ -2165,8 +2911,6 @@ bool OutputSPIRVTraverser::visitUnary(Visit visit, TIntermUnary *node)
     // There is at least on entry for the child.
     ASSERT(mNodeData.size() >= 1);
 
-    TIntermTyped *operand = node->getOperand();
-
     // Special case EOpArrayLength.  .length() on sized arrays is already constant folded, so this
     // operation only applies to ssbo.last_member.length().  OpArrayLength takes the ssbo block
     // *type* and the field index of last_member, so those need to be extracted from the access
@@ -2180,6 +2924,7 @@ bool OutputSPIRVTraverser::visitUnary(Visit visit, TIntermUnary *node)
 
         // Get the interface block type from the operand, which is either a symbol or a binary
         // operator based on whether the interface block is nameless or not.
+        TIntermTyped *operand = node->getOperand();
         TIntermTyped *ssbo =
             operand->getAsBinaryNode() ? operand->getAsBinaryNode()->getLeft() : operand;
         const spirv::IdRef typeId = mBuilder.getTypeData(ssbo->getType(), EbsUnspecified).id;
@@ -2207,332 +2952,121 @@ bool OutputSPIRVTraverser::visitUnary(Visit visit, TIntermUnary *node)
         return true;
     }
 
-    // Load the result of the node right away.
-    spirv::IdRef typeId = getAccessChainTypeId(&mNodeData.back());
-    spirv::IdRef value =
-        accessChainLoad(&mNodeData.back(), mBuilder.getDecorations(operand->getType()));
+    const spirv::IdRef resultTypeId = mBuilder.getTypeData(node->getType(), EbsUnspecified).id;
+    const spirv::IdRef result       = visitOperator(node, resultTypeId);
 
-    const TType &operandType    = operand->getType();
-    const TBasicType basicType  = operandType.getBasicType();
-    const bool isFloat          = basicType == EbtFloat || basicType == EbtDouble;
-    const bool isUnsigned       = basicType == EbtUInt;
-    const bool operateOnColumns = operandType.isMatrix();
-
-    // Some operators are implemented with a unary SPIR-V op.
-    using WriteUnaryOp        = void (*)(spirv::Blob * blob, spirv::IdResultType idResultType,
-                                  spirv::IdResult idResult, spirv::IdRef operand);
-    WriteUnaryOp writeUnaryOp = nullptr;
-
-    // Some operators are implemented with a binary SPIR-V op.
-    using WriteBinaryOp =
-        void (*)(spirv::Blob * blob, spirv::IdResultType idResultType, spirv::IdResult idResult,
-                 spirv::IdRef operand1, spirv::IdRef operand2);
-    WriteBinaryOp writeBinaryOp = nullptr;
-
-    // Some operators are implemented with an extended instruction.
-    spv::GLSLstd450 extendedInst = spv::GLSLstd450Bad;
-
-    switch (node->getOp())
-    {
-        case EOpNegative:
-            if (isFloat)
-                writeUnaryOp = spirv::WriteFNegate;
-            else
-                writeUnaryOp = spirv::WriteSNegate;
-            break;
-        case EOpPositive:
-            // This is a noop.
-            break;
-        case EOpLogicalNot:
-        case EOpNotComponentWise:
-            writeUnaryOp = spirv::WriteLogicalNot;
-            break;
-        case EOpBitwiseNot:
-            writeUnaryOp = spirv::WriteNot;
-            break;
-
-        case EOpPostIncrement:
-        case EOpPreIncrement:
-            if (isFloat)
-                writeBinaryOp = spirv::WriteFAdd;
-            else
-                writeBinaryOp = spirv::WriteIAdd;
-            break;
-        case EOpPostDecrement:
-        case EOpPreDecrement:
-            if (isFloat)
-                writeBinaryOp = spirv::WriteFSub;
-            else
-                writeBinaryOp = spirv::WriteISub;
-            break;
-
-        case EOpRadians:
-            extendedInst = spv::GLSLstd450Radians;
-            break;
-        case EOpDegrees:
-            extendedInst = spv::GLSLstd450Degrees;
-            break;
-        case EOpSin:
-            extendedInst = spv::GLSLstd450Sin;
-            break;
-        case EOpCos:
-            extendedInst = spv::GLSLstd450Cos;
-            break;
-        case EOpTan:
-            extendedInst = spv::GLSLstd450Tan;
-            break;
-        case EOpAsin:
-            extendedInst = spv::GLSLstd450Asin;
-            break;
-        case EOpAcos:
-            extendedInst = spv::GLSLstd450Acos;
-            break;
-            break;
-        case EOpAtan:
-            extendedInst = spv::GLSLstd450Atan;
-            break;
-
-        case EOpSinh:
-            extendedInst = spv::GLSLstd450Sinh;
-            break;
-        case EOpCosh:
-            extendedInst = spv::GLSLstd450Cosh;
-            break;
-        case EOpTanh:
-            extendedInst = spv::GLSLstd450Tanh;
-            break;
-        case EOpAsinh:
-            extendedInst = spv::GLSLstd450Asinh;
-            break;
-        case EOpAcosh:
-            extendedInst = spv::GLSLstd450Acosh;
-            break;
-        case EOpAtanh:
-            extendedInst = spv::GLSLstd450Atanh;
-            break;
-
-        case EOpExp:
-            extendedInst = spv::GLSLstd450Exp;
-            break;
-        case EOpLog:
-            extendedInst = spv::GLSLstd450Log;
-            break;
-        case EOpExp2:
-            extendedInst = spv::GLSLstd450Exp2;
-            break;
-        case EOpLog2:
-            extendedInst = spv::GLSLstd450Log2;
-            break;
-        case EOpSqrt:
-            extendedInst = spv::GLSLstd450Sqrt;
-            break;
-        case EOpInversesqrt:
-            extendedInst = spv::GLSLstd450InverseSqrt;
-            break;
-
-        case EOpAbs:
-            if (isFloat)
-                extendedInst = spv::GLSLstd450FAbs;
-            else
-                extendedInst = spv::GLSLstd450SAbs;
-            break;
-        case EOpSign:
-            if (isFloat)
-                extendedInst = spv::GLSLstd450FSign;
-            else
-                extendedInst = spv::GLSLstd450SSign;
-            break;
-        case EOpFloor:
-            extendedInst = spv::GLSLstd450Floor;
-            break;
-        case EOpTrunc:
-            extendedInst = spv::GLSLstd450Trunc;
-            break;
-        case EOpRound:
-            extendedInst = spv::GLSLstd450Round;
-            break;
-        case EOpRoundEven:
-            extendedInst = spv::GLSLstd450RoundEven;
-            break;
-        case EOpCeil:
-            extendedInst = spv::GLSLstd450Ceil;
-            break;
-        case EOpFract:
-            extendedInst = spv::GLSLstd450Fract;
-            break;
-        case EOpIsnan:
-            writeUnaryOp = spirv::WriteIsNan;
-            break;
-        case EOpIsinf:
-            writeUnaryOp = spirv::WriteIsInf;
-            break;
-
-        case EOpFloatBitsToInt:
-        case EOpFloatBitsToUint:
-        case EOpIntBitsToFloat:
-        case EOpUintBitsToFloat:
-            writeUnaryOp = spirv::WriteBitcast;
-            break;
-
-        case EOpPackSnorm2x16:
-            extendedInst = spv::GLSLstd450PackSnorm2x16;
-            break;
-        case EOpPackUnorm2x16:
-            extendedInst = spv::GLSLstd450PackUnorm2x16;
-            break;
-        case EOpPackHalf2x16:
-            extendedInst = spv::GLSLstd450PackHalf2x16;
-            break;
-        case EOpUnpackSnorm2x16:
-            extendedInst = spv::GLSLstd450UnpackSnorm2x16;
-            break;
-        case EOpUnpackUnorm2x16:
-            extendedInst = spv::GLSLstd450UnpackUnorm2x16;
-            break;
-        case EOpUnpackHalf2x16:
-            extendedInst = spv::GLSLstd450UnpackHalf2x16;
-            break;
-
-        case EOpPackUnorm4x8:
-            extendedInst = spv::GLSLstd450PackUnorm4x8;
-            break;
-        case EOpPackSnorm4x8:
-            extendedInst = spv::GLSLstd450PackSnorm4x8;
-            break;
-        case EOpUnpackUnorm4x8:
-            extendedInst = spv::GLSLstd450UnpackUnorm4x8;
-            break;
-        case EOpUnpackSnorm4x8:
-            extendedInst = spv::GLSLstd450UnpackSnorm4x8;
-            break;
-
-        case EOpLength:
-            extendedInst = spv::GLSLstd450Length;
-            break;
-        case EOpNormalize:
-            extendedInst = spv::GLSLstd450Normalize;
-            break;
-
-        case EOpDFdx:
-            writeUnaryOp = spirv::WriteDPdx;
-            break;
-        case EOpDFdy:
-            writeUnaryOp = spirv::WriteDPdy;
-            break;
-        case EOpFwidth:
-            writeUnaryOp = spirv::WriteFwidth;
-            break;
-
-        case EOpTranspose:
-            writeUnaryOp = spirv::WriteTranspose;
-            break;
-        case EOpDeterminant:
-            extendedInst = spv::GLSLstd450Determinant;
-            break;
-        case EOpInverse:
-            extendedInst = spv::GLSLstd450MatrixInverse;
-            break;
-
-        case EOpAny:
-            writeUnaryOp = spirv::WriteAny;
-            break;
-        case EOpAll:
-            writeUnaryOp = spirv::WriteAll;
-            break;
-
-        case EOpBitfieldReverse:
-            writeUnaryOp = spirv::WriteBitReverse;
-            break;
-        case EOpBitCount:
-            writeUnaryOp = spirv::WriteBitCount;
-            break;
-        case EOpFindLSB:
-            extendedInst = spv::GLSLstd450FindILsb;
-            break;
-        case EOpFindMSB:
-            if (isUnsigned)
-                extendedInst = spv::GLSLstd450FindUMsb;
-            else
-                extendedInst = spv::GLSLstd450FindSMsb;
-            break;
-
-        default:
-            UNREACHABLE();
-    }
-
-    const SpirvDecorations decorations = mBuilder.getDecorations(operandType);
-    spirv::IdRef result                = mBuilder.getNewId(decorations);
-
-    if (writeUnaryOp)
-    {
-        if (operateOnColumns)
-        {
-            // If negating a matrix, do that column by column.
-            spirv::IdRefList columnIds;
-
-            SpirvType columnType            = mBuilder.getSpirvType(operandType, EbsUnspecified);
-            columnType.secondarySize        = 1;
-            const spirv::IdRef columnTypeId = mBuilder.getSpirvTypeData(columnType, nullptr).id;
-
-            // Extract and apply the operator to each column.
-            for (int columnIndex = 0; columnIndex < operandType.getCols(); ++columnIndex)
-            {
-                const spirv::IdRef columnId = mBuilder.getNewId(decorations);
-                spirv::WriteCompositeExtract(mBuilder.getSpirvCurrentFunctionBlock(), columnTypeId,
-                                             columnId, value, {spirv::LiteralInteger(columnIndex)});
-
-                columnIds.push_back(mBuilder.getNewId(decorations));
-                writeUnaryOp(mBuilder.getSpirvCurrentFunctionBlock(), columnTypeId,
-                             columnIds.back(), columnId);
-            }
-
-            // Construct the result.
-            spirv::WriteCompositeConstruct(mBuilder.getSpirvCurrentFunctionBlock(), typeId, result,
-                                           columnIds);
-        }
-        else
-        {
-            // Otherwise just apply the operation.
-            writeUnaryOp(mBuilder.getSpirvCurrentFunctionBlock(), typeId, result, value);
-        }
-    }
-    else if (writeBinaryOp)
-    {
-        // It's a pre/post increment/decrement.
-        const spirv::IdRef one =
-            isFloat ? mBuilder.getFloatConstant(1) : mBuilder.getIntConstant(1);
-
-        writeBinaryOp(mBuilder.getSpirvCurrentFunctionBlock(), typeId, result, value, one);
-
-        // The result is always written back.
-        accessChainStore(&mNodeData.back(), result);
-
-        // Initialize the access chain with either the result or the value based on whether pre or
-        // post increment/decrement was used.  The result is always an rvalue.
-        if (node->getOp() == EOpPostIncrement || node->getOp() == EOpPostDecrement)
-        {
-            result = value;
-        }
-    }
-    else
-    {
-        // It's an extended instruction.
-        ASSERT(extendedInst != spv::GLSLstd450Bad);
-
-        spirv::WriteExtInst(mBuilder.getSpirvCurrentFunctionBlock(), typeId, result,
-                            mBuilder.getExtInstImportIdStd(),
-                            spirv::LiteralExtInstInteger(extendedInst), {value});
-    }
-
-    nodeDataInitRValue(&mNodeData.back(), result, typeId);
+    // Keep the result as rvalue.
+    nodeDataInitRValue(&mNodeData.back(), result, resultTypeId);
 
     return true;
 }
 
 bool OutputSPIRVTraverser::visitTernary(Visit visit, TIntermTernary *node)
 {
-    // TODO: http://anglebug.com/4889
-    UNIMPLEMENTED();
+    if (visit == PreVisit)
+    {
+        // Don't add an entry to the stack.  The condition will create one, which we won't pop.
+        return true;
+    }
+
+    size_t lastChildIndex = getLastTraversedChildIndex(visit);
+
+    // If the condition was just visited, evaluate it and decide if OpSelect could be used or an
+    // if-else must be emitted.  OpSelect is only used if the type is scalar or vector (required by
+    // OpSelect) and if neither side has a side effect.
+    const TType &type         = node->getType();
+    const bool canUseOpSelect = (type.isScalar() || type.isVector()) &&
+                                !node->getTrueExpression()->hasSideEffects() &&
+                                !node->getFalseExpression()->hasSideEffects();
+
+    if (lastChildIndex == 0)
+    {
+        spirv::IdRef typeId         = getAccessChainTypeId(&mNodeData.back());
+        spirv::IdRef conditionValue = accessChainLoad(
+            &mNodeData.back(), mBuilder.getDecorations(node->getCondition()->getType()));
+
+        // If OpSelect can be used, keep the condition for later usage.
+        if (canUseOpSelect)
+        {
+            // SPIR-V 1.0 requires that the condition value have as many components as the result.
+            // So when selecting between vectors, we must replicate the condition scalar.
+            if (type.isVector())
+            {
+                SpirvType spirvType;
+                spirvType.type        = node->getCondition()->getType().getBasicType();
+                spirvType.primarySize = static_cast<uint8_t>(type.getNominalSize());
+
+                typeId = mBuilder.getSpirvTypeData(spirvType, nullptr).id;
+                conditionValue =
+                    createConstructorVectorFromScalar(type, typeId, {{conditionValue}});
+            }
+            nodeDataInitRValue(&mNodeData.back(), conditionValue, typeId);
+            return true;
+        }
+
+        // Otherwise generate an if-else construct.
+
+        // Three blocks necessary; the true, false and merge.
+        mBuilder.startConditional(3, false, false);
+
+        // Generate the branch instructions.
+        const SpirvConditional *conditional = mBuilder.getCurrentConditional();
+
+        const spirv::IdRef trueBlockId  = conditional->blockIds[0];
+        const spirv::IdRef falseBlockId = conditional->blockIds[1];
+        const spirv::IdRef mergeBlockId = conditional->blockIds.back();
+
+        mBuilder.writeBranchConditional(conditionValue, trueBlockId, falseBlockId, mergeBlockId);
+        return true;
+    }
+
+    // Load the result of the true or false part, and keep it for the end.  It's either used in
+    // OpSelect or OpPhi.
+    // TODO: handle mismatching types.  http://anglebug.com/4889.
+    const spirv::IdRef typeId = getAccessChainTypeId(&mNodeData.back());
+    const spirv::IdRef value  = accessChainLoad(&mNodeData.back(), mBuilder.getDecorations(type));
+    mNodeData.pop_back();
+    mNodeData.back().idList.push_back(value);
+
+    if (!canUseOpSelect)
+    {
+        // Move on to the next block.
+        mBuilder.writeBranchConditionalBlockEnd();
+    }
+
+    // When done, generate either OpSelect or OpPhi.
+    if (visit == PostVisit)
+    {
+        const spirv::IdRef result = mBuilder.getNewId(mBuilder.getDecorations(node->getType()));
+
+        ASSERT(mNodeData.back().idList.size() == 2);
+        const spirv::IdRef trueValue  = mNodeData.back().idList[0].id;
+        const spirv::IdRef falseValue = mNodeData.back().idList[1].id;
+
+        if (canUseOpSelect)
+        {
+            const spirv::IdRef conditionValue = mNodeData.back().baseId;
+
+            spirv::WriteSelect(mBuilder.getSpirvCurrentFunctionBlock(), typeId, result,
+                               conditionValue, trueValue, falseValue);
+        }
+        else
+        {
+            const SpirvConditional *conditional = mBuilder.getCurrentConditional();
+
+            const spirv::IdRef trueBlockId  = conditional->blockIds[0];
+            const spirv::IdRef falseBlockId = conditional->blockIds[1];
+
+            spirv::WritePhi(mBuilder.getSpirvCurrentFunctionBlock(), typeId, result,
+                            {spirv::PairIdRefIdRef{trueValue, trueBlockId},
+                             spirv::PairIdRefIdRef{falseValue, falseBlockId}});
+
+            mBuilder.endConditional();
+        }
+
+        // Replace the access chain with an rvalue that's the result.
+        nodeDataInitRValue(&mNodeData.back(), result, typeId);
+    }
 
     return true;
 }
@@ -2545,7 +3079,7 @@ bool OutputSPIRVTraverser::visitIfElse(Visit visit, TIntermIfElse *node)
         return true;
     }
 
-    size_t lastChildIndex = getLastTraversedChildIndex(visit);
+    const size_t lastChildIndex = getLastTraversedChildIndex(visit);
 
     // If the condition was just visited, evaluate it and create the branch instructions.
     if (lastChildIndex == 0)
@@ -2559,7 +3093,7 @@ bool OutputSPIRVTraverser::visitIfElse(Visit visit, TIntermIfElse *node)
         mBuilder.startConditional(node->getChildCount(), false, false);
 
         // Generate the branch instructions.
-        SpirvConditional *conditional = mBuilder.getCurrentConditional();
+        const SpirvConditional *conditional = mBuilder.getCurrentConditional();
 
         const spirv::IdRef mergeBlock = conditional->blockIds.back();
         spirv::IdRef trueBlock        = mergeBlock;
@@ -2663,6 +3197,9 @@ bool OutputSPIRVTraverser::visitFunctionDefinition(Visit visit, TIntermFunctionD
             // Remember the id of the variable for future look up.
             ASSERT(mSymbolIdMap.count(paramVariable) == 0);
             mSymbolIdMap[paramVariable] = paramId;
+
+            spirv::WriteName(mBuilder.getSpirvDebug(), paramId,
+                             mBuilder.hashName(paramVariable).data());
         }
 
         mBuilder.startNewFunction(ids.functionId, function);
@@ -2766,8 +3303,9 @@ void OutputSPIRVTraverser::visitFunctionPrototype(TIntermFunctionPrototype *node
 
 bool OutputSPIRVTraverser::visitAggregate(Visit visit, TIntermAggregate *node)
 {
-    // Constants are expected to be folded.
-    ASSERT(!node->hasConstantValue());
+    // Constants are expected to be folded.  However, large constructors (such as arrays) are not
+    // folded and are handled here.
+    ASSERT(node->getOp() == EOpConstruct || !node->hasConstantValue());
 
     if (visit == PreVisit)
     {
@@ -2785,42 +3323,50 @@ bool OutputSPIRVTraverser::visitAggregate(Visit visit, TIntermAggregate *node)
     // Expect to have accumulated as many parameters as the node requires.
     ASSERT(mNodeData.size() > node->getChildCount());
 
-    const spirv::IdRef typeId = mBuilder.getTypeData(node->getType(), EbsUnspecified).id;
+    const spirv::IdRef resultTypeId = mBuilder.getTypeData(node->getType(), EbsUnspecified).id;
     spirv::IdRef result;
 
     switch (node->getOp())
     {
         case EOpConstruct:
             // Construct a value out of the accumulated parameters.
-            result = createConstructor(node, typeId);
+            result = createConstructor(node, resultTypeId);
             break;
         case EOpCallFunctionInAST:
             // Create a call to the function.
-            result = createFunctionCall(node, typeId);
+            result = createFunctionCall(node, resultTypeId);
             break;
-        case EOpAtomicAdd:
-        case EOpAtomicMin:
-        case EOpAtomicMax:
-        case EOpAtomicAnd:
-        case EOpAtomicOr:
-        case EOpAtomicXor:
-        case EOpAtomicExchange:
-        case EOpAtomicCompSwap:
-            result = createAtomicBuiltIn(node, typeId);
-            break;
-        default:
-            // TODO: More built-in functions.  http://anglebug.com/4889
+
+        case EOpMemoryBarrier:
+        case EOpMemoryBarrierAtomicCounter:
+        case EOpMemoryBarrierBuffer:
+        case EOpMemoryBarrierImage:
+        case EOpBarrier:
+        case EOpMemoryBarrierShared:
+        case EOpGroupMemoryBarrier:
+        case EOpBarrierTCS:
+            // TODO: support barriers.  http://anglebug.com/4889
             UNIMPLEMENTED();
+            break;
+
+        case EOpEmitVertex:
+        case EOpEndPrimitive:
+        case EOpEmitStreamVertex:
+        case EOpEndStreamPrimitive:
+            // TODO: support geometry shaders.  http://anglebug.com/4889
+            UNIMPLEMENTED();
+            break;
+
+        default:
+            result = visitOperator(node, resultTypeId);
+            break;
     }
 
     // Pop the parameters.
     mNodeData.resize(mNodeData.size() - node->getChildCount());
 
-    // If the function has a return value, take the return value as the result.
-    if (node->getType().getBasicType() != EbtVoid)
-    {
-        nodeDataInitRValue(&mNodeData.back(), result, typeId);
-    }
+    // Keep the result as rvalue.
+    nodeDataInitRValue(&mNodeData.back(), result, resultTypeId);
 
     return false;
 }
@@ -2885,9 +3431,14 @@ bool OutputSPIRVTraverser::visitDeclaration(Visit visit, TIntermDeclaration *nod
         // expression.  Note that if the variable being declared is itself global (and the
         // initializer is not constant), a previous AST transformation (DeferGlobalInitializers)
         // makes sure their initialization is deferred to the beginning of main.
+        //
+        // Additionally, if the variable is being defined inside a loop, the initializer is not used
+        // as that would prevent it from being reintialized in the next iteration of the loop.
 
         TIntermTyped *initializer = assign->getRight();
-        initializeWithDeclaration = initializer->getAsConstantUnion() != nullptr;
+        initializeWithDeclaration =
+            !mBuilder.isInLoop() &&
+            (initializer->getAsConstantUnion() != nullptr || initializer->hasConstantValue());
 
         if (initializeWithDeclaration)
         {
@@ -2996,12 +3547,236 @@ bool OutputSPIRVTraverser::visitDeclaration(Visit visit, TIntermDeclaration *nod
     return false;
 }
 
+void GetLoopBlocks(const SpirvConditional *conditional,
+                   TLoopType loopType,
+                   bool hasCondition,
+                   spirv::IdRef *headerBlock,
+                   spirv::IdRef *condBlock,
+                   spirv::IdRef *bodyBlock,
+                   spirv::IdRef *continueBlock,
+                   spirv::IdRef *mergeBlock)
+{
+    // The order of the blocks is for |for| and |while|:
+    //
+    //     %header %cond [optional] %body %continue %merge
+    //
+    // and for |do-while|:
+    //
+    //     %header %body %cond %merge
+    //
+    // Note that the |break| target is always the last block and the |continue| target is the one
+    // before last.
+    //
+    // If %continue is not present, all jumps are made to %cond (which is necessarily present).
+    // If %cond is not present, all jumps are made to %body instead.
+
+    size_t nextBlock = 0;
+    *headerBlock     = conditional->blockIds[nextBlock++];
+    // %cond, if any is after header except for |do-while|.
+    if (loopType != ELoopDoWhile && hasCondition)
+    {
+        *condBlock = conditional->blockIds[nextBlock++];
+    }
+    *bodyBlock = conditional->blockIds[nextBlock++];
+    // After the block is either %cond or %continue based on |do-while| or not.
+    if (loopType != ELoopDoWhile)
+    {
+        *continueBlock = conditional->blockIds[nextBlock++];
+    }
+    else
+    {
+        *condBlock = conditional->blockIds[nextBlock++];
+    }
+    *mergeBlock = conditional->blockIds[nextBlock++];
+
+    ASSERT(nextBlock == conditional->blockIds.size());
+
+    if (!continueBlock->valid())
+    {
+        ASSERT(condBlock->valid());
+        *continueBlock = *condBlock;
+    }
+    if (!condBlock->valid())
+    {
+        *condBlock = *bodyBlock;
+    }
+}
+
 bool OutputSPIRVTraverser::visitLoop(Visit visit, TIntermLoop *node)
 {
-    // TODO: http://anglebug.com/4889
-    UNIMPLEMENTED();
+    // There are three kinds of loops, and they translate as such:
+    //
+    // for (init; cond; expr) body;
+    //
+    //               // pre-loop block
+    //               init
+    //               OpBranch %header
+    //
+    //     %header = OpLabel
+    //               OpLoopMerge %merge %continue None
+    //               OpBranch %cond
+    //
+    //               // Note: if cond doesn't exist, this section is not generated.  The above
+    //               // OpBranch would jump directly to %body.
+    //       %cond = OpLabel
+    //          %v = cond
+    //               OpBranchConditional %v %body %merge None
+    //
+    //       %body = OpLabel
+    //               body
+    //               OpBranch %continue
+    //
+    //   %continue = OpLabel
+    //               expr
+    //               OpBranch %header
+    //
+    //               // post-loop block
+    //       %merge = OpLabel
+    //
+    //
+    // while (cond) body;
+    //
+    //               // pre-for block
+    //               OpBranch %header
+    //
+    //     %header = OpLabel
+    //               OpLoopMerge %merge %continue None
+    //               OpBranch %cond
+    //
+    //       %cond = OpLabel
+    //          %v = cond
+    //               OpBranchConditional %v %body %merge None
+    //
+    //       %body = OpLabel
+    //               body
+    //               OpBranch %continue
+    //
+    //   %continue = OpLabel
+    //               OpBranch %header
+    //
+    //               // post-loop block
+    //       %merge = OpLabel
+    //
+    //
+    // do body; while (cond);
+    //
+    //               // pre-for block
+    //               OpBranch %header
+    //
+    //     %header = OpLabel
+    //               OpLoopMerge %merge %cond None
+    //               OpBranch %body
+    //
+    //       %body = OpLabel
+    //               body
+    //               OpBranch %cond
+    //
+    //       %cond = OpLabel
+    //          %v = cond
+    //               OpBranchConditional %v %header %merge None
+    //
+    //               // post-loop block
+    //       %merge = OpLabel
+    //
 
-    return true;
+    // The order of the blocks is not necessarily the same as traversed, so it's much simpler if
+    // this function enforces traversal in the right order.
+    ASSERT(visit == PreVisit);
+    mNodeData.emplace_back();
+
+    const TLoopType loopType = node->getType();
+
+    // The init statement of a for loop is placed in the previous block, so continue generating code
+    // as-is until that statement is done.
+    if (node->getInit())
+    {
+        ASSERT(loopType == ELoopFor);
+        node->getInit()->traverse(this);
+        mNodeData.pop_back();
+    }
+
+    const bool hasCondition = node->getCondition() != nullptr;
+
+    // Once the init node is visited, if any, we need to set up the loop.
+    //
+    // For |for| and |while|, we need %header, %body, %continue and %merge.  For |do-while|, we
+    // need %header, %body and %merge.  If condition is present, an additional %cond block is
+    // needed in each case.
+    const size_t blockCount = (loopType == ELoopDoWhile ? 3 : 4) + (hasCondition ? 1 : 0);
+    mBuilder.startConditional(blockCount, true, true);
+
+    // Generate the %header block.
+    const SpirvConditional *conditional = mBuilder.getCurrentConditional();
+
+    spirv::IdRef headerBlock, condBlock, bodyBlock, continueBlock, mergeBlock;
+    GetLoopBlocks(conditional, loopType, hasCondition, &headerBlock, &condBlock, &bodyBlock,
+                  &continueBlock, &mergeBlock);
+
+    mBuilder.writeLoopHeader(loopType == ELoopDoWhile ? bodyBlock : condBlock, continueBlock,
+                             mergeBlock);
+
+    // %cond, if any is after header except for |do-while|.
+    if (loopType != ELoopDoWhile && hasCondition)
+    {
+        node->getCondition()->traverse(this);
+
+        // Generate the branch at the end of the %cond block.
+        const spirv::IdRef conditionValue = accessChainLoad(
+            &mNodeData.back(), mBuilder.getDecorations(node->getCondition()->getType()));
+        mBuilder.writeLoopConditionEnd(conditionValue, bodyBlock, mergeBlock);
+
+        mNodeData.pop_back();
+    }
+
+    // Next comes %body.
+    {
+        node->getBody()->traverse(this);
+
+        // Generate the branch at the end of the %body block.
+        mBuilder.writeLoopBodyEnd(continueBlock);
+    }
+
+    switch (loopType)
+    {
+        case ELoopFor:
+            // For |for| loops, the expression is placed after the body and acts as the continue
+            // block.
+            if (node->getExpression())
+            {
+                node->getExpression()->traverse(this);
+                mNodeData.pop_back();
+            }
+
+            // Generate the branch at the end of the %continue block.
+            mBuilder.writeLoopContinueEnd(headerBlock);
+            break;
+
+        case ELoopWhile:
+            // |for| loops have the expression in the continue block and |do-while| loops have their
+            // condition block act as the loop's continue block.  |while| loops need a branch-only
+            // continue loop, which is generated here.
+            mBuilder.writeLoopContinueEnd(headerBlock);
+            break;
+
+        case ELoopDoWhile:
+            // For |do-while|, %cond comes last.
+            ASSERT(hasCondition);
+            node->getCondition()->traverse(this);
+
+            // Generate the branch at the end of the %cond block.
+            const spirv::IdRef conditionValue = accessChainLoad(
+                &mNodeData.back(), mBuilder.getDecorations(node->getCondition()->getType()));
+            mBuilder.writeLoopConditionEnd(conditionValue, headerBlock, mergeBlock);
+
+            mNodeData.pop_back();
+            break;
+    }
+
+    // Pop from the conditional stack when done.
+    mBuilder.endConditional();
+
+    // Don't traverse the children, that's done already.
+    return false;
 }
 
 bool OutputSPIRVTraverser::visitBranch(Visit visit, TIntermBranch *node)
