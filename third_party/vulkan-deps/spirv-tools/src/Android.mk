@@ -153,6 +153,7 @@ SPVTOOLS_OPT_SRC_FILES := \
 		source/opt/register_pressure.cpp \
 		source/opt/relax_float_ops_pass.cpp \
 		source/opt/remove_duplicates_pass.cpp \
+		source/opt/remove_unused_interface_variables_pass.cpp \
 		source/opt/replace_invalid_opc.cpp \
 		source/opt/scalar_analysis.cpp \
 		source/opt/scalar_analysis_simplification.cpp \
@@ -318,9 +319,6 @@ LOCAL_EXPORT_C_INCLUDES := \
 		$(LOCAL_PATH)/include
 LOCAL_CXXFLAGS:=-std=c++11 -fno-exceptions -fno-rtti -Werror
 LOCAL_SRC_FILES:= $(SPVTOOLS_SRC_FILES)
-LOCAL_LICENSE_KINDS := SPDX-license-identifier-Apache-2.0 SPDX-license-identifier-BSD SPDX-license-identifier-MIT
-LOCAL_LICENSE_CONDITIONS := notice
-LOCAL_NOTICE_FILE := $(LOCAL_PATH)/LICENSE
 include $(BUILD_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)
@@ -333,7 +331,4 @@ LOCAL_C_INCLUDES := \
 LOCAL_CXXFLAGS:=-std=c++11 -fno-exceptions -fno-rtti -Werror
 LOCAL_STATIC_LIBRARIES:=SPIRV-Tools
 LOCAL_SRC_FILES:= $(SPVTOOLS_OPT_SRC_FILES)
-LOCAL_LICENSE_KINDS := SPDX-license-identifier-Apache-2.0 SPDX-license-identifier-BSD SPDX-license-identifier-MIT
-LOCAL_LICENSE_CONDITIONS := notice
-LOCAL_NOTICE_FILE := $(LOCAL_PATH)/LICENSE
 include $(BUILD_STATIC_LIBRARY)

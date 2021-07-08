@@ -2157,7 +2157,7 @@
         { "kind" : "IdRef",        "name" : "'Offset'" },
         { "kind" : "IdRef",        "name" : "'Count'" }
       ],
-      "capabilities" : [ "Shader" ]
+      "capabilities" : [ "Shader", "BitInstructions" ]
     },
     {
       "opname" : "OpBitFieldSExtract",
@@ -2170,7 +2170,7 @@
         { "kind" : "IdRef",        "name" : "'Offset'" },
         { "kind" : "IdRef",        "name" : "'Count'" }
       ],
-      "capabilities" : [ "Shader" ]
+      "capabilities" : [ "Shader", "BitInstructions" ]
     },
     {
       "opname" : "OpBitFieldUExtract",
@@ -2183,7 +2183,7 @@
         { "kind" : "IdRef",        "name" : "'Offset'" },
         { "kind" : "IdRef",        "name" : "'Count'" }
       ],
-      "capabilities" : [ "Shader" ]
+      "capabilities" : [ "Shader", "BitInstructions" ]
     },
     {
       "opname" : "OpBitReverse",
@@ -2194,7 +2194,7 @@
         { "kind" : "IdResult" },
         { "kind" : "IdRef",        "name" : "'Base'" }
       ],
-      "capabilities" : [ "Shader" ]
+      "capabilities" : [ "Shader", "BitInstructions" ]
     },
     {
       "opname" : "OpBitCount",
@@ -13402,6 +13402,12 @@
           "version" : "None"
         },
         {
+          "enumerant" : "BitInstructions",
+          "value" : 6025,
+          "extensions" : [ "SPV_KHR_bit_instructions" ],
+          "version" : "None"
+        },
+        {
           "enumerant" : "AtomicFloat32AddEXT",
           "value" : 6033,
           "capabilities" : [ "Shader" ],
@@ -13426,6 +13432,12 @@
           "value" : 6095,
           "capabilities" : [ "Shader" ],
           "extensions" : [ "SPV_EXT_shader_atomic_float16_add" ],
+          "version" : "None"
+        },
+        {
+          "enumerant" : "DebugInfoModuleINTEL",
+          "value" : 6114,
+          "extensions" : [ "SPV_INTEL_debug_module" ],
           "version" : "None"
         }
       ]
