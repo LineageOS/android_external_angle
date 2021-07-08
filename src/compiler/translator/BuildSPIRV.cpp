@@ -157,6 +157,14 @@ const SpirvTypeData &SPIRVBuilder::getSpirvTypeData(const SpirvType &type, const
     return iter->second;
 }
 
+spirv::IdRef SPIRVBuilder::getBasicTypeId(TBasicType basicType, size_t size)
+{
+    SpirvType type;
+    type.type        = basicType;
+    type.primarySize = static_cast<uint8_t>(size);
+    return getSpirvTypeData(type, nullptr).id;
+}
+
 spirv::IdRef SPIRVBuilder::getTypePointerId(spirv::IdRef typeId, spv::StorageClass storageClass)
 {
     SpirvIdAndStorageClass key{typeId, storageClass};
@@ -430,9 +438,15 @@ SpirvTypeData SPIRVBuilder::declareType(const SpirvType &type, const TSymbol *bl
     // Write decorations for interface block fields.
     if (type.blockStorage != EbsUnspecified)
     {
-        if (!isOpaqueType && !type.arraySizes.empty() && type.block == nullptr)
+        // Cannot have opaque uniforms inside interface blocks.
+        ASSERT(!isOpaqueType);
+
+        const bool isInterfaceBlock = block != nullptr && block->isInterfaceBlock();
+
+        if (!type.arraySizes.empty() && !isInterfaceBlock)
         {
-            // Write the ArrayStride decoration for arrays inside interface blocks.
+            // Write the ArrayStride decoration for arrays inside interface blocks.  An array of
+            // interface blocks doesn't need a stride.
             spirv::WriteDecorate(
                 &mSpirvDecorations, typeId, spv::DecorationArrayStride,
                 {spirv::LiteralInteger(sizeInStorageBlock / GetOutermostArraySize(type))});
