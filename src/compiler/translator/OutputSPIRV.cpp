@@ -205,7 +205,8 @@ class OutputSPIRVTraverser : public TIntermTraverser
     void declareSpecConst(TIntermDeclaration *decl);
     spirv::IdRef createConstant(const TType &type,
                                 TBasicType expectedBasicType,
-                                const TConstantUnion *constUnion);
+                                const TConstantUnion *constUnion,
+                                bool isConstantNullValue);
     spirv::IdRef createComplexConstant(const TType &type,
                                        spirv::IdRef typeId,
                                        const spirv::IdRefList &parameters);
@@ -895,10 +896,24 @@ void OutputSPIRVTraverser::declareSpecConst(TIntermDeclaration *decl)
 
 spirv::IdRef OutputSPIRVTraverser::createConstant(const TType &type,
                                                   TBasicType expectedBasicType,
-                                                  const TConstantUnion *constUnion)
+                                                  const TConstantUnion *constUnion,
+                                                  bool isConstantNullValue)
 {
     const spirv::IdRef typeId = mBuilder.getTypeData(type, EbsUnspecified).id;
     spirv::IdRefList componentIds;
+
+    // If the object is all zeros, use OpConstantNull to avoid creating a bunch of constants.  This
+    // is not done for basic scalar types as some instructions require an OpConstant and validation
+    // doesn't accept OpConstantNull (likely a spec bug).
+    const size_t size            = type.getObjectSize();
+    const TBasicType basicType   = type.getBasicType();
+    const bool isBasicScalar     = size == 1 && (basicType == EbtFloat || basicType == EbtInt ||
+                                             basicType == EbtUInt || basicType == EbtBool);
+    const bool useOpConstantNull = isConstantNullValue && !isBasicScalar;
+    if (useOpConstantNull)
+    {
+        return mBuilder.getNullConstant(typeId);
+    }
 
     if (type.getBasicType() == EbtStruct)
     {
@@ -907,7 +922,7 @@ spirv::IdRef OutputSPIRVTraverser::createConstant(const TType &type,
         {
             const TType *fieldType = field->type();
             componentIds.push_back(
-                createConstant(*fieldType, fieldType->getBasicType(), constUnion));
+                createConstant(*fieldType, fieldType->getBasicType(), constUnion, false));
 
             constUnion += fieldType->getObjectSize();
         }
@@ -915,7 +930,6 @@ spirv::IdRef OutputSPIRVTraverser::createConstant(const TType &type,
     else
     {
         // Otherwise get the constant id for each component.
-        const size_t size = type.getObjectSize();
         ASSERT(expectedBasicType == EbtFloat || expectedBasicType == EbtInt ||
                expectedBasicType == EbtUInt || expectedBasicType == EbtBool);
 
@@ -992,6 +1006,14 @@ spirv::IdRef OutputSPIRVTraverser::createConstructor(TIntermAggregate *node, spi
     const TType &type                = node->getType();
     const TIntermSequence &arguments = *node->getSequence();
     const TType &arg0Type            = arguments[0]->getAsTyped()->getType();
+
+    // In some cases, constructors with constant value are not folded.  If the constructor is a null
+    // value, use OpConstantNull to avoid creating a bunch of instructions.  Otherwise, the constant
+    // is created below.
+    if (node->isConstantNullValue())
+    {
+        return mBuilder.getNullConstant(typeId);
+    }
 
     // Take each constructor argument that is visited and evaluate it as rvalue
     spirv::IdRefList parameters = loadAllParams(node);
@@ -2638,6 +2660,10 @@ spirv::IdRef OutputSPIRVTraverser::createCompare(TIntermOperator *node, spirv::I
 spirv::IdRef OutputSPIRVTraverser::createAtomicBuiltIn(TIntermOperator *node,
                                                        spirv::IdRef resultTypeId)
 {
+    const TType &operandType          = node->getChildNode(0)->getAsTyped()->getType();
+    const TBasicType operandBasicType = operandType.getBasicType();
+    const bool isImage                = IsImage(operandBasicType);
+
     // Most atomic instructions are in the form of:
     //
     //     %result = OpAtomicX %pointer Scope MemorySemantics %value
@@ -2650,19 +2676,46 @@ spirv::IdRef OutputSPIRVTraverser::createAtomicBuiltIn(TIntermOperator *node,
     //                                       %value %comparator
     //
     // In all cases, the first parameter is the pointer, and the rest are rvalues.
-    const size_t parameterCount = node->getChildCount();
+    //
+    // For images, OpImageTexelPointer is used to form a pointer to the texel on which the atomic
+    // operation is being performed.
+    const size_t parameterCount       = node->getChildCount();
+    size_t imagePointerParameterCount = 0;
     spirv::IdRef pointerId;
+    spirv::IdRefList imagePointerParameters;
     spirv::IdRefList parameters;
 
-    ASSERT(parameterCount >= 2);
+    if (isImage)
+    {
+        // One parameter for coordinates.
+        ++imagePointerParameterCount;
+        if (IsImageMS(operandBasicType))
+        {
+            // One parameter for samples.
+            ++imagePointerParameterCount;
+        }
+    }
+
+    ASSERT(parameterCount >= 2 + imagePointerParameterCount);
 
     pointerId = accessChainCollapse(&mNodeData[mNodeData.size() - parameterCount]);
     for (size_t paramIndex = 1; paramIndex < parameterCount; ++paramIndex)
     {
-        NodeData &param = mNodeData[mNodeData.size() - parameterCount + paramIndex];
-        parameters.push_back(accessChainLoad(
+        NodeData &param              = mNodeData[mNodeData.size() - parameterCount + paramIndex];
+        const spirv::IdRef parameter = accessChainLoad(
             &param,
-            mBuilder.getDecorations(node->getChildNode(paramIndex)->getAsTyped()->getType())));
+            mBuilder.getDecorations(node->getChildNode(paramIndex)->getAsTyped()->getType()));
+
+        // imageAtomic* built-ins have a few additional parameters right after the image.  These are
+        // kept separately for use with OpImageTexelPointer.
+        if (paramIndex <= imagePointerParameterCount)
+        {
+            imagePointerParameters.push_back(parameter);
+        }
+        else
+        {
+            parameters.push_back(parameter);
+        }
     }
 
     // The scope of the operation is always Device as we don't enable the Vulkan memory model
@@ -2677,10 +2730,25 @@ spirv::IdRef OutputSPIRVTraverser::createAtomicBuiltIn(TIntermOperator *node,
 
     const spirv::IdRef result = mBuilder.getNewId(mBuilder.getDecorations(node->getType()));
 
-    // TODO: determine isUnsigned correctly for image types.  Should rearrange TBasicType enums to
-    // group images based on basic type and do range check.  http://anglebug.com/4889.
-    const bool isUnsigned =
-        node->getChildNode(0)->getAsTyped()->getType().getBasicType() == EbtUInt;
+    // Determine whether the operation is on ints or uints.
+    const bool isUnsigned = isImage ? IsUIntImage(operandBasicType) : operandBasicType == EbtUInt;
+
+    // For images, convert the pointer to the image to a pointer to a texel in the image.
+    if (isImage)
+    {
+        const spirv::IdRef texelTypePointerId =
+            mBuilder.getTypePointerId(resultTypeId, spv::StorageClassImage);
+        const spirv::IdRef texelPointerId = mBuilder.getNewId({});
+
+        const spirv::IdRef coordinate = imagePointerParameters[0];
+        spirv::IdRef sample = imagePointerParameters.size() > 1 ? imagePointerParameters[1]
+                                                                : mBuilder.getUintConstant(0);
+
+        spirv::WriteImageTexelPointer(mBuilder.getSpirvCurrentFunctionBlock(), texelTypePointerId,
+                                      texelPointerId, pointerId, coordinate, sample);
+
+        pointerId = texelPointerId;
+    }
 
     switch (node->getOp())
     {
@@ -3883,7 +3951,7 @@ void OutputSPIRVTraverser::visitConstantUnion(TIntermConstantUnion *node)
         //
         // - It's a struct constructor: The basic type must match that of the corresponding field of
         //   the struct.
-        // - It's a non struct constructor: The basic type must match that of the the type being
+        // - It's a non struct constructor: The basic type must match that of the type being
         //   constructed.
         // - It's a function call: The basic type must match that of the corresponding argument.
         if (parentAggregate->isConstructor())
@@ -3907,7 +3975,8 @@ void OutputSPIRVTraverser::visitConstantUnion(TIntermConstantUnion *node)
     // TODO: other node types such as binary, ternary etc.  http://anglebug.com/4889
 
     const spirv::IdRef typeId  = mBuilder.getTypeData(type, EbsUnspecified).id;
-    const spirv::IdRef constId = createConstant(type, expectedBasicType, node->getConstantValue());
+    const spirv::IdRef constId = createConstant(type, expectedBasicType, node->getConstantValue(),
+                                                node->isConstantNullValue());
 
     nodeDataInitRValue(&mNodeData.back(), constId, typeId);
 }
@@ -4198,6 +4267,7 @@ bool OutputSPIRVTraverser::visitTernary(Visit visit, TIntermTernary *node)
         const spirv::IdRef mergeBlockId = conditional->blockIds.back();
 
         mBuilder.writeBranchConditional(conditionValue, trueBlockId, falseBlockId, mergeBlockId);
+        nodeDataInitRValue(&mNodeData.back(), conditionValue, typeId);
         return true;
     }
 
@@ -4588,10 +4658,40 @@ bool OutputSPIRVTraverser::visitFunctionDefinition(Visit visit, TIntermFunctionD
     // If no explicit return was specified, add one automatically here.
     if (!mBuilder.isCurrentFunctionBlockTerminated())
     {
-        // Only meaningful if the function returns void.  Otherwise it must have had a return
-        // value.
-        ASSERT(node->getFunction()->getReturnType().getBasicType() == EbtVoid);
-        spirv::WriteReturn(mBuilder.getSpirvCurrentFunctionBlock());
+        if (node->getFunction()->getReturnType().getBasicType() == EbtVoid)
+        {
+            spirv::WriteReturn(mBuilder.getSpirvCurrentFunctionBlock());
+        }
+        else
+        {
+            // GLSL allows functions expecting a return value to miss a return.  In that case,
+            // return a null constant.
+            const TFunction *function = node->getFunction();
+            const TType &returnType   = function->getReturnType();
+            spirv::IdRef nullConstant;
+            if (returnType.isScalar() && !returnType.isArray())
+            {
+                switch (function->getReturnType().getBasicType())
+                {
+                    case EbtFloat:
+                        nullConstant = mBuilder.getFloatConstant(0);
+                        break;
+                    case EbtUInt:
+                        nullConstant = mBuilder.getUintConstant(0);
+                        break;
+                    case EbtInt:
+                        nullConstant = mBuilder.getIntConstant(0);
+                        break;
+                    default:
+                        break;
+                }
+            }
+            if (!nullConstant.valid())
+            {
+                nullConstant = mBuilder.getNullConstant(mFunctionIdMap[function].returnTypeId);
+            }
+            spirv::WriteReturnValue(mBuilder.getSpirvCurrentFunctionBlock(), nullConstant);
+        }
         mBuilder.terminateCurrentFunctionBlock();
     }
 

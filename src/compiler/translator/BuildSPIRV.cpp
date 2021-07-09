@@ -840,21 +840,21 @@ spirv::IdRef SPIRVBuilder::getBasicConstantHelper(uint32_t value,
                                                   angle::HashMap<uint32_t, spirv::IdRef> *constants)
 {
     auto iter = constants->find(value);
-    if (iter == constants->end())
+    if (iter != constants->end())
     {
-        SpirvType spirvType;
-        spirvType.type = type;
-
-        const spirv::IdRef typeId     = getSpirvTypeData(spirvType, nullptr).id;
-        const spirv::IdRef constantId = getNewId({});
-
-        spirv::WriteConstant(&mSpirvTypeAndConstantDecls, typeId, constantId,
-                             spirv::LiteralContextDependentNumber(value));
-
-        iter = constants->insert({value, constantId}).first;
+        return iter->second;
     }
 
-    return iter->second;
+    SpirvType spirvType;
+    spirvType.type = type;
+
+    const spirv::IdRef typeId     = getSpirvTypeData(spirvType, nullptr).id;
+    const spirv::IdRef constantId = getNewId({});
+
+    spirv::WriteConstant(&mSpirvTypeAndConstantDecls, typeId, constantId,
+                         spirv::LiteralContextDependentNumber(value));
+
+    return constants->insert({value, constantId}).first->second;
 }
 
 spirv::IdRef SPIRVBuilder::getUintConstant(uint32_t value)
@@ -879,6 +879,33 @@ spirv::IdRef SPIRVBuilder::getFloatConstant(float value)
     return getBasicConstantHelper(asUint.u, EbtFloat, &mFloatConstants);
 }
 
+spirv::IdRef SPIRVBuilder::getNullConstant(spirv::IdRef typeId)
+{
+    if (typeId >= mNullConstants.size())
+    {
+        mNullConstants.resize(typeId + 1);
+    }
+
+    if (!mNullConstants[typeId].valid())
+    {
+        const spirv::IdRef constantId = getNewId({});
+        mNullConstants[typeId]        = constantId;
+
+        spirv::WriteConstantNull(&mSpirvTypeAndConstantDecls, typeId, constantId);
+    }
+
+    return mNullConstants[typeId];
+}
+
+spirv::IdRef SPIRVBuilder::getNullVectorConstantHelper(TBasicType type, int size)
+{
+    SpirvType vecType;
+    vecType.type        = type;
+    vecType.primarySize = static_cast<uint8_t>(size);
+
+    return getNullConstant(getSpirvTypeData(vecType, nullptr).id);
+}
+
 spirv::IdRef SPIRVBuilder::getVectorConstantHelper(spirv::IdRef valueId, TBasicType type, int size)
 {
     if (size == 1)
@@ -898,18 +925,33 @@ spirv::IdRef SPIRVBuilder::getVectorConstantHelper(spirv::IdRef valueId, TBasicT
 
 spirv::IdRef SPIRVBuilder::getUvecConstant(uint32_t value, int size)
 {
+    if (value == 0)
+    {
+        return getNullVectorConstantHelper(EbtUInt, size);
+    }
+
     const spirv::IdRef valueId = getUintConstant(value);
     return getVectorConstantHelper(valueId, EbtUInt, size);
 }
 
 spirv::IdRef SPIRVBuilder::getIvecConstant(int32_t value, int size)
 {
+    if (value == 0)
+    {
+        return getNullVectorConstantHelper(EbtInt, size);
+    }
+
     const spirv::IdRef valueId = getIntConstant(value);
     return getVectorConstantHelper(valueId, EbtInt, size);
 }
 
 spirv::IdRef SPIRVBuilder::getVecConstant(float value, int size)
 {
+    if (value == 0)
+    {
+        return getNullVectorConstantHelper(EbtFloat, size);
+    }
+
     const spirv::IdRef valueId = getFloatConstant(value);
     return getVectorConstantHelper(valueId, EbtFloat, size);
 }
@@ -1527,17 +1569,19 @@ uint32_t SPIRVBuilder::calculateBaseAlignmentAndSize(const SpirvType &type,
 
         const SpirvTypeData &vectorTypeData = getSpirvTypeData(vectorType, nullptr);
         uint32_t baseAlignment              = vectorTypeData.baseAlignment;
+        uint32_t baseSizeInStorageBlock     = vectorTypeData.sizeInStorageBlock;
 
         // For std140 only:
         // > Rule 4. ... and rounded up to the base alignment of a vec4.
         if (type.blockStorage != EbsStd430)
         {
-            baseAlignment = std::max(baseAlignment, 16u);
+            baseAlignment          = std::max(baseAlignment, 16u);
+            baseSizeInStorageBlock = std::max(baseSizeInStorageBlock, 16u);
         }
 
         // The size occupied by the matrix is the size of each vector multiplied by the number of
         // vectors.
-        *sizeInStorageBlockOut = vectorTypeData.sizeInStorageBlock * vectorType.primarySize;
+        *sizeInStorageBlockOut = baseSizeInStorageBlock * vectorType.primarySize;
 
         return baseAlignment;
     }
