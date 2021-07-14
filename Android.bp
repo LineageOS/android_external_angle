@@ -2260,6 +2260,7 @@ cc_library_static {
         "src/compiler/translator/ValidateMaxParameters.cpp",
         "src/compiler/translator/ValidateOutputs.cpp",
         "src/compiler/translator/ValidateSwitch.cpp",
+        "src/compiler/translator/ValidateTypeSizeLimitations.cpp",
         "src/compiler/translator/ValidateVaryingLocations.cpp",
         "src/compiler/translator/VariablePacker.cpp",
         "src/compiler/translator/blocklayout.cpp",
