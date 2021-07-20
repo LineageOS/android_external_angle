@@ -9,7 +9,16 @@
 
 # Failed tests
 D3DImageFormatConversionTest.*
+DrawBuffersTest.UnwrittenOutputVariablesShouldNotCrash/*
 FramebufferTest.MultiContextNoRenderingFeedbackLoops/*
+ImageTest.Deletion/*
+ImageTest.MipLevels/*
+ImageTest.Source2DTarget2D/*
+ImageTest.Source2DTargetExternal/*
+ImageTest.SourceCubeTarget2D/*
+ImageTest.SourceRenderbufferTargetTexture/*
+ImageTest.SourceRenderbufferTargetTextureExternal/*
+ImageTest.UpdatedData/*
 PbufferTest.BindTexImage/*
 PbufferTest.Clearing/*
 PbufferTest.TextureSizeReset/*
@@ -32,13 +41,10 @@ WebGLCompatibilityTest.DrawElementsBufferOutOfBoundsInVertexBuffer/ES2_Vulkan_Sw
 BlitFramebufferANGLETest.Reverse*/*
 BlitFramebufferANGLETest.Scissored*/*
 ClipDistanceTest.*
-CopyCompressedTextureTest.InternalFormat/*
 DebugMarkerTest.*
 DebugTest.*
-EGLPrintEGLinfoTest.PrintGLESCapabilities/*
 EGLStreamTest.*
 ExternalWrapTest.*
-FenceNVTest.*
 GetImageTestNoExtensions.EntryPointsInactive/*
 GLSLTest.ArrayOfStructContainingArrayOfSamplers/*
 GLSLTest.InactiveSamplersInStruct/*
@@ -47,8 +53,17 @@ GLSLTest.ZeroShaderLength/*
 GPUTestConfigTest.GPUTestConfigConditions_D3D11/*
 ImageTest.SourceCubeTargetExternal/*
 PBOExtensionTest.*
+RobustBufferAccessBehaviorTest.*
+Texture2DTest.DefineMultipleLevelsWithoutMipmapping/*
 VertexAttributeTest.*
-VulkanExternalImageTest.*
+
+# Crashes because closing the FD fails and this raises an assertion
+VulkanExternalImageTest.ShouldImportSemaphoreOpaqueFd/ES2_Vulkan_SwiftShader
+
+# Replay times out
+VulkanExternalImageTest.WaitSemaphoresRetainsContentOpaqueFd/ES2_Vulkan_SwiftShader
+VulkanExternalImageTest.ShouldClearOpaqueFdWithSema*/ES2_Vulkan_SwiftShader
+VulkanExternalImageTest.ShouldDrawOpaqueFdWithSemaphores/ES2_Vulkan_SwiftShader
 
 WebGLCompatibilityTest.MultiContextNoRenderingFeedbackLoops/*
 WebGLFramebufferTest.*

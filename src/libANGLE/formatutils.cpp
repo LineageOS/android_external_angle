@@ -597,6 +597,152 @@ void InsertFormatInfo(InternalFormatInfoMap *map, const InternalFormat &formatIn
     (*map)[formatInfo.internalFormat][formatInfo.type] = formatInfo;
 }
 
+// YuvFormatInfo implementation
+YuvFormatInfo::YuvFormatInfo(GLenum internalFormat, const Extents &yPlaneExtent)
+{
+    ASSERT(gl::IsYuvFormat(internalFormat));
+    ASSERT((gl::GetPlaneCount(internalFormat) > 0) && (gl::GetPlaneCount(internalFormat) <= 3));
+
+    glInternalFormat = internalFormat;
+    planeCount       = gl::GetPlaneCount(internalFormat);
+
+    // Chroma planes of a YUV format can be subsampled
+    int horizontalSubsampleFactor = 0;
+    int verticalSubsampleFactor   = 0;
+    gl::GetSubSampleFactor(internalFormat, &horizontalSubsampleFactor, &verticalSubsampleFactor);
+
+    // Compute plane Bpp
+    planeBpp[0] = gl::GetYPlaneBpp(internalFormat);
+    planeBpp[1] = gl::GetChromaPlaneBpp(internalFormat);
+    planeBpp[2] = (planeCount > 2) ? planeBpp[1] : 0;
+
+    // Compute plane extent
+    planeExtent[0] = yPlaneExtent;
+    planeExtent[1] = {(yPlaneExtent.width / horizontalSubsampleFactor),
+                      (yPlaneExtent.height / verticalSubsampleFactor), yPlaneExtent.depth};
+    planeExtent[2] = (planeCount > 2) ? planeExtent[1] : Extents();
+
+    // Compute plane pitch
+    planePitch[0] = planeExtent[0].width * planeBpp[0];
+    planePitch[1] = planeExtent[1].width * planeBpp[1];
+    planePitch[2] = planeExtent[2].width * planeBpp[2];
+
+    // Compute plane size
+    planeSize[0] = planePitch[0] * planeExtent[0].height;
+    planeSize[1] = planePitch[1] * planeExtent[1].height;
+    planeSize[2] = planePitch[2] * planeExtent[2].height;
+
+    // Compute plane offset
+    planeOffset[0] = 0;
+    planeOffset[1] = planeSize[0];
+    planeOffset[2] = planeSize[0] + planeSize[1];
+}
+
+// YUV format related helpers
+bool IsYuvFormat(GLenum format)
+{
+    switch (format)
+    {
+        case GL_G8_B8R8_2PLANE_420_UNORM_ANGLE:
+        case GL_G8_B8_R8_3PLANE_420_UNORM_ANGLE:
+        case GL_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16_ANGLE:
+        case GL_G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16_ANGLE:
+        case GL_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16_ANGLE:
+        case GL_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16_ANGLE:
+        case GL_G16_B16R16_2PLANE_420_UNORM_ANGLE:
+        case GL_G16_B16_R16_3PLANE_420_UNORM_ANGLE:
+            return true;
+        default:
+            return false;
+    }
+}
+
+uint32_t GetPlaneCount(GLenum format)
+{
+    switch (format)
+    {
+        case GL_G8_B8R8_2PLANE_420_UNORM_ANGLE:
+        case GL_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16_ANGLE:
+        case GL_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16_ANGLE:
+        case GL_G16_B16R16_2PLANE_420_UNORM_ANGLE:
+            return 2;
+        case GL_G8_B8_R8_3PLANE_420_UNORM_ANGLE:
+        case GL_G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16_ANGLE:
+        case GL_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16_ANGLE:
+        case GL_G16_B16_R16_3PLANE_420_UNORM_ANGLE:
+            return 3;
+        default:
+            UNREACHABLE();
+            return 0;
+    }
+}
+
+uint32_t GetYPlaneBpp(GLenum format)
+{
+    switch (format)
+    {
+        case GL_G8_B8R8_2PLANE_420_UNORM_ANGLE:
+        case GL_G8_B8_R8_3PLANE_420_UNORM_ANGLE:
+            return 1;
+        case GL_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16_ANGLE:
+        case GL_G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16_ANGLE:
+        case GL_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16_ANGLE:
+        case GL_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16_ANGLE:
+        case GL_G16_B16R16_2PLANE_420_UNORM_ANGLE:
+        case GL_G16_B16_R16_3PLANE_420_UNORM_ANGLE:
+            return 2;
+        default:
+            UNREACHABLE();
+            return 0;
+    }
+}
+
+uint32_t GetChromaPlaneBpp(GLenum format)
+{
+    // 2 plane 420 YUV formats have CbCr channels interleaved.
+    // 3 plane 420 YUV formats have separate Cb and Cr planes.
+    switch (format)
+    {
+        case GL_G8_B8_R8_3PLANE_420_UNORM_ANGLE:
+            return 1;
+        case GL_G8_B8R8_2PLANE_420_UNORM_ANGLE:
+        case GL_G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16_ANGLE:
+        case GL_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16_ANGLE:
+        case GL_G16_B16_R16_3PLANE_420_UNORM_ANGLE:
+            return 2;
+        case GL_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16_ANGLE:
+        case GL_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16_ANGLE:
+        case GL_G16_B16R16_2PLANE_420_UNORM_ANGLE:
+            return 4;
+        default:
+            UNREACHABLE();
+            return 0;
+    }
+}
+
+void GetSubSampleFactor(GLenum format, int *horizontalSubsampleFactor, int *verticalSubsampleFactor)
+{
+    ASSERT(horizontalSubsampleFactor && verticalSubsampleFactor);
+
+    switch (format)
+    {
+        case GL_G8_B8R8_2PLANE_420_UNORM_ANGLE:
+        case GL_G8_B8_R8_3PLANE_420_UNORM_ANGLE:
+        case GL_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16_ANGLE:
+        case GL_G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16_ANGLE:
+        case GL_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16_ANGLE:
+        case GL_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16_ANGLE:
+        case GL_G16_B16R16_2PLANE_420_UNORM_ANGLE:
+        case GL_G16_B16_R16_3PLANE_420_UNORM_ANGLE:
+            *horizontalSubsampleFactor = 2;
+            *verticalSubsampleFactor   = 2;
+            break;
+        default:
+            UNREACHABLE();
+            break;
+    }
+}
+
 void AddRGBAFormat(InternalFormatInfoMap *map,
                    GLenum internalFormat,
                    bool sized,
@@ -742,6 +888,51 @@ void AddCompressedFormat(InternalFormatInfoMap *map,
     formatInfo.componentType            = GL_UNSIGNED_NORMALIZED;
     formatInfo.colorEncoding            = (srgb ? GL_SRGB : GL_LINEAR);
     formatInfo.compressed               = true;
+    formatInfo.textureSupport           = textureSupport;
+    formatInfo.filterSupport            = filterSupport;
+    formatInfo.textureAttachmentSupport = textureAttachmentSupport;
+    formatInfo.renderbufferSupport      = renderbufferSupport;
+    formatInfo.blendSupport             = blendSupport;
+
+    InsertFormatInfo(map, formatInfo);
+}
+
+void AddYUVFormat(InternalFormatInfoMap *map,
+                  GLenum internalFormat,
+                  bool sized,
+                  GLuint cr,
+                  GLuint y,
+                  GLuint cb,
+                  GLuint alpha,
+                  GLuint shared,
+                  GLenum format,
+                  GLenum type,
+                  GLenum componentType,
+                  bool srgb,
+                  InternalFormat::SupportCheckFunction textureSupport,
+                  InternalFormat::SupportCheckFunction filterSupport,
+                  InternalFormat::SupportCheckFunction textureAttachmentSupport,
+                  InternalFormat::SupportCheckFunction renderbufferSupport,
+                  InternalFormat::SupportCheckFunction blendSupport)
+{
+    ASSERT(sized);
+
+    InternalFormat formatInfo;
+    formatInfo.internalFormat      = internalFormat;
+    formatInfo.sized               = sized;
+    formatInfo.sizedInternalFormat = internalFormat;
+    formatInfo.redBits             = cr;
+    formatInfo.greenBits           = y;
+    formatInfo.blueBits            = cb;
+    formatInfo.alphaBits           = alpha;
+    formatInfo.sharedBits          = shared;
+    formatInfo.pixelBytes          = (cr + y + cb + alpha + shared) / 8;
+    formatInfo.componentCount =
+        ((cr > 0) ? 1 : 0) + ((y > 0) ? 1 : 0) + ((cb > 0) ? 1 : 0) + ((alpha > 0) ? 1 : 0);
+    formatInfo.format                   = format;
+    formatInfo.type                     = type;
+    formatInfo.componentType            = componentType;
+    formatInfo.colorEncoding            = (srgb ? GL_SRGB : GL_LINEAR);
     formatInfo.textureSupport           = textureSupport;
     formatInfo.filterSupport            = filterSupport;
     formatInfo.textureAttachmentSupport = textureAttachmentSupport;
@@ -1120,6 +1311,11 @@ static InternalFormatInfoMap BuildInternalFormatInfoMap()
     AddDepthStencilFormat(&map, GL_DEPTH_STENCIL,   false, 32, 8, 24, GL_DEPTH_STENCIL,   GL_FLOAT_32_UNSIGNED_INT_24_8_REV, GL_FLOAT,               RequireESOrExt<3, 0, &Extensions::packedDepthStencilOES>, AlwaysSupported, RequireExt<&Extensions::packedDepthStencilOES>,                                       RequireExt<&Extensions::packedDepthStencilOES>,                                       RequireExt<&Extensions::packedDepthStencilOES>);
     AddDepthStencilFormat(&map, GL_STENCIL,         false,  0, 8,  0, GL_STENCIL,         GL_UNSIGNED_BYTE,                  GL_UNSIGNED_NORMALIZED, RequireES<1, 0>,                                          NeverSupported , RequireES<1, 0>,                                                                      RequireES<1, 0>,                                                                      RequireES<1, 0>);
     AddDepthStencilFormat(&map, GL_STENCIL_INDEX,   false,  0, 8,  0, GL_STENCIL_INDEX,   GL_UNSIGNED_BYTE,                  GL_UNSIGNED_NORMALIZED, RequireES<3, 1>,                                          NeverSupported , RequireES<3, 1>,                                                                      RequireES<3, 1>,                                                                      RequireES<3, 1>);
+
+    // Non-standard YUV formats
+    //                 | Internal format                             | sized | Cr | Y | Cb | A | S | Format                              | Type            | Comp                  | SRGB | Texture supported                                       | Filterable                                              | Texture attachment                                      | Renderbuffer  | Blend
+    AddYUVFormat(&map,  GL_G8_B8R8_2PLANE_420_UNORM_ANGLE,            true,   8,   8,  8,   0,  0,  GL_G8_B8R8_2PLANE_420_UNORM_ANGLE,    GL_UNSIGNED_BYTE, GL_UNSIGNED_NORMALIZED, false, RequireExt<&Extensions::yuvInternalFormatANGLE>,          RequireExt<&Extensions::yuvInternalFormatANGLE>,          RequireExt<&Extensions::yuvInternalFormatANGLE>,          NeverSupported, NeverSupported);
+    AddYUVFormat(&map,  GL_G8_B8_R8_3PLANE_420_UNORM_ANGLE,           true,   8,   8,  8,   0,  0,  GL_G8_B8_R8_3PLANE_420_UNORM_ANGLE,   GL_UNSIGNED_BYTE, GL_UNSIGNED_NORMALIZED, false, RequireExt<&Extensions::yuvInternalFormatANGLE>,          RequireExt<&Extensions::yuvInternalFormatANGLE>,          RequireExt<&Extensions::yuvInternalFormatANGLE>,          NeverSupported, NeverSupported);
     // clang-format on
 
     return map;

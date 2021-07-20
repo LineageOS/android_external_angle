@@ -102,12 +102,6 @@ config("internal_config") {
 
   defines = []
 
-  if (angle_64bit_current_cpu) {
-    defines += [ "ANGLE_IS_64_BIT_CPU" ]
-  } else {
-    defines += [ "ANGLE_IS_32_BIT_CPU" ]
-  }
-
   if (is_win) {
     defines += [ "ANGLE_IS_WIN" ]
     if (angle_is_winuwp) {
@@ -321,9 +315,9 @@ config("debug_annotations_config") {
   }
 }
 
-config("angle_release_asserts_config") {
-  if (dcheck_always_on) {
-    defines = [ "ANGLE_ENABLE_RELEASE_ASSERTS" ]
+config("angle_asserts_config") {
+  if (angle_assert_always_on) {
+    defines = [ "ANGLE_ASSERT_ALWAYS_ON" ]
   }
 }
 
@@ -456,7 +450,10 @@ angle_static_library("angle_gpu_info_util") {
 
   if (!is_chromeos && angle_has_build) {
     sources += libangle_gpu_info_util_vulkan_sources
-    deps += [ "$angle_vulkan_headers_dir:vulkan_headers" ]
+    deps += [
+      "$angle_root/src/common/vulkan:angle_libvulkan_loader",
+      "$angle_vulkan_headers_dir:vulkan_headers",
+    ]
     defines += [ "ANGLE_HAS_VULKAN_SYSTEM_INFO" ]
   }
 
@@ -561,12 +558,6 @@ template("translator_lib") {
 
         # This translator is needed by metal backend also.
         sources += angle_translator_lib_vulkan_sources
-
-        # Enable direct SPIR-V generation conditionally to avoid increasing binary size of ANGLE on
-        # official builds until that's the only path.
-        if (dcheck_always_on || is_debug) {
-          defines += [ "ANGLE_ENABLE_DIRECT_SPIRV_GENERATION" ]
-        }
       }
 
       if (angle_enable_vulkan || use_fuzzing_engine) {

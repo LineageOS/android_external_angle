@@ -695,6 +695,15 @@ void ANGLETestBase::ANGLETestSetUp()
     mRenderDoc.startFrame();
 }
 
+void ANGLETestBase::ANGLETestPreTearDown()
+{
+    // We swap an extra time before we call "tearDown" to capture resources before they're freed.
+    if (gEnableANGLEPerTestCaptureLabel)
+    {
+        swapBuffers();
+    }
+}
+
 void ANGLETestBase::ANGLETestTearDown()
 {
     mTearDownCalled              = true;
@@ -1476,8 +1485,7 @@ Library *ANGLETestEnvironment::GetAngleEGLLibrary()
 #if defined(ANGLE_USE_UTIL_LOADER)
     if (!gAngleEGLLibrary)
     {
-        gAngleEGLLibrary.reset(
-            OpenSharedLibrary(ANGLE_EGL_LIBRARY_NAME, SearchType::ApplicationDir));
+        gAngleEGLLibrary.reset(OpenSharedLibrary(ANGLE_EGL_LIBRARY_NAME, SearchType::ModuleDir));
     }
 #endif  // defined(ANGLE_USE_UTIL_LOADER)
     return gAngleEGLLibrary.get();

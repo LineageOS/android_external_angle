@@ -224,6 +224,11 @@ EGLenum GetContextPriority(const egl::AttributeMap &attribs)
         attribs.getAsInt(EGL_CONTEXT_PRIORITY_LEVEL_IMG, EGL_CONTEXT_PRIORITY_MEDIUM_IMG));
 }
 
+bool GetProtectedContent(const egl::AttributeMap &attribs)
+{
+    return static_cast<bool>(attribs.getAsInt(EGL_PROTECTED_CONTENT_EXT, EGL_FALSE));
+}
+
 std::string GetObjectLabelFromPointer(GLsizei length, const GLchar *label)
 {
     std::string labelName;
@@ -329,7 +334,8 @@ Context::Context(egl::Display *display,
              GetClientArraysEnabled(attribs),
              GetRobustResourceInit(display, attribs),
              memoryProgramCache != nullptr,
-             GetContextPriority(attribs)),
+             GetContextPriority(attribs),
+             GetProtectedContent(attribs)),
       mShared(shareContext != nullptr),
       mSkipValidation(GetNoError(attribs)),
       mDisplayTextureShareGroup(shareTextures != nullptr),
@@ -347,7 +353,6 @@ Context::Context(egl::Display *display,
       mResetStrategy(GetResetStrategy(attribs)),
       mRobustAccess(GetRobustAccess(attribs)),
       mSurfacelessSupported(displayExtensions.surfacelessContext),
-      mExplicitContextAvailable(clientExtensions.explicitContext),
       mCurrentDrawSurface(static_cast<egl::Surface *>(EGL_NO_SURFACE)),
       mCurrentReadSurface(static_cast<egl::Surface *>(EGL_NO_SURFACE)),
       mDisplay(display),
@@ -499,6 +504,9 @@ void Context::initializeDefaultResources()
 
     ANGLE_CONTEXT_TRY(mImplementation->initialize());
 
+    // Add context into the share group
+    mState.getShareGroup()->getContexts()->insert(this);
+
     bindVertexArray({0});
 
     if (getClientVersion() >= Version(3, 0))
@@ -606,7 +614,7 @@ egl::Error Context::onDestroy(const egl::Display *display)
     }
 
     // Dump frame capture if enabled.
-    mFrameCapture->onDestroyContext(this);
+    getShareGroup()->getFrameCaptureShared()->onDestroyContext(this);
 
     if (mGLES1Renderer)
     {
@@ -739,7 +747,7 @@ egl::Error Context::makeCurrent(egl::Display *display,
         ANGLE_TRY(unsetDefaultFramebuffer());
     }
 
-    mFrameCapture->onMakeCurrent(this, drawSurface);
+    getShareGroup()->getFrameCaptureShared()->onMakeCurrent(this, drawSurface);
 
     // TODO(jmadill): Rework this when we support ContextImpl
     mState.setAllDirtyBits();
@@ -874,7 +882,7 @@ GLuint Context::createShaderProgramv(ShaderType type, GLsizei count, const GLcha
                 // to recreate the Shader and Program during MEC setup:
                 // 1.) Shader ID
                 // 2.) Shader source
-                if (!getFrameCapture()->enabled())
+                if (!getShareGroup()->getFrameCaptureShared()->enabled())
                 {
                     programObject->detachShader(this, shaderObject);
                 }
@@ -1677,9 +1685,16 @@ void Context::getIntegervImpl(GLenum pname, GLint *params) const
 
         // Desktop client flags
         case GL_CONTEXT_FLAGS:
+        {
             ASSERT(getClientType() == EGL_OPENGL_API);
-            *params = 0;
-            break;
+            GLint contextFlags = 0;
+            if (mState.hasProtectedContent())
+            {
+                contextFlags |= GL_CONTEXT_FLAG_PROTECTED_CONTENT_BIT_EXT;
+            }
+            *params = contextFlags;
+        }
+        break;
         case GL_CONTEXT_PROFILE_MASK:
             ASSERT(getClientType() == EGL_OPENGL_API);
             *params = GL_CONTEXT_COMPATIBILITY_PROFILE_BIT;
@@ -3510,15 +3525,6 @@ Extensions Context::generateSupportedExtensions() const
     // Enable the cache control query unconditionally.
     supportedExtensions.programCacheControl = true;
 
-    // Enable EGL_ANGLE_explicit_context subextensions
-    if (mExplicitContextAvailable)
-    {
-        // GL_ANGLE_explicit_context_gles1
-        supportedExtensions.explicitContextGles1 = true;
-        // GL_ANGLE_explicit_context
-        supportedExtensions.explicitContext = true;
-    }
-
     // If EGL_KHR_fence_sync is not enabled, don't expose GL_OES_EGL_sync.
     ASSERT(mDisplay);
     if (!mDisplay->getExtensions().fenceSync)
@@ -3764,11 +3770,13 @@ void Context::initCaps()
 
     // If we're capturing application calls for replay, don't expose any binary formats to prevent
     // traces from trying to use cached results
-    if (getFrameCapture()->enabled() || getFrontendFeatures().captureLimits.enabled)
+    if (getShareGroup()->getFrameCaptureShared()->enabled() ||
+        getFrontendFeatures().captureLimits.enabled)
     {
         INFO() << "Limit some features because "
-               << (getFrameCapture()->enabled() ? "FrameCapture is enabled"
-                                                : "FrameCapture limits were forced")
+               << (getShareGroup()->getFrameCaptureShared()->enabled()
+                       ? "FrameCapture is enabled"
+                       : "FrameCapture limits were forced")
                << std::endl;
 
         INFO() << "Limiting binary format support count to zero";
@@ -8713,6 +8721,12 @@ const angle::FrontendFeatures &Context::getFrontendFeatures() const
     return mDisplay->getFrontendFeatures();
 }
 
+angle::ResourceTracker &Context::getFrameCaptureSharedResourceTracker() const
+{
+    angle::FrameCaptureShared *frameCaptureShared = getShareGroup()->getFrameCaptureShared();
+    return frameCaptureShared->getResourceTracker();
+}
+
 bool Context::isRenderbufferGenerated(RenderbufferID renderbuffer) const
 {
     return mState.mRenderbufferManager->isHandleGenerated(renderbuffer);
@@ -8965,7 +8979,7 @@ egl::Error Context::unsetDefaultFramebuffer()
 void Context::onPreSwap() const
 {
     // Dump frame capture if enabled.
-    mFrameCapture->onEndFrame(this);
+    getShareGroup()->getFrameCaptureShared()->onEndFrame(this);
 }
 
 void Context::getTexImage(TextureTarget target,
