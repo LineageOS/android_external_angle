@@ -38,7 +38,7 @@ class SpecConstMetal : public SpecConst
 class DriverUniformMetal : public DriverUniform
 {
   public:
-    DriverUniformMetal() : DriverUniform() {}
+    DriverUniformMetal() : DriverUniform(DriverUniformMode::InterfaceBlock) {}
     ~DriverUniformMetal() override {}
 
     TIntermBinary *getHalfRenderAreaRef() const override;
@@ -48,7 +48,7 @@ class DriverUniformMetal : public DriverUniform
     TIntermBinary *getCoverageMaskFieldRef() const;
 
   protected:
-    TFieldList *createUniformFields(TSymbolTable *symbolTable) const override;
+    TFieldList *createUniformFields(TSymbolTable *symbolTable) override;
 };
 
 class TranslatorMetal : public TranslatorVulkan

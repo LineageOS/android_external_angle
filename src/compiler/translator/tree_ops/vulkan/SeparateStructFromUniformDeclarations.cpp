@@ -31,7 +31,7 @@ class Traverser : public TIntermTraverser
 
         if (!mInGlobalScope)
         {
-            return false;
+            return true;
         }
 
         const TIntermSequence &sequence = *(decl->getSequence());
@@ -41,10 +41,11 @@ class Traverser : public TIntermTraverser
 
         if (type.isStructSpecifier() && type.getQualifier() == EvqUniform)
         {
-            doReplacement(decl, declarator, type.getStruct());
+            doReplacement(decl, declarator, type);
+            return false;
         }
 
-        return false;
+        return true;
     }
 
     void visitSymbol(TIntermSymbol *symbol) override
@@ -57,15 +58,13 @@ class Traverser : public TIntermTraverser
     }
 
   private:
-    void doReplacement(TIntermDeclaration *decl,
-                       TIntermTyped *declarator,
-                       const TStructure *oldStructure)
+    void doReplacement(TIntermDeclaration *decl, TIntermTyped *declarator, const TType &oldType)
     {
-        // struct <structName> { ... };
-        const TStructure *structure = oldStructure;
-        if (oldStructure->symbolType() == SymbolType::Empty)
+        const TStructure *structure = oldType.getStruct();
+        if (structure->symbolType() == SymbolType::Empty)
         {
-            structure = new TStructure(mSymbolTable, kEmptyImmutableString, &oldStructure->fields(),
+            // Handle nameless structs: uniform struct { ... } variable;
+            structure = new TStructure(mSymbolTable, kEmptyImmutableString, &structure->fields(),
                                        SymbolType::AngleInternal);
         }
         TType *namedType = new TType(structure, true);
@@ -80,23 +79,23 @@ class Traverser : public TIntermTraverser
         TIntermSequence newSequence;
         newSequence.push_back(structDeclaration);
 
-        // uniform <structName> <structUniformName>;
+        // Redeclare the uniform with the (potentially) new struct type
         TIntermSymbol *asSymbol = declarator->getAsSymbolNode();
-        if (asSymbol && asSymbol->variable().symbolType() != SymbolType::Empty)
-        {
-            TIntermDeclaration *namedDecl = new TIntermDeclaration;
-            TType *uniformType            = new TType(structure, false);
-            uniformType->setQualifier(EvqUniform);
+        ASSERT(asSymbol && asSymbol->variable().symbolType() != SymbolType::Empty);
 
-            TVariable *newVar        = new TVariable(mSymbolTable, asSymbol->getName(), uniformType,
-                                              asSymbol->variable().symbolType());
-            TIntermSymbol *newSymbol = new TIntermSymbol(newVar);
-            namedDecl->appendDeclarator(newSymbol);
+        TIntermDeclaration *namedDecl = new TIntermDeclaration;
+        TType *uniformType            = new TType(structure, false);
+        uniformType->setQualifier(EvqUniform);
+        uniformType->makeArrays(oldType.getArraySizes());
 
-            newSequence.push_back(namedDecl);
+        TVariable *newVar        = new TVariable(mSymbolTable, asSymbol->getName(), uniformType,
+                                          asSymbol->variable().symbolType());
+        TIntermSymbol *newSymbol = new TIntermSymbol(newVar);
+        namedDecl->appendDeclarator(newSymbol);
 
-            mVariableMap[&asSymbol->variable()] = new TIntermSymbol(newVar);
-        }
+        newSequence.push_back(namedDecl);
+
+        mVariableMap[&asSymbol->variable()] = newSymbol;
 
         mMultiReplacements.emplace_back(getParentNode()->getAsBlock(), decl,
                                         std::move(newSequence));

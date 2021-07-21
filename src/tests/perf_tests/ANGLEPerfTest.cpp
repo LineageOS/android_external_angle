@@ -284,7 +284,7 @@ void ANGLEPerfTest::run()
 
     for (uint32_t trial = 0; trial < numTrials; ++trial)
     {
-        doRunLoop(gTestTimeSeconds, mStepsToRun, RunLoopPolicy::RunContinuously);
+        doRunLoop(gMaxTrialTimeSeconds, mStepsToRun, RunLoopPolicy::RunContinuously);
         printResults();
         if (gVerboseLogging)
         {
@@ -360,10 +360,6 @@ void ANGLEPerfTest::doRunLoop(double maxRunTime, int maxStepsToRun, RunLoopPolic
                 mRunning = false;
             }
             else if (mTrialNumStepsPerformed >= maxStepsToRun)
-            {
-                mRunning = false;
-            }
-            else if (gMaxStepsPerformed > 0 && mTotalNumStepsPerformed >= gMaxStepsPerformed)
             {
                 mRunning = false;
             }
@@ -603,14 +599,14 @@ ANGLERenderTest::ANGLERenderTest(const std::string &name,
     {
         case angle::GLESDriverType::AngleEGL:
             mGLWindow = EGLWindow::New(testParams.majorVersion, testParams.minorVersion);
-            mEntryPointsLib.reset(angle::OpenSharedLibrary(ANGLE_EGL_LIBRARY_NAME,
-                                                           angle::SearchType::ApplicationDir));
+            mEntryPointsLib.reset(
+                angle::OpenSharedLibrary(ANGLE_EGL_LIBRARY_NAME, angle::SearchType::ModuleDir));
             break;
         case angle::GLESDriverType::SystemEGL:
 #if defined(ANGLE_USE_UTIL_LOADER) && !defined(ANGLE_PLATFORM_WINDOWS)
             mGLWindow = EGLWindow::New(testParams.majorVersion, testParams.minorVersion);
-            mEntryPointsLib.reset(
-                angle::OpenSharedLibraryWithExtension(GetNativeEGLLibraryNameWithExtension()));
+            mEntryPointsLib.reset(angle::OpenSharedLibraryWithExtension(
+                GetNativeEGLLibraryNameWithExtension(), SearchType::SystemDir));
 #else
             std::cerr << "Not implemented." << std::endl;
             mSkipTest = true;

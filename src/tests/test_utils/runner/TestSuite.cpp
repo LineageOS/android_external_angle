@@ -47,10 +47,12 @@ constexpr char kResultFileArg[]        = "--results-file=";
 constexpr char kTestTimeoutArg[]       = "--test-timeout=";
 constexpr char kDisableCrashHandler[]  = "--disable-crash-handler";
 constexpr char kIsolatedOutDir[]       = "--isolated-outdir=";
+constexpr char kMaxFailures[]          = "--max-failures=";
 
 constexpr char kStartedTestString[] = "[ RUN      ] ";
 constexpr char kPassedTestString[]  = "[       OK ] ";
 constexpr char kFailedTestString[]  = "[  FAILED  ] ";
+constexpr char kSkippedTestString[] = "[  SKIPPED ] ";
 
 constexpr char kArtifactsFakeTestName[] = "TestArtifactsFakeTest";
 
@@ -67,6 +69,7 @@ constexpr int kDefaultBatchTimeout = 600;
 constexpr int kDefaultBatchSize      = 256;
 constexpr double kIdleMessageTimeout = 15.0;
 constexpr int kDefaultMaxProcesses   = 16;
+constexpr int kDefaultMaxFailures    = 100;
 
 const char *ParseFlagValue(const char *flag, const char *argument)
 {
@@ -160,9 +163,11 @@ const char *ResultTypeToString(TestResultType type)
             return "CRASH";
         case TestResultType::Fail:
             return "FAIL";
+        case TestResultType::NoResult:
+            return "NOTRUN";
         case TestResultType::Pass:
             return "PASS";
-        case TestResultType::NoResult:
+        case TestResultType::Skip:
             return "SKIP";
         case TestResultType::Timeout:
             return "TIMEOUT";
@@ -179,11 +184,18 @@ TestResultType GetResultTypeFromString(const std::string &str)
         return TestResultType::Fail;
     if (str == "PASS")
         return TestResultType::Pass;
-    if (str == "SKIP")
+    if (str == "NOTRUN")
         return TestResultType::NoResult;
+    if (str == "SKIP")
+        return TestResultType::Skip;
     if (str == "TIMEOUT")
         return TestResultType::Timeout;
     return TestResultType::Unknown;
+}
+
+bool IsFailedResult(TestResultType resultType)
+{
+    return resultType != TestResultType::Pass && resultType != TestResultType::Skip;
 }
 
 js::Value ResultTypeToJSString(TestResultType type, js::Document::AllocatorType *allocator)
@@ -301,6 +313,10 @@ void WriteResultsFile(bool interrupted,
         actualResult += ResultTypeToString(result.type);
 
         std::string expectedResult = "PASS";
+        if (result.type == TestResultType::Skip)
+        {
+            expectedResult = "SKIP";
+        }
 
         // Handle flaky passing tests.
         if (result.flakyFailures > 0 && result.type == TestResultType::Pass)
@@ -312,7 +328,7 @@ void WriteResultsFile(bool interrupted,
         jsResult.AddMember("actual", actualResult, allocator);
         jsResult.AddMember("expected", expectedResult, allocator);
 
-        if (result.type != TestResultType::Pass)
+        if (IsFailedResult(result.type))
         {
             jsResult.AddMember("is_unexpected", true, allocator);
         }
@@ -397,7 +413,7 @@ void UpdateCurrentTestResult(const testing::TestResult &resultIn, TestResults *r
     // Note: Crashes and Timeouts are detected by the crash handler and a watchdog thread.
     if (resultIn.Skipped())
     {
-        resultOut.type = TestResultType::NoResult;
+        resultOut.type = TestResultType::Skip;
     }
     else if (resultIn.Failed())
     {
@@ -689,7 +705,7 @@ bool GetSingleTestResultFromJSON(const js::Value &name,
                 printf("Failed to parse result type.\n");
                 return false;
             }
-            if (resultType != TestResultType::Pass)
+            if (IsFailedResult(resultType))
             {
                 flakyFailures++;
             }
@@ -798,8 +814,7 @@ bool MergeTestResults(TestResults *input, TestResults *output, int flakyRetries)
             // Mark the tests that haven't exhausted their retries as 'SKIP'. This makes ANGLE
             // attempt the test again.
             uint32_t runCount = outputResult.flakyFailures + 1;
-            if (inputResult.type != TestResultType::Pass &&
-                runCount < static_cast<uint32_t>(flakyRetries))
+            if (IsFailedResult(inputResult.type) && runCount < static_cast<uint32_t>(flakyRetries))
             {
                 printf("Retrying flaky test: %s.%s.\n", id.testSuiteName.c_str(),
                        id.testName.c_str());
@@ -1043,7 +1058,9 @@ TestSuite::TestSuite(int *argc, char **argv)
       mTestTimeout(kDefaultTestTimeout),
       mBatchTimeout(kDefaultBatchTimeout),
       mBatchId(-1),
-      mFlakyRetries(0)
+      mFlakyRetries(0),
+      mMaxFailures(kDefaultMaxFailures),
+      mFailureCount(0)
 {
     ASSERT(mInstance == nullptr);
     mInstance = this;
@@ -1054,7 +1071,10 @@ TestSuite::TestSuite(int *argc, char **argv)
 #if defined(ANGLE_PLATFORM_MACOS)
     // By default, we should hook file API functions on macOS to avoid slow Metal shader caching
     // file access.
-    angle::InitMetalFileAPIHooking(*argc, argv);
+    // TODO(anglebug.com/5505): in the angle_end2end_tests suite,
+    // disabling the shader cache makes the tests run more slowly than
+    // leaving it enabled.
+    // angle::InitMetalFileAPIHooking(*argc, argv);
 #endif
 
 #if defined(ANGLE_PLATFORM_WINDOWS)
@@ -1295,6 +1315,7 @@ bool TestSuite::parseSingleArg(const char *argument)
             ParseIntArg(kTestTimeoutArg, argument, &mTestTimeout) ||
             ParseIntArg("--batch-timeout=", argument, &mBatchTimeout) ||
             ParseIntArg(kFlakyRetries, argument, &mFlakyRetries) ||
+            ParseIntArg(kMaxFailures, argument, &mMaxFailures) ||
             // Other test functions consume the batch ID, so keep it in the list.
             ParseIntArgNoDelete(kBatchId, argument, &mBatchId) ||
             ParseStringArg("--results-directory=", argument, &mResultsDirectory) ||
@@ -1415,7 +1436,7 @@ bool TestSuite::launchChildTestProcess(uint32_t batchId,
     }
 
     // Launch child process and wait for completion.
-    processInfo.process = LaunchProcess(args, true, true);
+    processInfo.process = LaunchProcess(args, ProcessOutputCapture::StdoutAndStderrInterleaved);
 
     if (!processInfo.process->started())
     {
@@ -1470,9 +1491,10 @@ bool TestSuite::finishProcess(ProcessInfo *processInfo)
         std::string line;
         while (std::getline(linesStream, line))
         {
-            size_t startPos = line.find(kStartedTestString);
-            size_t failPos  = line.find(kFailedTestString);
-            size_t passPos  = line.find(kPassedTestString);
+            size_t startPos   = line.find(kStartedTestString);
+            size_t failPos    = line.find(kFailedTestString);
+            size_t passPos    = line.find(kPassedTestString);
+            size_t skippedPos = line.find(kSkippedTestString);
 
             if (startPos != std::string::npos)
             {
@@ -1489,6 +1511,11 @@ bool TestSuite::finishProcess(ProcessInfo *processInfo)
             {
                 std::string testName = line.substr(strlen(kPassedTestString));
                 ParseTestIdentifierAndSetResult(testName, TestResultType::Pass, &batchResults);
+            }
+            else if (skippedPos != std::string::npos)
+            {
+                std::string testName = line.substr(strlen(kSkippedTestString));
+                ParseTestIdentifierAndSetResult(testName, TestResultType::Skip, &batchResults);
             }
         }
     }
@@ -1508,7 +1535,7 @@ bool TestSuite::finishProcess(ProcessInfo *processInfo)
         for (const auto &resultIter : batchResults.results)
         {
             const TestResult &result = resultIter.second;
-            if (result.type != TestResultType::NoResult && result.type != TestResultType::Pass)
+            if (result.type != TestResultType::NoResult && IsFailedResult(result.type))
             {
                 printf("To reproduce the batch, use filter:\n%s\n",
                        processInfo->filterString.c_str());
@@ -1543,13 +1570,19 @@ bool TestSuite::finishProcess(ProcessInfo *processInfo)
         {
             printf(" (%0.1lf ms)\n", result.elapsedTimeSeconds * 1000.0);
         }
+        else if (result.type == TestResultType::Skip)
+        {
+            printf(" (skipped)\n");
+        }
         else if (result.type == TestResultType::Timeout)
         {
             printf(" (TIMEOUT in %0.1lf s)\n", result.elapsedTimeSeconds);
+            mFailureCount++;
         }
         else
         {
             printf(" (%s)\n", ResultTypeToString(result.type));
+            mFailureCount++;
 
             const std::string &batchStdout = processInfo->process->getStdout();
             PrintTestOutputSnippet(id, result, batchStdout);
@@ -1679,6 +1712,7 @@ int TestSuite::run()
                 {
                     // Because the whole batch failed we can't know how long each test took.
                     mTestResults.results[testIdentifier].type = TestResultType::Timeout;
+                    mFailureCount++;
                 }
 
                 processIter = mCurrentProcesses.erase(processIter);
@@ -1704,13 +1738,31 @@ int TestSuite::run()
             messageTimer.start();
         }
 
+        // Early exit if we passed the maximum failure threshold. Still wait for current tests.
+        if (mFailureCount > mMaxFailures && !mTestQueue.empty())
+        {
+            printf("Reached maximum failure count (%d), clearing test queue.\n", mMaxFailures);
+            TestQueue emptyTestQueue;
+            std::swap(mTestQueue, emptyTestQueue);
+        }
+
         // Sleep briefly and continue.
         angle::Sleep(100);
     }
 
     // Dump combined results.
-    WriteOutputFiles(false, mTestResults, mResultsFile, mHistogramWriter, mHistogramJsonFile,
-                     mTestSuiteName.c_str());
+    if (mFailureCount > mMaxFailures)
+    {
+        printf(
+            "Omitted results files because the failure count (%d) exceeded the maximum number of "
+            "failures (%d).\n",
+            mFailureCount, mMaxFailures);
+    }
+    else
+    {
+        WriteOutputFiles(false, mTestResults, mResultsFile, mHistogramWriter, mHistogramJsonFile,
+                         mTestSuiteName.c_str());
+    }
 
     totalRunTime.stop();
     printf("Tests completed in %lf seconds\n", totalRunTime.getElapsedTime());
@@ -1721,13 +1773,18 @@ int TestSuite::run()
 int TestSuite::printFailuresAndReturnCount() const
 {
     std::vector<std::string> failures;
+    uint32_t skipCount = 0;
 
     for (const auto &resultIter : mTestResults.results)
     {
         const TestIdentifier &id = resultIter.first;
         const TestResult &result = resultIter.second;
 
-        if (result.type != TestResultType::Pass)
+        if (result.type == TestResultType::Skip)
+        {
+            skipCount++;
+        }
+        else if (result.type != TestResultType::Pass)
         {
             const FileLine &fileLine = mTestFileLines.find(id)->second;
 
@@ -1745,6 +1802,10 @@ int TestSuite::printFailuresAndReturnCount() const
     for (const std::string &failure : failures)
     {
         printf("    %s\n", failure.c_str());
+    }
+    if (skipCount > 0)
+    {
+        printf("%u tests skipped.\n", skipCount);
     }
 
     return static_cast<int>(failures.size());
@@ -1833,6 +1894,66 @@ bool GetTestResultsFromFile(const char *fileName, TestResults *resultsOut)
     return true;
 }
 
+void TestSuite::dumpTestExpectationsErrorMessages()
+{
+    std::stringstream errorMsgStream;
+    for (const auto &message : mTestExpectationsParser.getErrorMessages())
+    {
+        errorMsgStream << std::endl << " " << message;
+    }
+
+    std::cerr << "Failed to load test expectations." << errorMsgStream.str() << std::endl;
+}
+
+bool TestSuite::loadTestExpectationsFromFileWithConfig(const GPUTestConfig &config,
+                                                       const std::string &fileName)
+{
+    if (!mTestExpectationsParser.loadTestExpectationsFromFile(config, fileName))
+    {
+        dumpTestExpectationsErrorMessages();
+        return false;
+    }
+    return true;
+}
+
+bool TestSuite::loadAllTestExpectationsFromFile(const std::string &fileName)
+{
+    if (!mTestExpectationsParser.loadAllTestExpectationsFromFile(fileName))
+    {
+        dumpTestExpectationsErrorMessages();
+        return false;
+    }
+    return true;
+}
+
+bool TestSuite::logAnyUnusedTestExpectations()
+{
+    std::stringstream unusedMsgStream;
+    bool anyUnused = false;
+    for (const auto &message : mTestExpectationsParser.getUnusedExpectationsMessages())
+    {
+        anyUnused = true;
+        unusedMsgStream << std::endl << " " << message;
+    }
+    if (anyUnused)
+    {
+        std::cerr << "Failed to validate test expectations." << unusedMsgStream.str() << std::endl;
+        return true;
+    }
+    return false;
+}
+
+int32_t TestSuite::getTestExpectation(const std::string &testName)
+{
+    return mTestExpectationsParser.getTestExpectation(testName);
+}
+
+int32_t TestSuite::getTestExpectationWithConfig(const GPUTestConfig &config,
+                                                const std::string &testName)
+{
+    return mTestExpectationsParser.getTestExpectationWithConfig(config, testName);
+}
+
 const char *TestResultTypeToString(TestResultType type)
 {
     switch (type)
@@ -1845,6 +1966,8 @@ const char *TestResultTypeToString(TestResultType type)
             return "NoResult";
         case TestResultType::Pass:
             return "Pass";
+        case TestResultType::Skip:
+            return "Skip";
         case TestResultType::Timeout:
             return "Timeout";
         case TestResultType::Unknown:

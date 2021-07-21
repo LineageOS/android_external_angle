@@ -330,7 +330,7 @@ inline bool GetGPUTestSystemInfo(SystemInfo **sysInfo)
         sSystemInfo = new SystemInfo;
         if (!GetSystemInfo(sSystemInfo))
         {
-            std::cout << "Error populating SystemInfo for dEQP tests." << std::endl;
+            std::cout << "Error populating SystemInfo." << std::endl;
         }
         else
         {
@@ -471,6 +471,16 @@ inline bool IsPixel2XL()
     return IsAndroidDevice("Pixel 2 XL");
 }
 
+inline bool IsPixel4()
+{
+    return IsAndroidDevice("Pixel 4");
+}
+
+inline bool IsPixel4XL()
+{
+    return IsAndroidDevice("Pixel 4 XL");
+}
+
 // Check whether the active GPU is a specific device based on the string device ID.
 inline bool IsDeviceIdGPU(const std::string &gpuDeviceId)
 {
@@ -582,6 +592,7 @@ GPUTestConfig::GPUTestConfig(bool isSwiftShader)
     // Devices are irrelevent if we are running on SW
     mConditions[kConditionNexus5X]          = !isSwiftShader && IsNexus5X();
     mConditions[kConditionPixel2OrXL]       = !isSwiftShader && (IsPixel2() || IsPixel2XL());
+    mConditions[kConditionPixel4OrXL]       = !isSwiftShader && (IsPixel4() || IsPixel4XL());
     mConditions[kConditionNVIDIAQuadroP400] = !isSwiftShader && IsNVIDIAQuadroP400();
 
     mConditions[kConditionPreRotation]    = false;

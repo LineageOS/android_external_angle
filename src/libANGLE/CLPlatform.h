@@ -14,96 +14,123 @@
 
 #include "anglebase/no_destructor.h"
 
-#include <algorithm>
-#include <string>
-
 namespace cl
 {
 
 class Platform final : public _cl_platform_id, public Object
 {
   public:
-    using Ptr  = std::unique_ptr<Platform>;
-    using List = std::vector<Ptr>;
+    // Front end entry functions, only called from OpenCL entry points
 
-    ~Platform();
+    static void Initialize(const cl_icd_dispatch &dispatch,
+                           rx::CLPlatformImpl::CreateFuncs &&createFuncs);
 
-    const char *getProfile() const;
-    const char *getVersionString() const;
+    static Platform *GetDefault();
+    static Platform *CastOrDefault(cl_platform_id platform);
+    static bool IsValidOrDefault(const _cl_platform_id *platform);
+
+    static cl_int GetPlatformIDs(cl_uint numEntries,
+                                 cl_platform_id *platforms,
+                                 cl_uint *numPlatforms);
+
+    cl_int getInfo(PlatformInfo name, size_t valueSize, void *value, size_t *valueSizeRet) const;
+
+    cl_int getDeviceIDs(DeviceType deviceType,
+                        cl_uint numEntries,
+                        cl_device_id *devices,
+                        cl_uint *numDevices) const;
+
+    static cl_context CreateContext(const cl_context_properties *properties,
+                                    cl_uint numDevices,
+                                    const cl_device_id *devices,
+                                    ContextErrorCB notify,
+                                    void *userData,
+                                    cl_int &errorCode);
+
+    static cl_context CreateContextFromType(const cl_context_properties *properties,
+                                            DeviceType deviceType,
+                                            ContextErrorCB notify,
+                                            void *userData,
+                                            cl_int &errorCode);
+
+    cl_int unloadCompiler();
+
+  public:
+    ~Platform() override;
+
+    const rx::CLPlatformImpl::Info &getInfo() const;
     cl_version getVersion() const;
-    const char *getName() const;
-    const char *getExtensions() const;
-    const rx::CLPlatformImpl::ExtensionList &getExtensionsWithVersion() const;
-    cl_ulong getHostTimerResolution() const;
+    bool isVersionOrNewer(cl_uint major, cl_uint minor) const;
+    const DevicePtrs &getDevices() const;
 
-    static void CreatePlatform(const cl_icd_dispatch &dispatch, rx::CLPlatformImpl::Ptr &&impl);
-    static const List &GetPlatforms();
-    static bool IsValid(const Platform *platform);
+    template <typename T = rx::CLPlatformImpl>
+    T &getImpl() const;
+
+    static const PlatformPtrs &GetPlatforms();
+
     static constexpr const char *GetVendor();
-    static constexpr const char *GetIcdSuffix();
 
   private:
-    Platform(const cl_icd_dispatch &dispatch, rx::CLPlatformImpl::Ptr &&impl);
+    explicit Platform(const rx::CLPlatformImpl::CreateFunc &createFunc);
 
-    static List &GetList();
+    DevicePtrs createDevices(rx::CLDeviceImpl::CreateDatas &&createDatas);
+
+    static PlatformPtrs &GetPointers();
 
     const rx::CLPlatformImpl::Ptr mImpl;
+    const rx::CLPlatformImpl::Info mInfo;
+    const DevicePtrs mDevices;
 
     static constexpr char kVendor[]    = "ANGLE";
     static constexpr char kIcdSuffix[] = "ANGLE";
 };
 
-inline const char *Platform::getProfile() const
+inline Platform *Platform::GetDefault()
 {
-    return mImpl->getInfo().mProfile.c_str();
+    return GetPlatforms().empty() ? nullptr : GetPlatforms().front().get();
 }
 
-inline const char *Platform::getVersionString() const
+inline Platform *Platform::CastOrDefault(cl_platform_id platform)
 {
-    return mImpl->getInfo().mVersionStr.c_str();
+    return platform != nullptr ? &platform->cast<Platform>() : GetDefault();
+}
+
+// Our CL implementation defines that a nullptr value chooses the platform that we provide as
+// default, so this function returns true for a nullptr value if a default platform exists.
+inline bool Platform::IsValidOrDefault(const _cl_platform_id *platform)
+{
+    return platform != nullptr ? IsValid(platform) : GetDefault() != nullptr;
+}
+
+inline const rx::CLPlatformImpl::Info &Platform::getInfo() const
+{
+    return mInfo;
 }
 
 inline cl_version Platform::getVersion() const
 {
-    return mImpl->getInfo().mVersion;
+    return mInfo.version;
 }
 
-inline const char *Platform::getName() const
+inline bool Platform::isVersionOrNewer(cl_uint major, cl_uint minor) const
 {
-    return mImpl->getInfo().mName.c_str();
+    return mInfo.version >= CL_MAKE_VERSION(major, minor, 0u);
 }
 
-inline const char *Platform::getExtensions() const
+inline const DevicePtrs &Platform::getDevices() const
 {
-    return mImpl->getInfo().mExtensions.c_str();
+    return mDevices;
 }
 
-inline const rx::CLPlatformImpl::ExtensionList &Platform::getExtensionsWithVersion() const
+template <typename T>
+inline T &Platform::getImpl() const
 {
-    return mImpl->getInfo().mExtensionList;
+    return static_cast<T &>(*mImpl);
 }
 
-inline cl_ulong Platform::getHostTimerResolution() const
+inline const PlatformPtrs &Platform::GetPlatforms()
 {
-    return mImpl->getInfo().mHostTimerRes;
-}
-
-inline Platform::List &Platform::GetList()
-{
-    static angle::base::NoDestructor<List> sList;
-    return *sList;
-}
-
-inline const Platform::List &Platform::GetPlatforms()
-{
-    return GetList();
-}
-
-inline bool Platform::IsValid(const Platform *platform)
-{
-    const List &platforms = GetPlatforms();
-    return std::find_if(platforms.cbegin(), platforms.cend(),
-                        [=](const Ptr &ptr) { return ptr.get() == platform; }) != platforms.cend();
+    return GetPointers();
 }
 
 constexpr const char *Platform::GetVendor()
@@ -111,9 +138,10 @@ constexpr const char *Platform::GetVendor()
     return kVendor;
 }
 
-constexpr const char *Platform::GetIcdSuffix()
+inline PlatformPtrs &Platform::GetPointers()
 {
-    return kIcdSuffix;
+    static angle::base::NoDestructor<PlatformPtrs> sPointers;
+    return *sPointers;
 }
 
 }  // namespace cl

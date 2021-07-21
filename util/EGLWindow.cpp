@@ -90,6 +90,11 @@ EGLContext EGLWindow::getContext() const
     return mContext;
 }
 
+bool EGLWindow::isContextVersion(EGLint glesMajorVersion, EGLint glesMinorVersion) const
+{
+    return mClientMajorVersion == glesMajorVersion && mClientMinorVersion == glesMinorVersion;
+}
+
 bool EGLWindow::initializeGL(OSWindow *osWindow,
                              angle::Library *glWindowingLibrary,
                              angle::GLESDriverType driverType,
@@ -246,6 +251,11 @@ bool EGLWindow::initializeDisplay(OSWindow *osWindow,
         // TODO(jmadill): Update feature names. b/172704839
         enabledFeatureOverrides.push_back("commandProcessor");
         enabledFeatureOverrides.push_back("asynchronousCommandProcessing");
+    }
+
+    if (params.directSPIRVGeneration == EGL_TRUE)
+    {
+        enabledFeatureOverrides.push_back("directSPIRVGeneration");
     }
 
     if (params.hasExplicitMemBarrierFeatureMtl == EGL_FALSE)

@@ -67,6 +67,14 @@ absl::string_view MakeString(TestCordSize size) {
   return MakeString(Length(size));
 }
 
+// Returns a cord with a sampled method of kAppendString.
+absl::Cord MakeAppendStringCord(TestCordSize size) {
+  CordzSamplingIntervalHelper always(1);
+  absl::Cord cord;
+  cord.Append(MakeString(size));
+  return cord;
+}
+
 std::string TestParamToString(::testing::TestParamInfo<TestCordSize> size) {
   return absl::StrCat("On", ToString(size.param), "Cord");
 }
@@ -129,11 +137,21 @@ TEST_P(CordzStringTest, ConstructString) {
   }
 }
 
-TEST(CordzTest, CopyConstruct) {
+TEST(CordzTest, CopyConstructFromUnsampled) {
   CordzSamplingIntervalHelper sample_every{1};
   Cord src = UnsampledCord(MakeString(TestCordSize::kLarge));
   Cord cord(src);
-  EXPECT_THAT(cord, HasValidCordzInfoOf(Method::kConstructorCord));
+  EXPECT_THAT(GetCordzInfoForTesting(cord), Eq(nullptr));
+}
+
+TEST(CordzTest, CopyConstructFromSampled) {
+  CordzSamplingIntervalHelper sample_never{99999};
+  Cord src = MakeAppendStringCord(TestCordSize::kLarge);
+  Cord cord(src);
+  ASSERT_THAT(cord, HasValidCordzInfoOf(Method::kConstructorCord));
+  CordzStatistics stats = GetCordzInfoForTesting(cord)->GetCordzStatistics();
+  EXPECT_THAT(stats.parent_method, Eq(Method::kAppendString));
+  EXPECT_THAT(stats.update_tracker.Value(Method::kAppendString), Eq(1));
 }
 
 TEST(CordzTest, MoveConstruct) {
@@ -143,13 +161,93 @@ TEST(CordzTest, MoveConstruct) {
   EXPECT_THAT(cord, HasValidCordzInfoOf(Method::kConstructorString));
 }
 
-TEST_P(CordzUpdateTest, AssignCord) {
+TEST_P(CordzUpdateTest, AssignUnsampledCord) {
   Cord src = UnsampledCord(MakeString(TestCordSize::kLarge));
+  const CordzInfo* info = GetCordzInfoForTesting(cord());
   cord() = src;
-  EXPECT_THAT(cord(), HasValidCordzInfoOf(InitialOr(Method::kAssignCord)));
+  EXPECT_THAT(GetCordzInfoForTesting(cord()), Eq(nullptr));
+  EXPECT_FALSE(CordzInfoIsListed(info));
 }
 
-TEST(CordzTest, AssignInlinedCord) {
+TEST_P(CordzUpdateTest, AssignSampledCord) {
+  Cord src = MakeAppendStringCord(TestCordSize::kLarge);
+  cord() = src;
+  ASSERT_THAT(cord(), HasValidCordzInfoOf(Method::kAssignCord));
+  CordzStatistics stats = GetCordzInfoForTesting(cord())->GetCordzStatistics();
+  EXPECT_THAT(stats.parent_method, Eq(Method::kAppendString));
+  EXPECT_THAT(stats.update_tracker.Value(Method::kAppendString), Eq(1));
+  EXPECT_THAT(stats.update_tracker.Value(Method::kConstructorString), Eq(0));
+}
+
+TEST(CordzUpdateTest, AssignSampledCordToInlined) {
+  CordzSamplingIntervalHelper sample_never{99999};
+  Cord cord;
+  Cord src = MakeAppendStringCord(TestCordSize::kLarge);
+  cord = src;
+  ASSERT_THAT(cord, HasValidCordzInfoOf(Method::kAssignCord));
+  CordzStatistics stats = GetCordzInfoForTesting(cord)->GetCordzStatistics();
+  EXPECT_THAT(stats.parent_method, Eq(Method::kAppendString));
+  EXPECT_THAT(stats.update_tracker.Value(Method::kAppendString), Eq(1));
+  EXPECT_THAT(stats.update_tracker.Value(Method::kConstructorString), Eq(0));
+}
+
+TEST(CordzUpdateTest, AssignSampledCordToUnsampledCord) {
+  CordzSamplingIntervalHelper sample_never{99999};
+  Cord cord = UnsampledCord(MakeString(TestCordSize::kLarge));
+  Cord src = MakeAppendStringCord(TestCordSize::kLarge);
+  cord = src;
+  ASSERT_THAT(cord, HasValidCordzInfoOf(Method::kAssignCord));
+  CordzStatistics stats = GetCordzInfoForTesting(cord)->GetCordzStatistics();
+  EXPECT_THAT(stats.parent_method, Eq(Method::kAppendString));
+  EXPECT_THAT(stats.update_tracker.Value(Method::kAppendString), Eq(1));
+  EXPECT_THAT(stats.update_tracker.Value(Method::kConstructorString), Eq(0));
+}
+
+TEST(CordzUpdateTest, AssignUnsampledCordToSampledCordWithoutSampling) {
+  CordzSamplingIntervalHelper sample_never{99999};
+  Cord cord = MakeAppendStringCord(TestCordSize::kLarge);
+  const CordzInfo* info = GetCordzInfoForTesting(cord);
+  Cord src = UnsampledCord(MakeString(TestCordSize::kLarge));
+  cord = src;
+  EXPECT_THAT(GetCordzInfoForTesting(cord), Eq(nullptr));
+  EXPECT_FALSE(CordzInfoIsListed(info));
+}
+
+TEST(CordzUpdateTest, AssignUnsampledCordToSampledCordWithSampling) {
+  CordzSamplingIntervalHelper sample_every{1};
+  Cord cord = MakeAppendStringCord(TestCordSize::kLarge);
+  const CordzInfo* info = GetCordzInfoForTesting(cord);
+  Cord src = UnsampledCord(MakeString(TestCordSize::kLarge));
+  cord = src;
+  EXPECT_THAT(GetCordzInfoForTesting(cord), Eq(nullptr));
+  EXPECT_FALSE(CordzInfoIsListed(info));
+}
+
+TEST(CordzUpdateTest, AssignSampledCordToSampledCord) {
+  CordzSamplingIntervalHelper sample_every{1};
+  Cord src = MakeAppendStringCord(TestCordSize::kLarge);
+  Cord cord(MakeString(TestCordSize::kLarge));
+  cord = src;
+  ASSERT_THAT(cord, HasValidCordzInfoOf(Method::kAssignCord));
+  CordzStatistics stats = GetCordzInfoForTesting(cord)->GetCordzStatistics();
+  EXPECT_THAT(stats.parent_method, Eq(Method::kAppendString));
+  EXPECT_THAT(stats.update_tracker.Value(Method::kAppendString), Eq(1));
+  EXPECT_THAT(stats.update_tracker.Value(Method::kConstructorString), Eq(0));
+}
+
+TEST(CordzUpdateTest, AssignUnsampledCordToSampledCord) {
+  CordzSamplingIntervalHelper sample_every{1};
+  Cord src = MakeAppendStringCord(TestCordSize::kLarge);
+  Cord cord(MakeString(TestCordSize::kLarge));
+  cord = src;
+  ASSERT_THAT(cord, HasValidCordzInfoOf(Method::kAssignCord));
+  CordzStatistics stats = GetCordzInfoForTesting(cord)->GetCordzStatistics();
+  EXPECT_THAT(stats.parent_method, Eq(Method::kAppendString));
+  EXPECT_THAT(stats.update_tracker.Value(Method::kAppendString), Eq(1));
+  EXPECT_THAT(stats.update_tracker.Value(Method::kConstructorString), Eq(0));
+}
+
+TEST(CordzTest, AssignInlinedCordToSampledCord) {
   CordzSampleToken token;
   CordzSamplingIntervalHelper sample_every{1};
   Cord cord(MakeString(TestCordSize::kLarge));
@@ -160,12 +258,17 @@ TEST(CordzTest, AssignInlinedCord) {
   EXPECT_FALSE(CordzInfoIsListed(info));
 }
 
-TEST(CordzTest, MoveAssignCord) {
+TEST(CordzUpdateTest, MoveAssignCord) {
   CordzSamplingIntervalHelper sample_every{1};
   Cord cord;
   Cord src(MakeString(TestCordSize::kLarge));
   cord = std::move(src);
   EXPECT_THAT(cord, HasValidCordzInfoOf(Method::kConstructorString));
+}
+
+TEST_P(CordzUpdateTest, AssignLargeArray) {
+  cord() = MakeString(TestCordSize::kSmall);
+  EXPECT_THAT(cord(), HasValidCordzInfoOf(Method::kAssignString));
 }
 
 TEST_P(CordzUpdateTest, AssignSmallArray) {
@@ -331,18 +434,28 @@ TEST(CordzTest, RemoveSuffix) {
   EXPECT_THAT(GetCordzInfoForTesting(cord), Eq(nullptr));
 }
 
-TEST(CordzTest, SubCord) {
+TEST(CordzTest, SubCordFromUnsampledCord) {
   CordzSamplingIntervalHelper sample_every{1};
-  Cord src(MakeString(TestCordSize::kLarge));
+  Cord src = UnsampledCord(MakeString(TestCordSize::kLarge));
+  Cord cord = src.Subcord(10, src.size() / 2);
+  EXPECT_THAT(GetCordzInfoForTesting(cord), Eq(nullptr));
+}
 
-  Cord cord1 = src.Subcord(10, src.size() / 2);
-  EXPECT_THAT(cord1, HasValidCordzInfoOf(Method::kSubCord));
+TEST(CordzTest, SubCordFromSampledCord) {
+  CordzSamplingIntervalHelper sample_never{99999};
+  Cord src = MakeAppendStringCord(TestCordSize::kLarge);
+  Cord cord = src.Subcord(10, src.size() / 2);
+  ASSERT_THAT(cord, HasValidCordzInfoOf(Method::kSubCord));
+  CordzStatistics stats = GetCordzInfoForTesting(cord)->GetCordzStatistics();
+  EXPECT_THAT(stats.parent_method, Eq(Method::kAppendString));
+  EXPECT_THAT(stats.update_tracker.Value(Method::kAppendString), Eq(1));
+}
 
-  Cord cord2 = src.Subcord(10, kMaxInline + 1);
-  EXPECT_THAT(cord2, HasValidCordzInfoOf(Method::kSubCord));
-
-  Cord cord3 = src.Subcord(10, kMaxInline);
-  EXPECT_THAT(GetCordzInfoForTesting(cord3), Eq(nullptr));
+TEST(CordzTest, SmallSubCord) {
+  CordzSamplingIntervalHelper sample_never{99999};
+  Cord src = MakeAppendStringCord(TestCordSize::kLarge);
+  Cord cord = src.Subcord(10, kMaxInline + 1);
+  EXPECT_THAT(cord, HasValidCordzInfoOf(Method::kSubCord));
 }
 
 }  // namespace

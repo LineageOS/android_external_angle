@@ -37,6 +37,10 @@ std::shared_ptr<WaitableCompileEvent> ShaderVk::compile(const gl::Context *conte
         // Extra initialization in spirv shader may affect performance.
         compileOptions |= SH_INITIALIZE_UNINITIALIZED_LOCALS;
 
+        // WebGL shaders may contain OOB array accesses which in turn cause undefined behavior,
+        // which may result in security issues. See https://crbug.com/1189110.
+        compileOptions |= SH_CLAMP_INDIRECT_ARRAY_BOUNDS;
+
         if (mState.getShaderType() != gl::ShaderType::Compute)
         {
             compileOptions |= SH_INIT_OUTPUT_VARIABLES;
@@ -95,6 +99,16 @@ std::shared_ptr<WaitableCompileEvent> ShaderVk::compile(const gl::Context *conte
              contextVk->getFeatures().emulateTransformFeedback.enabled)
     {
         compileOptions |= SH_ADD_VULKAN_XFB_EMULATION_SUPPORT_CODE;
+    }
+
+    if (contextVk->getFeatures().directSPIRVGeneration.enabled)
+    {
+        compileOptions |= SH_GENERATE_SPIRV_DIRECTLY;
+
+        if (contextVk->getFeatures().directSPIRVGenerationWorkarounds.enabled)
+        {
+            compileOptions |= SH_GENERATE_SPIRV_WORKAROUNDS;
+        }
     }
 
     return compileImpl(context, compilerInstance, mState.getSource(), compileOptions | options);

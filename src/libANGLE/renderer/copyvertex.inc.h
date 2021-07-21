@@ -204,12 +204,12 @@ inline void CopyToFloatVertexData(const uint8_t *input,
             {
                 if (NL::is_signed)
                 {
-                    result = static_cast<float>(offsetInput[j]) / NL::max();
+                    result = static_cast<float>(offsetInput[j]) / static_cast<float>(NL::max());
                     result = result >= -1.0f ? result : -1.0f;
                 }
                 else
                 {
-                    result = static_cast<float>(offsetInput[j]) / NL::max();
+                    result = static_cast<float>(offsetInput[j]) / static_cast<float>(NL::max());
                 }
             }
             else
@@ -227,14 +227,21 @@ inline void CopyToFloatVertexData(const uint8_t *input,
             }
         }
 
-        // This would require special padding.
-        static_assert(!(inputComponentCount < 4 && outputComponentCount == 4),
-                      "An inputComponentCount less than 4 and an outputComponentCount equal to 4 "
-                      "is not supported.");
-
         for (size_t j = inputComponentCount; j < outputComponentCount; j++)
         {
             offsetOutput[j] = 0;
+        }
+
+        if (inputComponentCount < 4 && outputComponentCount == 4)
+        {
+            if (toHalf)
+            {
+                offsetOutput[3] = gl::Float16One;
+            }
+            else
+            {
+                offsetOutput[3] = static_cast<outputType>(gl::Float32One);
+            }
         }
     }
 }

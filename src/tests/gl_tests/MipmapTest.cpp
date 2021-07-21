@@ -2070,6 +2070,42 @@ void main()
     EXPECT_PIXEL_COLOR_EQ(getWindowWidth() / 8, getWindowHeight() / 8, GLColor::green);
 }
 
+// Tests respecifying 3D mipmaps.
+TEST_P(MipmapTestES3, Generate3DMipmapRespecification)
+{
+    std::vector<GLColor> pixels(256 * 256 * 100, GLColor::black);
+
+    GLTexture texture;
+    glBindTexture(GL_TEXTURE_3D, texture);
+    glTexImage3D(GL_TEXTURE_3D, 0, GL_RGBA, 256, 256, 100, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                 pixels.data());
+    glTexImage3D(GL_TEXTURE_3D, 1, GL_RGBA, 128, 128, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                 pixels.data());
+    glGenerateMipmap(GL_TEXTURE_3D);
+
+    ASSERT_GL_NO_ERROR();
+}
+
+// Test the calling glGenerateMipmap on a texture with a zero dimension doesn't crash.
+TEST_P(MipmapTestES3, GenerateMipmapZeroSize)
+{
+    GLTexture texture;
+    glBindTexture(GL_TEXTURE_2D, texture);
+
+    // Create a texture with at least one dimension that's zero.
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 2, 0, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+
+    // Attempt to generate mipmap.  This shouldn't crash.
+    glGenerateMipmap(GL_TEXTURE_2D);
+    EXPECT_GL_NO_ERROR();
+
+    // Try the same with a 3D texture where depth is 0.
+    GLTexture texture2;
+    glBindTexture(GL_TEXTURE_3D, texture2);
+    glTexImage3D(GL_TEXTURE_3D, 0, GL_RGBA8, 2, 2, 0, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glGenerateMipmap(GL_TEXTURE_3D);
+}
+
 // Use this to select which configurations (e.g. which renderer, which GLES major version) these
 // tests should be run against.
 ANGLE_INSTANTIATE_TEST_ES2_AND_ES3(MipmapTest);

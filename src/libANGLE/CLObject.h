@@ -8,7 +8,10 @@
 #ifndef LIBANGLE_CLOBJECT_H_
 #define LIBANGLE_CLOBJECT_H_
 
+#include "libANGLE/CLtypes.h"
 #include "libANGLE/renderer/CLtypes.h"
+
+#include <atomic>
 
 namespace cl
 {
@@ -16,8 +19,37 @@ namespace cl
 class Object
 {
   public:
-    constexpr Object() {}
-    ~Object() = default;
+    Object();
+    virtual ~Object();
+
+    cl_uint getRefCount() const noexcept { return mRefCount; }
+
+    void retain() noexcept { ++mRefCount; }
+
+    bool release()
+    {
+        if (mRefCount == 0u)
+        {
+            WARN() << "Unreferenced object without references";
+            return true;
+        }
+        return --mRefCount == 0u;
+    }
+
+    template <typename T, typename... Args>
+    static T *Create(cl_int &errorCode, Args &&... args)
+    {
+        T *object = new T(std::forward<Args>(args)..., errorCode);
+        if (errorCode != CL_SUCCESS)
+        {
+            delete object;
+            object = nullptr;
+        }
+        return object;
+    }
+
+  private:
+    std::atomic<cl_uint> mRefCount;
 };
 
 }  // namespace cl

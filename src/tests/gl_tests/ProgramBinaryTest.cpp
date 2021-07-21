@@ -1174,7 +1174,7 @@ class ProgramBinariesAcrossPlatforms : public testing::TestWithParam<PlatformsWi
         }
 
         mEntryPointsLib.reset(
-            angle::OpenSharedLibrary(ANGLE_EGL_LIBRARY_NAME, angle::SearchType::ApplicationDir));
+            angle::OpenSharedLibrary(ANGLE_EGL_LIBRARY_NAME, angle::SearchType::ModuleDir));
     }
 
     EGLWindow *createAndInitEGLWindow(angle::PlatformParameters &param)
@@ -1273,7 +1273,6 @@ TEST_P(ProgramBinariesAcrossPlatforms, CreateAndReloadBinary)
     if (eglWindow == nullptr)
     {
         FAIL() << "Failed to create EGL window";
-        return;
     }
 
     // If the test is trying to use both the default GPU and WARP, but the default GPU *IS* WARP,
@@ -1330,7 +1329,6 @@ TEST_P(ProgramBinariesAcrossPlatforms, CreateAndReloadBinary)
     if (eglWindow == nullptr)
     {
         FAIL() << "Failed to create EGL window";
-        return;
     }
 
     program = glCreateProgram();

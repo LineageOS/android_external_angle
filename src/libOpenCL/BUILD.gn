@@ -8,8 +8,17 @@ import("../../gni/angle.gni")
 
 assert(angle_enable_cl)
 
+if (is_win || is_linux) {
+  glesv2_path =
+      rebase_path(get_label_info("$angle_root:libGLESv2", "root_out_dir"))
+}
+
 angle_shared_library("OpenCL_ANGLE") {
   defines = [ "LIBCL_IMPLEMENTATION" ]
+  if (is_win) {
+    defines += [ "ANGLE_GLESV2_LIBRARY_PATH=\"" +
+                 string_replace(glesv2_path, "/", "\\\\") + "\"" ]
+  }
 
   sources = [
     "dispatch.cpp",
@@ -26,41 +35,17 @@ angle_shared_library("OpenCL_ANGLE") {
     "$angle_root:angle_common",
     "$angle_root:cl_includes",
   ]
-}
 
-icd_library_name = "OpenCL_ICD_ANGLE"
-
-config("opencl_icd_library_name") {
-  if (is_win) {
-    defines = [ "ANGLE_OPENCL_ICD_LIB_NAME=\"" + icd_library_name + "\"" ]
-  } else {
-    defines = [ "ANGLE_OPENCL_ICD_LIB_NAME=\"lib" + icd_library_name + ".so\"" ]
+  if (is_linux) {
+    inputs = [ "libOpenCL_autogen.map" ]
+    ldflags = [
+      "-Wl,--version-script=" +
+          rebase_path("libOpenCL_autogen.map", root_build_dir),
+      "-Wl,-rpath=" + glesv2_path,
+    ]
   }
 }
 
-angle_shared_library(icd_library_name) {
-  defines = [ "LIBCL_IMPLEMENTATION" ]
-
-  sources = [
-    "dispatch.cpp",
-    "dispatch.h",
-    "libOpenCL_ICD.cpp",
-  ]
-
-  configs += [
-    "$angle_root:debug_annotations_config",
-    "$angle_root:library_name_config",
-  ]
-
-  deps = [
-    "$angle_root:angle_common",
-    "$angle_root:cl_includes",
-  ]
-}
-
 group("angle_cl") {
-  data_deps = [
-    ":OpenCL_ANGLE",
-    ":OpenCL_ICD_ANGLE",
-  ]
+  data_deps = [ ":OpenCL_ANGLE" ]
 }
