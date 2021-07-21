@@ -63,8 +63,6 @@ constexpr uint32_t kOverlayDrawFontBinding          = 4;
 constexpr uint32_t kGenerateMipmapDestinationBinding = 0;
 constexpr uint32_t kGenerateMipmapSourceBinding      = 1;
 
-constexpr uint32_t kFloatOneAsUint = 0x3F80'0000u;
-
 bool ValidateFloatOneAsUint()
 {
     union
@@ -72,7 +70,7 @@ bool ValidateFloatOneAsUint()
         uint32_t asUint;
         float asFloat;
     } one;
-    one.asUint = kFloatOneAsUint;
+    one.asUint = gl::Float32One;
     return one.asFloat == 1.0f;
 }
 
@@ -88,6 +86,8 @@ uint32_t GetConvertVertexFlags(const UtilsVk::ConvertVertexParameters &params)
 
     bool destIsSint      = params.destFormat->isSint();
     bool destIsUint      = params.destFormat->isUint();
+    bool destIsSnorm     = params.destFormat->isSnorm();
+    bool destIsUnorm     = params.destFormat->isUnorm();
     bool destIsFloat     = params.destFormat->isFloat();
     bool destIsHalfFloat = params.destFormat->isVertexTypeHalfFloat();
 
@@ -99,7 +99,8 @@ uint32_t GetConvertVertexFlags(const UtilsVk::ConvertVertexParameters &params)
 
     // One of each bool set must be true
     ASSERT(srcIsSint || srcIsUint || srcIsSnorm || srcIsUnorm || srcIsFixed || srcIsFloat);
-    ASSERT(destIsSint || destIsUint || destIsFloat || destIsHalfFloat);
+    ASSERT(destIsSint || destIsUint || destIsSnorm || destIsUnorm || destIsFloat ||
+           destIsHalfFloat);
 
     // We currently don't have any big-endian devices in the list of supported platforms.  The
     // shader is capable of supporting big-endian architectures, but the relevant flag (IsBigEndian)
@@ -113,6 +114,13 @@ uint32_t GetConvertVertexFlags(const UtilsVk::ConvertVertexParameters &params)
     if (srcIsHalfFloat && destIsHalfFloat)
     {
         // Note that HalfFloat conversion uses the same shader as Uint.
+        flags = ConvertVertex_comp::kUintToUint;
+    }
+    else if ((srcIsSnorm && destIsSnorm) || (srcIsUnorm && destIsUnorm))
+    {
+        // Do snorm->snorm and unorm->unorm copies using the uint->uint shader.  Currently only
+        // supported for same-width formats, so it's only used when adding channels.
+        ASSERT(params.srcFormat->redBits == params.destFormat->redBits);
         flags = ConvertVertex_comp::kUintToUint;
     }
     else if (srcIsSint && destIsSint)
@@ -647,10 +655,12 @@ void InsertPreamble(uint32_t colorAttachmentCount,
     spirv::WriteEntryPoint(blobOut, spv::ExecutionModelFragment, spirv::IdRef(kIdMain), "main",
                            entryPointIds);
 
-    spirv::WriteExecutionMode(blobOut, spirv::IdRef(kIdMain), spv::ExecutionModeOriginUpperLeft);
+    spirv::WriteExecutionMode(blobOut, spirv::IdRef(kIdMain), spv::ExecutionModeOriginUpperLeft,
+                              {});
     if (unresolveDepth)
     {
-        spirv::WriteExecutionMode(blobOut, spirv::IdRef(kIdMain), spv::ExecutionModeDepthReplacing);
+        spirv::WriteExecutionMode(blobOut, spirv::IdRef(kIdMain), spv::ExecutionModeDepthReplacing,
+                                  {});
     }
     spirv::WriteSource(blobOut, spv::SourceLanguageGLSL, spirv::LiteralInteger(450), nullptr,
                        nullptr);
@@ -1562,7 +1572,7 @@ angle::Result UtilsVk::convertIndexBuffer(ContextVk *contextVk,
 
     constexpr uint32_t kInvocationsPerGroup = 64;
     constexpr uint32_t kInvocationsPerIndex = 2;
-    const uint32_t kIndexCount              = params.maxIndex - params.srcOffset;
+    const uint32_t kIndexCount              = params.maxIndex;
     const uint32_t kGroupCount =
         UnsignedCeilDivide(kIndexCount * kInvocationsPerIndex, kInvocationsPerGroup);
     commandBuffer->dispatch(kGroupCount, 1, 1);
@@ -1612,9 +1622,9 @@ angle::Result UtilsVk::convertIndexIndirectBuffer(ContextVk *contextVk,
 
     vkUpdateDescriptorSets(contextVk->getDevice(), 1, &writeInfo, 0, nullptr);
 
-    ConvertIndexIndirectShaderParams shaderParams = {params.srcIndirectBufOffset >> 2,
-                                                     params.dstIndexBufOffset >> 2, params.maxIndex,
-                                                     params.dstIndirectBufOffset >> 2};
+    ConvertIndexIndirectShaderParams shaderParams = {
+        params.srcIndirectBufOffset >> 2, params.srcIndexBufOffset, params.dstIndexBufOffset >> 2,
+        params.maxIndex, params.dstIndirectBufOffset >> 2};
 
     uint32_t flags = vk::InternalShader::ConvertIndex_comp::kIsIndirect;
     if (contextVk->getState().isPrimitiveRestartEnabled())
@@ -1684,7 +1694,8 @@ angle::Result UtilsVk::convertLineLoopIndexIndirectBuffer(
 
     ConvertIndexIndirectLineLoopShaderParams shaderParams = {
         params.indirectBufferOffset >> 2, params.dstIndirectBufferOffset >> 2,
-        params.dstIndexBufferOffset >> 2, contextVk->getState().isPrimitiveRestartEnabled()};
+        params.srcIndexBufferOffset, params.dstIndexBufferOffset >> 2,
+        contextVk->getState().isPrimitiveRestartEnabled()};
 
     uint32_t flags = GetConvertIndexIndirectLineLoopFlag(params.indicesBitsWidth);
 
@@ -1793,7 +1804,7 @@ angle::Result UtilsVk::convertVertexBuffer(ContextVk *contextVk,
     shaderParams.componentCount = static_cast<uint32_t>(params.vertexCount * shaderParams.Nd);
     // Total number of 4-byte outputs is the number of components divided by how many components can
     // fit in a 4-byte value.  Note that this value is also the invocation size of the shader.
-    shaderParams.outputCount = shaderParams.componentCount / shaderParams.Ed;
+    shaderParams.outputCount = UnsignedCeilDivide(shaderParams.componentCount, shaderParams.Ed);
     shaderParams.srcOffset   = static_cast<uint32_t>(params.srcOffset);
     shaderParams.destOffset  = static_cast<uint32_t>(params.destOffset);
 
@@ -1812,15 +1823,37 @@ angle::Result UtilsVk::convertVertexBuffer(ContextVk *contextVk,
     // See GLES3.0 section 2.9.1 Transferring Array Elements
     const uint32_t srcValueBits = shaderParams.isSrcHDR ? 2 : shaderParams.Bs * 8;
     const uint32_t srcValueMask =
-        srcValueBits == 32 ? 0xFFFFFFFFu : angle::Bit<uint32_t>(srcValueBits) - 1;
+        srcValueBits == 32 ? 0xFFFFFFFFu : angle::BitMask<uint32_t>(srcValueBits);
     switch (flags)
     {
         case ConvertVertex_comp::kSintToSint:
-        case ConvertVertex_comp::kUintToUint:
         case ConvertVertex_comp::kSintToFloat:
         case ConvertVertex_comp::kUintToFloat:
             // For integers, alpha should take a value of 1.
             shaderParams.srcEmulatedAlpha = 1;
+            break;
+
+        case ConvertVertex_comp::kUintToUint:
+            // For integers, alpha should take a value of 1.  However, uint->uint is also used to
+            // add channels to RGB snorm, unorm and half formats.
+            if (params.destFormat->isSnorm())
+            {
+                // See case ConvertVertex_comp::kSnormToFloat below.
+                shaderParams.srcEmulatedAlpha = srcValueMask >> 1;
+            }
+            else if (params.destFormat->isUnorm())
+            {
+                // See case ConvertVertex_comp::kUnormToFloat below.
+                shaderParams.srcEmulatedAlpha = srcValueMask;
+            }
+            else if (params.destFormat->isVertexTypeHalfFloat())
+            {
+                shaderParams.srcEmulatedAlpha = gl::Float16One;
+            }
+            else
+            {
+                shaderParams.srcEmulatedAlpha = 1;
+            }
             break;
 
         case ConvertVertex_comp::kSnormToFloat:
@@ -1842,7 +1875,7 @@ angle::Result UtilsVk::convertVertexBuffer(ContextVk *contextVk,
 
         case ConvertVertex_comp::kFloatToFloat:
             ASSERT(ValidateFloatOneAsUint());
-            shaderParams.srcEmulatedAlpha = kFloatOneAsUint;
+            shaderParams.srcEmulatedAlpha = gl::Float32One;
             break;
 
         default:
@@ -2043,12 +2076,12 @@ angle::Result UtilsVk::clearFramebuffer(ContextVk *contextVk,
     const float clearDepthValue = params.depthStencilClearValue.depth;
     gl_vk::GetViewport(completeRenderArea, clearDepthValue, clearDepthValue, invertViewport,
                        clipSpaceOriginUpperLeft, completeRenderArea.height, &viewport);
-    pipelineDesc.setViewport(viewport);
+    commandBuffer->setViewport(0, 1, &viewport);
 
-    // Scissored clears can create a large number of pipelines in some tests.  Use dynamic state for
-    // scissors.
-    pipelineDesc.setDynamicScissor();
     const VkRect2D scissor = gl_vk::GetRect(params.clearArea);
+    commandBuffer->setScissor(0, 1, &scissor);
+
+    contextVk->invalidateViewportAndScissor();
 
     vk::ShaderLibrary &shaderLibrary                    = contextVk->getShaderLibrary();
     vk::RefCounted<vk::ShaderAndSerial> *vertexShader   = nullptr;
@@ -2075,7 +2108,7 @@ angle::Result UtilsVk::clearFramebuffer(ContextVk *contextVk,
 
     // Make sure this draw call doesn't count towards occlusion query results.
     contextVk->pauseRenderPassQueriesIfActive();
-    commandBuffer->setScissor(0, 1, &scissor);
+
     commandBuffer->draw(3, 0);
     ANGLE_TRY(contextVk->resumeRenderPassQueriesIfActive());
 
@@ -2268,16 +2301,20 @@ angle::Result UtilsVk::blitResolveImpl(ContextVk *contextVk,
         SetStencilForShaderExport(contextVk, &pipelineDesc);
     }
 
+    vk::CommandBuffer *commandBuffer;
+    ANGLE_TRY(framebuffer->startNewRenderPass(contextVk, params.blitArea, &commandBuffer, nullptr));
+
     VkViewport viewport;
     gl::Rectangle completeRenderArea = framebuffer->getRotatedCompleteRenderArea(contextVk);
     gl_vk::GetViewport(completeRenderArea, 0.0f, 1.0f, false, false, completeRenderArea.height,
                        &viewport);
-    pipelineDesc.setViewport(viewport);
+    commandBuffer->setViewport(0, 1, &viewport);
 
-    pipelineDesc.setScissor(gl_vk::GetRect(params.blitArea));
+    VkRect2D scissor = gl_vk::GetRect(params.blitArea);
+    commandBuffer->setScissor(0, 1, &scissor);
 
-    vk::CommandBuffer *commandBuffer;
-    ANGLE_TRY(framebuffer->startNewRenderPass(contextVk, params.blitArea, &commandBuffer, nullptr));
+    contextVk->invalidateViewportAndScissor();
+
     contextVk->onImageRenderPassRead(src->getAspectFlags(), vk::ImageLayout::FragmentShaderReadOnly,
                                      src);
 
@@ -2704,16 +2741,18 @@ angle::Result UtilsVk::copyImage(ContextVk *contextVk,
         std::swap(renderArea.width, renderArea.height);
     }
 
-    VkViewport viewport;
-    gl_vk::GetViewport(renderArea, 0.0f, 1.0f, false, false, dest->getExtents().height, &viewport);
-    pipelineDesc.setViewport(viewport);
-
-    VkRect2D scissor = gl_vk::GetRect(renderArea);
-    pipelineDesc.setScissor(scissor);
-
     vk::CommandBuffer *commandBuffer;
     ANGLE_TRY(
         startRenderPass(contextVk, dest, destView, renderPassDesc, renderArea, &commandBuffer));
+
+    VkViewport viewport;
+    gl_vk::GetViewport(renderArea, 0.0f, 1.0f, false, false, dest->getExtents().height, &viewport);
+    commandBuffer->setViewport(0, 1, &viewport);
+
+    VkRect2D scissor = gl_vk::GetRect(renderArea);
+    commandBuffer->setScissor(0, 1, &scissor);
+
+    contextVk->invalidateViewportAndScissor();
 
     // Change source layout inside render pass.
     contextVk->onImageRenderPassRead(VK_IMAGE_ASPECT_COLOR_BIT,
@@ -2942,14 +2981,13 @@ angle::Result UtilsVk::copyImageBits(ContextVk *contextVk,
     else if (shaderParams.Bd == 2)
     {
         ASSERT(dstImageFormat.isFloat());
-        // 1.0 in half-float is represented with 0 01111 0000000000
-        shaderParams.srcEmulatedAlpha = 0x3C00;
+        shaderParams.srcEmulatedAlpha = gl::Float16One;
     }
     else if (shaderParams.Bd == 4)
     {
         ASSERT(dstImageFormat.isFloat());
         ASSERT(ValidateFloatOneAsUint());
-        shaderParams.srcEmulatedAlpha = kFloatOneAsUint;
+        shaderParams.srcEmulatedAlpha = gl::Float32One;
     }
     else
     {
@@ -3158,6 +3196,9 @@ angle::Result UtilsVk::unresolve(ContextVk *contextVk,
         SetStencilForShaderExport(contextVk, &pipelineDesc);
     }
 
+    vk::CommandBuffer *commandBuffer =
+        &contextVk->getStartedRenderPassCommands().getCommandBuffer();
+
     VkViewport viewport;
     gl::Rectangle completeRenderArea = framebuffer->getRotatedCompleteRenderArea(contextVk);
     bool invertViewport              = contextVk->isViewportFlipEnabledForDrawFBO();
@@ -3165,9 +3206,12 @@ angle::Result UtilsVk::unresolve(ContextVk *contextVk,
         contextVk->getState().getClipSpaceOrigin() == gl::ClipSpaceOrigin::UpperLeft;
     gl_vk::GetViewport(completeRenderArea, 0.0f, 1.0f, invertViewport, clipSpaceOriginUpperLeft,
                        completeRenderArea.height, &viewport);
-    pipelineDesc.setViewport(viewport);
+    commandBuffer->setViewport(0, 1, &viewport);
 
-    pipelineDesc.setScissor(gl_vk::GetRect(completeRenderArea));
+    VkRect2D scissor = gl_vk::GetRect(completeRenderArea);
+    commandBuffer->setScissor(0, 1, &scissor);
+
+    contextVk->invalidateViewportAndScissor();
 
     VkDescriptorSet descriptorSet;
     vk::RefCountedDescriptorPoolBinding descriptorPoolBinding;
@@ -3215,9 +3259,6 @@ angle::Result UtilsVk::unresolve(ContextVk *contextVk,
     ANGLE_TRY(shaderLibrary.getFullScreenQuad_vert(contextVk, 0, &vertexShader));
     ANGLE_TRY(GetUnresolveFrag(contextVk, colorAttachmentCount, colorAttachmentTypes,
                                params.unresolveDepth, params.unresolveStencil, fragmentShader));
-
-    vk::CommandBuffer *commandBuffer =
-        &contextVk->getStartedRenderPassCommands().getCommandBuffer();
 
     ANGLE_TRY(setupProgram(contextVk, function, fragmentShader, vertexShader,
                            &mUnresolvePrograms[flags], &pipelineDesc, descriptorSet, nullptr, 0,

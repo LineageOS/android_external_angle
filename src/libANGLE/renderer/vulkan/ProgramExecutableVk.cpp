@@ -248,6 +248,7 @@ void ProgramInfo::release(ContextVk *contextVk)
 ProgramExecutableVk::ProgramExecutableVk()
     : mEmptyDescriptorSets{},
       mNumDefaultUniformDescriptors(0),
+      mImmutableSamplersMaxDescriptorCount(1),
       mUniformBufferDescriptorType(VK_DESCRIPTOR_TYPE_MAX_ENUM),
       mProgram(nullptr),
       mProgramPipeline(nullptr),
@@ -266,6 +267,9 @@ void ProgramExecutableVk::reset(ContextVk *contextVk)
     {
         descriptorSetLayout.reset();
     }
+    mImmutableSamplersMaxDescriptorCount = 1;
+    mExternalFormatIndexMap.clear();
+    mVkFormatIndexMap.clear();
     mPipelineLayout.reset();
 
     mDescriptorSets.fill(VK_NULL_HANDLE);
@@ -648,6 +652,7 @@ void ProgramExecutableVk::addInputAttachmentDescriptorSetDesc(
 }
 
 void ProgramExecutableVk::addTextureDescriptorSetDesc(
+    ContextVk *contextVk,
     const gl::ProgramState &programState,
     const gl::ActiveTextureArray<vk::TextureUnit> *activeTextures,
     vk::DescriptorSetLayoutDesc *descOut)
@@ -699,10 +704,43 @@ void ProgramExecutableVk::addTextureDescriptorSetDesc(
                 ASSERT(samplerBinding.boundTextureUnits.size() == 1);
                 // Always take the texture's sampler, that's only way to get to yuv conversion for
                 // externalFormat
-                const vk::Sampler &immutableSampler =
-                    (*activeTextures)[textureUnit].texture->getSampler().get();
+                const TextureVk *textureVk          = (*activeTextures)[textureUnit].texture;
+                const vk::Sampler &immutableSampler = textureVk->getSampler().get();
                 descOut->update(info.binding, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, arraySize,
                                 activeStages, &immutableSampler);
+                // The Vulkan spec has the following note -
+                // All descriptors in a binding use the same maximum
+                // combinedImageSamplerDescriptorCount descriptors to allow implementations to use a
+                // uniform stride for dynamic indexing of the descriptors in the binding.
+                uint64_t externalFormat = textureVk->getImage().getExternalFormat();
+                VkFormat vkFormat       = textureVk->getImage().getFormat().actualImageVkFormat();
+                uint32_t formatDescriptorCount = 0;
+                angle::Result result           = angle::Result::Stop;
+
+                if (externalFormat != 0)
+                {
+                    mExternalFormatIndexMap[externalFormat] = textureIndex;
+                    result = contextVk->getRenderer()->getFormatDescriptorCountForExternalFormat(
+                        contextVk, externalFormat, &formatDescriptorCount);
+                }
+                else
+                {
+                    ASSERT(vkFormat != 0);
+                    mVkFormatIndexMap[vkFormat] = textureIndex;
+                    result = contextVk->getRenderer()->getFormatDescriptorCountForVkFormat(
+                        contextVk, vkFormat, &formatDescriptorCount);
+                }
+
+                if (result != angle::Result::Continue)
+                {
+                    // There was an error querying the descriptor count for this format, treat it as
+                    // a non-fatal error and move on.
+                    formatDescriptorCount = 1;
+                }
+
+                ASSERT(formatDescriptorCount > 0);
+                mImmutableSamplersMaxDescriptorCount =
+                    std::max(mImmutableSamplersMaxDescriptorCount, formatDescriptorCount);
             }
             else
             {
@@ -860,9 +898,9 @@ angle::Result ProgramExecutableVk::initDynamicDescriptorPools(
         if (binding.descriptorCount > 0)
         {
             VkDescriptorPoolSize poolSize = {};
-
-            poolSize.type            = binding.descriptorType;
-            poolSize.descriptorCount = binding.descriptorCount;
+            poolSize.type                 = binding.descriptorType;
+            poolSize.descriptorCount =
+                binding.descriptorCount * mImmutableSamplersMaxDescriptorCount;
             descriptorPoolSizes.emplace_back(poolSize);
         }
     }
@@ -1015,7 +1053,7 @@ angle::Result ProgramExecutableVk::createPipelineLayout(
     {
         const gl::ProgramState *programState = programStates[shaderType];
         ASSERT(programState);
-        addTextureDescriptorSetDesc(*programState, activeTextures, &texturesSetDesc);
+        addTextureDescriptorSetDesc(contextVk, *programState, activeTextures, &texturesSetDesc);
     }
 
     ANGLE_TRY(contextVk->getDescriptorSetLayoutCache().getDescriptorSetLayout(
@@ -1056,7 +1094,8 @@ angle::Result ProgramExecutableVk::createPipelineLayout(
         contextVk, driverUniformsSetDesc, DescriptorSetIndex::Internal,
         mDescriptorSetLayouts[DescriptorSetIndex::Internal].get().getHandle()));
 
-    mDynamicUniformDescriptorOffsets.resize(glExecutable.getLinkedShaderStageCount());
+    mDynamicUniformDescriptorOffsets.clear();
+    mDynamicUniformDescriptorOffsets.resize(glExecutable.getLinkedShaderStageCount(), 0);
 
     return angle::Result::Continue;
 }
@@ -1115,15 +1154,19 @@ void ProgramExecutableVk::updateDefaultUniformsDescriptorSet(
     VkWriteDescriptorSet &writeInfo    = contextVk->allocWriteDescriptorSet();
     VkDescriptorBufferInfo &bufferInfo = contextVk->allocDescriptorBufferInfo();
 
+    // Size is set to the size of the empty buffer for shader statges with no uniform data,
+    // otherwise it is set to the total size of the uniform data in the current shader stage
+    VkDeviceSize size              = defaultUniformBlock.uniformData.size();
     vk::BufferHelper *bufferHelper = defaultUniformBuffer;
     if (defaultUniformBlock.uniformData.empty())
     {
         bufferHelper = &contextVk->getEmptyBuffer();
         bufferHelper->retain(&contextVk->getResourceUseList());
+        size = bufferHelper->getSize();
     }
 
     WriteBufferDescriptorSetBinding(
-        *bufferHelper, 0, VK_WHOLE_SIZE, mDescriptorSets[DescriptorSetIndex::UniformsAndXfb],
+        *bufferHelper, 0, size, mDescriptorSets[DescriptorSetIndex::UniformsAndXfb],
         VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, info.binding, 0, 0, &bufferInfo, &writeInfo);
 }
 
@@ -1213,19 +1256,20 @@ angle::Result ProgramExecutableVk::updateBuffersDescriptorSet(
                       "VkDeviceSize too small");
         ASSERT(bufferBinding.getSize() >= 0);
 
+        BufferVk *bufferVk             = vk::GetImpl(bufferBinding.get());
+        VkDeviceSize bufferOffset      = 0;
+        vk::BufferHelper &bufferHelper = bufferVk->getBufferAndOffset(&bufferOffset);
+
         if (!cacheHit)
         {
             VkDescriptorBufferInfo &bufferInfo = contextVk->allocDescriptorBufferInfo();
             VkWriteDescriptorSet &writeInfo    = contextVk->allocWriteDescriptorSet();
 
-            BufferVk *bufferVk             = vk::GetImpl(bufferBinding.get());
-            vk::BufferHelper &bufferHelper = bufferVk->getBuffer();
-
             VkDescriptorSet descriptorSet;
             ANGLE_TRY(getOrAllocateShaderResourcesDescriptorSet(contextVk, &shaderBuffersDesc,
                                                                 &descriptorSet));
             VkDeviceSize offset =
-                IsDynamicDescriptor(descriptorType) ? 0 : bufferBinding.getOffset();
+                IsDynamicDescriptor(descriptorType) ? 0 : bufferOffset + bufferBinding.getOffset();
             WriteBufferDescriptorSetBinding(bufferHelper, offset, size, descriptorSet,
                                             descriptorType, binding, arrayElement, 0, &bufferInfo,
                                             &writeInfo);
@@ -1233,7 +1277,7 @@ angle::Result ProgramExecutableVk::updateBuffersDescriptorSet(
         if (IsDynamicDescriptor(descriptorType))
         {
             mDynamicShaderBufferDescriptorOffsets.push_back(
-                static_cast<uint32_t>(bufferBinding.getOffset()));
+                static_cast<uint32_t>(bufferOffset + bufferBinding.getOffset()));
         }
     }
 
@@ -1295,13 +1339,14 @@ angle::Result ProgramExecutableVk::updateAtomicCounterBuffersDescriptorSet(
         VkWriteDescriptorSet &writeInfo    = contextVk->allocWriteDescriptorSet();
 
         BufferVk *bufferVk             = vk::GetImpl(bufferBinding.get());
-        vk::BufferHelper &bufferHelper = bufferVk->getBuffer();
+        VkDeviceSize bufferOffset      = 0;
+        vk::BufferHelper &bufferHelper = bufferVk->getBufferAndOffset(&bufferOffset);
 
         VkDeviceSize size = gl::GetBoundBufferAvailableSize(bufferBinding);
-        WriteBufferDescriptorSetBinding(bufferHelper,
-                                        static_cast<uint32_t>(bufferBinding.getOffset()), size,
-                                        descriptorSet, kStorageBufferDescriptorType, info.binding,
-                                        binding, requiredOffsetAlignment, &bufferInfo, &writeInfo);
+        WriteBufferDescriptorSetBinding(
+            bufferHelper, static_cast<uint32_t>(bufferOffset + bufferBinding.getOffset()), size,
+            descriptorSet, kStorageBufferDescriptorType, info.binding, binding,
+            requiredOffsetAlignment, &bufferInfo, &writeInfo);
 
         writtenBindings.set(binding);
     }

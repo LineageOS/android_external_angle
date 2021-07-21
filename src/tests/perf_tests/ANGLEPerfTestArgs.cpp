@@ -19,9 +19,10 @@ int gMaxStepsPerformed         = 0;
 bool gEnableTrace              = false;
 const char *gTraceFile         = "ANGLETrace.json";
 const char *gScreenShotDir     = nullptr;
+int gScreenShotFrame           = 1;
 bool gVerboseLogging           = false;
 double gCalibrationTimeSeconds = 1.0;
-double gTestTimeSeconds        = 10.0;
+double gMaxTrialTimeSeconds    = 10.0;
 int gTestTrials                = 3;
 bool gNoFinish                 = false;
 bool gEnableAllTraceTests      = false;
@@ -53,8 +54,6 @@ using namespace angle;
 
 void ANGLEProcessPerfTestArgs(int *argc, char **argv)
 {
-    int argcOutCount = 0;
-
     for (int argIndex = 0; argIndex < *argc; argIndex++)
     {
         if (strcmp("--one-frame-only", argv[argIndex]) == 0)
@@ -85,16 +84,30 @@ void ANGLEProcessPerfTestArgs(int *argc, char **argv)
         }
         else if (strcmp("--max-steps-performed", argv[argIndex]) == 0 && argIndex < *argc - 1)
         {
-            gMaxStepsPerformed = ReadIntArgument(argv[argIndex + 1]);
-            gWarmupLoops       = 0;
-            gTestTrials        = 1;
-            gTestTimeSeconds   = 36000;
+            gMaxStepsPerformed   = ReadIntArgument(argv[argIndex + 1]);
+            gWarmupLoops         = 0;
+            gTestTrials          = 1;
+            gMaxTrialTimeSeconds = 36000;
+            // Skip an additional argument.
+            argIndex++;
+        }
+        else if (strcmp("--fixed-test-time", argv[argIndex]) == 0 && argIndex < *argc - 1)
+        {
+            gMaxTrialTimeSeconds = ReadIntArgument(argv[argIndex + 1]);
+            gStepsPerTrial       = std::numeric_limits<int>::max();
+            gTestTrials          = 1;
+            gWarmupLoops         = 0;
             // Skip an additional argument.
             argIndex++;
         }
         else if (strcmp("--screenshot-dir", argv[argIndex]) == 0 && argIndex < *argc - 1)
         {
             gScreenShotDir = argv[argIndex + 1];
+            argIndex++;
+        }
+        else if (strcmp("--screenshot-frame", argv[argIndex]) == 0 && argIndex < *argc - 1)
+        {
+            gScreenShotFrame = ReadIntArgument(argv[argIndex + 1]);
             argIndex++;
         }
         else if (strcmp("--verbose-logging", argv[argIndex]) == 0 ||
@@ -122,9 +135,9 @@ void ANGLEProcessPerfTestArgs(int *argc, char **argv)
             // Skip an additional argument.
             argIndex++;
         }
-        else if (strcmp("--test-time", argv[argIndex]) == 0)
+        else if (strcmp("--max-trial-time", argv[argIndex]) == 0)
         {
-            gTestTimeSeconds = ReadIntArgument(argv[argIndex + 1]);
+            gMaxTrialTimeSeconds = ReadIntArgument(argv[argIndex + 1]);
             // Skip an additional argument.
             argIndex++;
         }
@@ -150,11 +163,5 @@ void ANGLEProcessPerfTestArgs(int *argc, char **argv)
         {
             gMinimizeGPUWork = true;
         }
-        else
-        {
-            argv[argcOutCount++] = argv[argIndex];
-        }
     }
-
-    *argc = argcOutCount;
 }

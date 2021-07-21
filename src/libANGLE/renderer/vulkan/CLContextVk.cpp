@@ -3,16 +3,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// CLContextVk.cpp:
-//    Implements the class methods for CLContextVk.
-//
+// CLContextVk.cpp: Implements the class methods for CLContextVk.
 
 #include "libANGLE/renderer/vulkan/CLContextVk.h"
 
 namespace rx
 {
 
-CLContextVk::CLContextVk() {}
+CLContextVk::CLContextVk(const cl::Context &context) : CLContextImpl(context) {}
 
 CLContextVk::~CLContextVk() = default;
 

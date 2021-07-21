@@ -3,16 +3,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-
 // CLPlatformImpl.h: Defines the abstract rx::CLPlatformImpl class.
 
 #ifndef LIBANGLE_RENDERER_CLPLATFORMIMPL_H_
 #define LIBANGLE_RENDERER_CLPLATFORMIMPL_H_
 
-#include "libANGLE/renderer/CLtypes.h"
-
-#include <list>
-#include <vector>
+#include "libANGLE/renderer/CLContextImpl.h"
+#include "libANGLE/renderer/CLDeviceImpl.h"
+#include "libANGLE/renderer/CLExtensions.h"
 
 namespace rx
 {
@@ -20,11 +18,11 @@ namespace rx
 class CLPlatformImpl : angle::NonCopyable
 {
   public:
-    using Ptr           = std::unique_ptr<CLPlatformImpl>;
-    using ImplList      = std::list<Ptr>;
-    using ExtensionList = std::vector<cl_name_version>;
+    using Ptr         = std::unique_ptr<CLPlatformImpl>;
+    using CreateFunc  = std::function<Ptr(const cl::Platform &)>;
+    using CreateFuncs = std::list<CreateFunc>;
 
-    struct Info
+    struct Info : public CLExtensions
     {
         Info();
         ~Info();
@@ -35,36 +33,35 @@ class CLPlatformImpl : angle::NonCopyable
         Info(Info &&);
         Info &operator=(Info &&);
 
-        Info(std::string &&profile,
-             std::string &&versionStr,
-             cl_version version,
-             std::string &&name,
-             std::string &&extensions,
-             rx::CLPlatformImpl::ExtensionList &&extensionList,
-             cl_ulong hostTimerRes);
+        bool isValid() const { return version != 0u; }
 
-        std::string mProfile;
-        std::string mVersionStr;
-        cl_version mVersion;
-        std::string mName;
-        std::string mExtensions;
-        rx::CLPlatformImpl::ExtensionList mExtensionList;
-        cl_ulong mHostTimerRes;
+        std::string profile;
+        std::string name;
+        cl_ulong hostTimerRes = 0u;
     };
 
-    explicit CLPlatformImpl(Info &&info);
+    explicit CLPlatformImpl(const cl::Platform &platform);
     virtual ~CLPlatformImpl();
 
-    const Info &getInfo();
+    // For initialization only
+    virtual Info createInfo() const                         = 0;
+    virtual CLDeviceImpl::CreateDatas createDevices() const = 0;
+
+    virtual CLContextImpl::Ptr createContext(cl::Context &context,
+                                             const cl::DevicePtrs &devices,
+                                             bool userSync,
+                                             cl_int &errorCode) = 0;
+
+    virtual CLContextImpl::Ptr createContextFromType(cl::Context &context,
+                                                     cl::DeviceType deviceType,
+                                                     bool userSync,
+                                                     cl_int &errorCode) = 0;
+
+    virtual cl_int unloadCompiler() = 0;
 
   protected:
-    const Info mInfo;
+    const cl::Platform &mPlatform;
 };
-
-inline const CLPlatformImpl::Info &CLPlatformImpl::getInfo()
-{
-    return mInfo;
-}
 
 }  // namespace rx
 

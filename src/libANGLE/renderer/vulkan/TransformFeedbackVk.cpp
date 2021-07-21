@@ -65,8 +65,9 @@ void TransformFeedbackVk::initializeXFBBuffersDesc(ContextVk *contextVk, size_t 
 
         if (bufferVk->isBufferValid())
         {
-            mBufferHelpers[bufferIndex] = &bufferVk->getBuffer();
-            mBufferOffsets[bufferIndex] = binding.getOffset();
+            VkDeviceSize bufferOffset   = 0;
+            mBufferHelpers[bufferIndex] = &bufferVk->getBufferAndOffset(&bufferOffset);
+            mBufferOffsets[bufferIndex] = binding.getOffset() + bufferOffset;
             mBufferSizes[bufferIndex]   = gl::GetBoundBufferAvailableSize(binding);
         }
         else
@@ -79,7 +80,8 @@ void TransformFeedbackVk::initializeXFBBuffersDesc(ContextVk *contextVk, size_t 
         }
 
         mXFBBuffersDesc.updateTransformFeedbackBuffer(
-            bufferIndex, mBufferHelpers[bufferIndex]->getBufferSerial());
+            bufferIndex, mBufferHelpers[bufferIndex]->getBufferSerial(),
+            mBufferOffsets[bufferIndex]);
     }
 }
 
@@ -177,7 +179,8 @@ angle::Result TransformFeedbackVk::pause(const gl::Context *context)
 
         for (size_t xfbIndex = 0; xfbIndex < xfbBufferCount; ++xfbIndex)
         {
-            mXFBBuffersDesc.updateTransformFeedbackBuffer(xfbIndex, emptyBuffer.getBufferSerial());
+            mXFBBuffersDesc.updateTransformFeedbackBuffer(xfbIndex, emptyBuffer.getBufferSerial(),
+                                                          0);
         }
     }
 

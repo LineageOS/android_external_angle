@@ -116,7 +116,7 @@ ANGLE_NO_DISCARD bool InitializeUnusedOutputs(TIntermBlock *root,
 }  // anonymous namespace
 
 // class DriverUniformMetal
-TFieldList *DriverUniformMetal::createUniformFields(TSymbolTable *symbolTable) const
+TFieldList *DriverUniformMetal::createUniformFields(TSymbolTable *symbolTable)
 {
     TFieldList *driverFieldList = DriverUniform::createUniformFields(symbolTable);
 
@@ -240,9 +240,9 @@ bool TranslatorMetal::translate(TIntermBlock *root,
     }
 
     // Write translated shader.
-    TOutputVulkanGLSL outputGLSL(sink, getArrayIndexClampingStrategy(), getHashFunction(),
-                                 getNameMap(), &getSymbolTable(), getShaderType(),
-                                 getShaderVersion(), getOutputType(), false, true, compileOptions);
+    TOutputVulkanGLSL outputGLSL(sink, getHashFunction(), getNameMap(), &getSymbolTable(),
+                                 getShaderType(), getShaderVersion(), getOutputType(), false, true,
+                                 compileOptions);
     root->traverse(&outputGLSL);
 
     return compileToSpirv(sink);
