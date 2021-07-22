@@ -55,6 +55,8 @@ class ValidateAST : public TIntermTraverser
     void visitStructInDeclarationUsage(const TType &type, const TSourceLoc &location);
     // Visit a unary or aggregate node and validate it's built-in op against it's built-in function.
     void visitBuiltIn(TIntermOperator *op, const TFunction *function);
+    // Visit an aggregate node and validate its function call is to one that's already defined.
+    void visitFunctionCall(TIntermAggregate *node);
 
     void scope(Visit visit);
     bool isVariableDeclared(const TVariable *variable);
@@ -81,8 +83,18 @@ class ValidateAST : public TIntermTraverser
     // For validateBuiltInOps:
     bool mBuiltInOpsFailed = false;
 
+    // For validateFunctionCall:
+    std::set<const TFunction *> mDeclaredFunctions;
+    bool mFunctionCallFailed = false;
+
+    // For validateNoRawFunctionCalls:
+    bool mNoRawFunctionCallsFailed = false;
+
     // For validateNullNodes:
     bool mNullNodesFailed = false;
+
+    // For validateQualifiers:
+    bool mQualifiersFailed = false;
 
     // For validateStructUsage:
     std::vector<std::map<ImmutableString, const TFieldListCollection *>> mStructsAndBlocksByName;
@@ -112,6 +124,7 @@ ValidateAST::ValidateAST(TIntermNode *root,
     if (!isTreeRoot)
     {
         mOptions.validateVariableReferences = false;
+        mOptions.validateFunctionCall       = false;
     }
 
     if (mOptions.validateSingleParent)
@@ -264,6 +277,32 @@ void ValidateAST::visitBuiltIn(TIntermOperator *node, const TFunction *function)
                             "<validateBuiltInOps>",
                             opValue.data());
         mVariableReferencesFailed = true;
+    }
+}
+
+void ValidateAST::visitFunctionCall(TIntermAggregate *node)
+{
+    if (node->getOp() != EOpCallFunctionInAST)
+    {
+        return;
+    }
+
+    const TFunction *function = node->getFunction();
+
+    if (function == nullptr)
+    {
+        mDiagnostics->error(node->getLine(),
+                            "Found node calling function without a reference to it",
+                            "<validateFunctionCall>");
+        mFunctionCallFailed = true;
+    }
+    else if (mDeclaredFunctions.find(function) == mDeclaredFunctions.end())
+    {
+        mDiagnostics->error(node->getLine(),
+                            "Found node calling previously undeclared function "
+                            "<validateFunctionCall>",
+                            function->name().data());
+        mFunctionCallFailed = true;
     }
 }
 
@@ -480,6 +519,32 @@ bool ValidateAST::visitCase(Visit visit, TIntermCase *node)
 void ValidateAST::visitFunctionPrototype(TIntermFunctionPrototype *node)
 {
     visitNode(PreVisit, node);
+
+    if (mOptions.validateFunctionCall)
+    {
+        const TFunction *function = node->getFunction();
+        mDeclaredFunctions.insert(function);
+    }
+
+    if (mOptions.validateQualifiers)
+    {
+        const TFunction *function = node->getFunction();
+        for (size_t paramIndex = 0; paramIndex < function->getParamCount(); ++paramIndex)
+        {
+            const TVariable *param = function->getParam(paramIndex);
+            TQualifier qualifier   = param->getType().getQualifier();
+
+            if (qualifier != EvqParamIn && qualifier != EvqParamOut && qualifier != EvqParamInOut &&
+                qualifier != EvqParamConst)
+            {
+                mDiagnostics->error(node->getLine(),
+                                    "Found function prototype with an invalid qualifier "
+                                    "<validateQualifiers>",
+                                    param->name().data());
+                mQualifiersFailed = true;
+            }
+        }
+    }
 }
 
 bool ValidateAST::visitFunctionDefinition(Visit visit, TIntermFunctionDefinition *node)
@@ -521,6 +586,23 @@ bool ValidateAST::visitAggregate(Visit visit, TIntermAggregate *node)
     if (visit == PreVisit && mOptions.validateBuiltInOps)
     {
         visitBuiltIn(node, node->getFunction());
+    }
+
+    if (visit == PreVisit && mOptions.validateFunctionCall)
+    {
+        visitFunctionCall(node);
+    }
+
+    if (visit == PreVisit && mOptions.validateNoRawFunctionCalls)
+    {
+        if (node->getOp() == EOpCallInternalRawFunction)
+        {
+            mDiagnostics->error(node->getLine(),
+                                "Found node calling a raw function (deprecated) "
+                                "<validateNoRawFunctionCalls>",
+                                node->getFunction()->name().data());
+            mNoRawFunctionCallsFailed = true;
+        }
     }
 
     return true;
@@ -647,7 +729,8 @@ void ValidateAST::visitPreprocessorDirective(TIntermPreprocessorDirective *node)
 bool ValidateAST::validateInternal()
 {
     return !mSingleParentFailed && !mVariableReferencesFailed && !mBuiltInOpsFailed &&
-           !mNullNodesFailed && !mStructUsageFailed && !mMultiDeclarationsFailed;
+           !mFunctionCallFailed && !mNoRawFunctionCallsFailed && !mNullNodesFailed &&
+           !mQualifiersFailed && !mStructUsageFailed && !mMultiDeclarationsFailed;
 }
 
 }  // anonymous namespace

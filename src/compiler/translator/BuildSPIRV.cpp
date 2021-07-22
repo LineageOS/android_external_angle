@@ -94,21 +94,18 @@ bool IsInvariant(const TType &type, TCompiler *compiler)
 
 TLayoutBlockStorage GetBlockStorage(const TType &type)
 {
-    // If the type specifies the layout, take it from that.
-    TLayoutBlockStorage blockStorage = type.getLayoutQualifier().blockStorage;
-
-    // For user-defined interface blocks, the block storage is specified on the symbol itself and
-    // not the type.
-    if (blockStorage == EbsUnspecified && type.getInterfaceBlock() != nullptr)
+    // For interface blocks, the block storage is specified on the symbol itself.
+    if (type.getInterfaceBlock() != nullptr)
     {
-        blockStorage = type.getInterfaceBlock()->blockStorage();
+        return type.getInterfaceBlock()->blockStorage();
     }
 
-    if (IsShaderIoBlock(type.getQualifier()) || blockStorage == EbsStd140 ||
-        blockStorage == EbsStd430)
-    {
-        return blockStorage;
-    }
+    // I/O blocks must have been handled above.
+    ASSERT(!IsShaderIoBlock(type.getQualifier()));
+
+    // Additionally, interface blocks are already handled, so it's not expected for the type to have
+    // a block storage specified.
+    ASSERT(type.getLayoutQualifier().blockStorage == EbsUnspecified);
 
     // Default to std140 for uniform and std430 for buffer blocks.
     return type.getQualifier() == EvqBuffer ? EbsStd430 : EbsStd140;
@@ -615,7 +612,7 @@ SpirvTypeData SPIRVBuilder::declareType(const SpirvType &type, const TSymbol *bl
         typeId = getNewId({});
         spirv::WriteTypeSampledImage(&mSpirvTypeAndConstantDecls, typeId, nonSampledId);
     }
-    else if (IsImage(type.type) || type.isSamplerBaseImage)
+    else if (IsImage(type.type) || IsSubpassInputType(type.type) || type.isSamplerBaseImage)
     {
         // Declaring an image.
 
@@ -633,11 +630,6 @@ SpirvTypeData SPIRVBuilder::declareType(const SpirvType &type, const TSymbol *bl
         typeId = getNewId({});
         spirv::WriteTypeImage(&mSpirvTypeAndConstantDecls, typeId, sampledType, dim, depth, arrayed,
                               multisampled, sampled, imageFormat, nullptr);
-    }
-    else if (IsSubpassInputType(type.type))
-    {
-        // TODO: add support for framebuffer fetch. http://anglebug.com/4889
-        UNIMPLEMENTED();
     }
     else if (type.secondarySize > 1)
     {
@@ -765,7 +757,7 @@ void SPIRVBuilder::getImageTypeParameters(TBasicType type,
                                           spirv::LiteralInteger *sampledOut)
 {
     TBasicType sampledType = EbtFloat;
-    *dimOut                = spv::Dim2D;
+    *dimOut                = IsSubpassInputType(type) ? spv::DimSubpassData : spv::Dim2D;
     bool isDepth           = false;
     bool isArrayed         = false;
     bool isMultisampled    = false;
@@ -776,6 +768,7 @@ void SPIRVBuilder::getImageTypeParameters(TBasicType type,
         // Float 2D Images
         case EbtSampler2D:
         case EbtImage2D:
+        case EbtSubpassInput:
             break;
         case EbtSamplerExternalOES:
         case EbtSamplerExternal2DY2YEXT:
@@ -789,6 +782,7 @@ void SPIRVBuilder::getImageTypeParameters(TBasicType type,
             break;
         case EbtSampler2DMS:
         case EbtImage2DMS:
+        case EbtSubpassInputMS:
             isMultisampled = true;
             break;
         case EbtSampler2DMSArray:
@@ -807,6 +801,7 @@ void SPIRVBuilder::getImageTypeParameters(TBasicType type,
         // Integer 2D images
         case EbtISampler2D:
         case EbtIImage2D:
+        case EbtISubpassInput:
             sampledType = EbtInt;
             break;
         case EbtISampler2DArray:
@@ -816,6 +811,7 @@ void SPIRVBuilder::getImageTypeParameters(TBasicType type,
             break;
         case EbtISampler2DMS:
         case EbtIImage2DMS:
+        case EbtISubpassInputMS:
             sampledType    = EbtInt;
             isMultisampled = true;
             break;
@@ -829,6 +825,7 @@ void SPIRVBuilder::getImageTypeParameters(TBasicType type,
         // Unsinged integer 2D images
         case EbtUSampler2D:
         case EbtUImage2D:
+        case EbtUSubpassInput:
             sampledType = EbtUInt;
             break;
         case EbtUSampler2DArray:
@@ -838,6 +835,7 @@ void SPIRVBuilder::getImageTypeParameters(TBasicType type,
             break;
         case EbtUSampler2DMS:
         case EbtUImage2DMS:
+        case EbtUSubpassInputMS:
             sampledType    = EbtUInt;
             isMultisampled = true;
             break;
@@ -992,7 +990,6 @@ void SPIRVBuilder::getImageTypeParameters(TBasicType type,
             *dimOut     = spv::DimBuffer;
             break;
         default:
-            // TODO: support framebuffer fetch.  http://anglebug.com/4889
             UNREACHABLE();
     }
 
@@ -1028,6 +1025,8 @@ void SPIRVBuilder::getImageTypeParameters(TBasicType type,
     //     Rect         SampledRect     ImageRect
     //     Buffer       SampledBuffer   ImageBuffer
     //
+    // Additionally, the SubpassData Dim requires the InputAttachment capability.
+    //
     // Note that the Shader capability is always unconditionally added.
     //
     switch (*dimOut)
@@ -1056,8 +1055,10 @@ void SPIRVBuilder::getImageTypeParameters(TBasicType type,
             addCapability(isSampledImage ? spv::CapabilitySampledBuffer
                                          : spv::CapabilityImageBuffer);
             break;
+        case spv::DimSubpassData:
+            addCapability(spv::CapabilityInputAttachment);
+            break;
         default:
-            // TODO: support framebuffer fetch.  http://anglebug.com/4889
             UNREACHABLE();
     }
 }

@@ -660,7 +660,8 @@ def get_basic_mangled_name(basic):
 
 
 essl_levels = [
-    'ESSL3_2_BUILTINS', 'ESSL3_1_BUILTINS', 'ESSL3_BUILTINS', 'ESSL1_BUILTINS', 'COMMON_BUILTINS'
+    'ESSL3_2_BUILTINS', 'ESSL3_1_BUILTINS', 'ESSL3_BUILTINS', 'ESSL1_BUILTINS', 'COMMON_BUILTINS',
+    'ESSL_VULKAN_BUILTINS'
 ]
 
 glsl_levels = [
@@ -682,6 +683,8 @@ def generate_suffix_from_level(level):
 def get_essl_shader_version_for_level(level):
     if level == None:
         return '-1'
+    elif level == 'ESSL_VULKAN_BUILTINS':
+        return 'kESSLVulkanOnly'
     elif level == 'ESSL3_2_BUILTINS':
         return '320'
     elif level == 'ESSL3_1_BUILTINS':
@@ -1143,11 +1146,11 @@ class TType:
             return type_obj
         if glsl_header_type.startswith('out '):
             type_obj = self.parse_type(glsl_header_type[4:])
-            type_obj['qualifier'] = 'Out'
+            type_obj['qualifier'] = 'ParamOut'
             return type_obj
         if glsl_header_type.startswith('inout '):
             type_obj = self.parse_type(glsl_header_type[6:])
-            type_obj['qualifier'] = 'InOut'
+            type_obj['qualifier'] = 'ParamInOut'
             return type_obj
 
         basic_type_map = {
@@ -1456,8 +1459,8 @@ def get_known_to_not_have_side_effects(function_props):
         return 'false'
     else:
         for param in get_parameters(function_props):
-            if 'qualifier' in param.data and (param.data['qualifier'] == 'Out' or
-                                              param.data['qualifier'] == 'InOut'):
+            if 'qualifier' in param.data and (param.data['qualifier'] == 'ParamOut' or
+                                              param.data['qualifier'] == 'ParamInOut'):
                 return 'false'
         return 'true'
 
@@ -1492,9 +1495,9 @@ def get_unique_identifier_name(function_name, parameters):
 def get_variable_name_to_store_parameter(param):
     unique_name = 'pt'
     if 'qualifier' in param.data:
-        if param.data['qualifier'] == 'Out':
+        if param.data['qualifier'] == 'ParamOut':
             unique_name += '_o_'
-        if param.data['qualifier'] == 'InOut':
+        if param.data['qualifier'] == 'ParamInOut':
             unique_name += '_io_'
     unique_name += param.get_mangled_name()
     return unique_name
@@ -1506,9 +1509,9 @@ def get_variable_name_to_store_parameters(parameters):
     unique_name = 'p'
     for param in parameters:
         if 'qualifier' in param.data:
-            if param.data['qualifier'] == 'Out':
+            if param.data['qualifier'] == 'ParamOut':
                 unique_name += '_o_'
-            if param.data['qualifier'] == 'InOut':
+            if param.data['qualifier'] == 'ParamInOut':
                 unique_name += '_io_'
         unique_name += param.get_mangled_name()
     return unique_name

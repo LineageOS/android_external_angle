@@ -181,10 +181,6 @@ constexpr const char *kSkippedMessages[] = {
     "VUID-vkCmdDrawIndexedIndirectCount-None-04584",
     // https://anglebug.com/5912
     "VUID-VkImageViewCreateInfo-pNext-01585",
-    // http://anglebug.com/6155
-    "VUID-vkCmdDraw-None-02699",
-    // http://anglebug.com/6168
-    "VUID-VkImageViewCreateInfo-None-02273",
 };
 
 // Suppress validation errors that are known
@@ -2384,9 +2380,11 @@ void RendererVk::initFeatures(DisplayVk *displayVk,
                              mPhysicalDeviceFeatures.vertexPipelineStoresAndAtomics == VK_TRUE));
 
     // TODO: http://anglebug.com/5927 - drop dependency on customBorderColorWithoutFormat.
-    ANGLE_FEATURE_CONDITION(&mFeatures, supportsCustomBorderColorEXT,
-                            (mCustomBorderColorFeatures.customBorderColors == VK_TRUE &&
-                             mCustomBorderColorFeatures.customBorderColorWithoutFormat == VK_TRUE));
+    // TODO: http://anglebug.com/6200 - re-enable on SwS when possible
+    ANGLE_FEATURE_CONDITION(
+        &mFeatures, supportsCustomBorderColorEXT,
+        mCustomBorderColorFeatures.customBorderColors == VK_TRUE &&
+            mCustomBorderColorFeatures.customBorderColorWithoutFormat == VK_TRUE && !isSwiftShader);
 
     ANGLE_FEATURE_CONDITION(&mFeatures, disableFifoPresentMode, IsLinux() && isIntel);
 
