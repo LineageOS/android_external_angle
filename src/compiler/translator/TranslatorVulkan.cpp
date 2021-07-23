@@ -363,10 +363,7 @@ ANGLE_NO_DISCARD bool AddBresenhamEmulationVS(TCompiler *compiler,
         new TIntermIfElse(specConst->getLineRasterEmulation(), emulationBlock, nullptr);
 
     // Ensure the statements run at the end of the main() function.
-    TIntermFunctionDefinition *main = FindMain(root);
-    TIntermBlock *mainBody          = main->getBody();
-    mainBody->appendStatement(ifEmulation);
-    return compiler->validateAST(root);
+    return RunAtTheEndOfShader(compiler, root, ifEmulation, symbolTable);
 }
 
 ANGLE_NO_DISCARD bool AddXfbEmulationSupport(TCompiler *compiler,
@@ -1349,9 +1346,7 @@ bool TranslatorVulkan::translate(TIntermBlock *root,
     }
 
 #if defined(ANGLE_ENABLE_DIRECT_SPIRV_GENERATION)
-    if ((compileOptions & SH_GENERATE_SPIRV_DIRECTLY) != 0 &&
-        (getShaderType() == GL_VERTEX_SHADER || getShaderType() == GL_FRAGMENT_SHADER ||
-         getShaderType() == GL_COMPUTE_SHADER))
+    if ((compileOptions & SH_GENERATE_SPIRV_DIRECTLY) != 0)
     {
         // Declare the implicitly defined gl_PerVertex I/O blocks if not already.  This will help
         // SPIR-V generation treat them mostly like usual I/O blocks.
