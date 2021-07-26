@@ -262,7 +262,9 @@ class OutputSPIRVTraverser : public TIntermTraverser
     spirv::IdRef createConstructorScalarFromNonScalar(TIntermAggregate *node,
                                                       spirv::IdRef typeId,
                                                       const spirv::IdRefList &parameters);
-    spirv::IdRef createConstructorVectorFromScalar(const TType &type,
+    spirv::IdRef createConstructorVectorFromScalar(const TType &parameterType,
+                                                   TBasicType expectedType,
+                                                   int vectorSize,
                                                    spirv::IdRef typeId,
                                                    const spirv::IdRefList &parameters);
     spirv::IdRef createConstructorVectorFromMatrix(TIntermAggregate *node,
@@ -362,7 +364,7 @@ class OutputSPIRVTraverser : public TIntermTraverser
                                                uint32_t fieldIndex);
 
     TCompiler *mCompiler;
-    ShCompileOptions mCompileOptions;
+    ANGLE_MAYBE_UNUSED ShCompileOptions mCompileOptions;
 
     SPIRVBuilder mBuilder;
 
@@ -444,6 +446,9 @@ spv::StorageClass GetStorageClass(const TType &type, GLenum shaderType)
         case EvqFragCoord:
         case EvqFrontFacing:
         case EvqPointCoord:
+        case EvqSampleID:
+        case EvqSamplePosition:
+        case EvqSampleMaskIn:
         case EvqPatchVerticesIn:
         case EvqTessCoord:
         case EvqPrimitiveIDIn:
@@ -457,7 +462,7 @@ spv::StorageClass GetStorageClass(const TType &type, GLenum shaderType)
             return spv::StorageClassInput;
 
         case EvqFragDepth:
-        case EvqPrimitiveID:
+        case EvqSampleMask:
             return spv::StorageClassOutput;
 
         case EvqTessLevelOuter:
@@ -467,7 +472,9 @@ spv::StorageClass GetStorageClass(const TType &type, GLenum shaderType)
                                                             : spv::StorageClassInput;
 
         case EvqLayer:
+        case EvqPrimitiveID:
             // gl_Layer is output in GS and input in FS.
+            // gl_PrimitiveID is output in GS and input in TCS, TES and FS.
             return shaderType == GL_GEOMETRY_SHADER ? spv::StorageClassOutput
                                                     : spv::StorageClassInput;
 
@@ -538,6 +545,25 @@ spirv::IdRef OutputSPIRVTraverser::getSymbolIdAndStorageClass(const TSymbol *sym
         case EvqFragDepth:
             name              = "gl_FragDepth";
             builtInDecoration = spv::BuiltInFragDepth;
+            mBuilder.addExecutionMode(spv::ExecutionModeDepthReplacing);
+            break;
+        case EvqSampleMask:
+            name              = "gl_SampleMask";
+            builtInDecoration = spv::BuiltInSampleMask;
+            break;
+        case EvqSampleMaskIn:
+            name              = "gl_SampleMaskIn";
+            builtInDecoration = spv::BuiltInSampleMask;
+            break;
+        case EvqSampleID:
+            name              = "gl_SampleID";
+            builtInDecoration = spv::BuiltInSampleId;
+            mBuilder.addCapability(spv::CapabilitySampleRateShading);
+            break;
+        case EvqSamplePosition:
+            name              = "gl_SamplePosition";
+            builtInDecoration = spv::BuiltInSamplePosition;
+            mBuilder.addCapability(spv::CapabilitySampleRateShading);
             break;
         case EvqHelperInvocation:
             name              = "gl_HelperInvocation";
@@ -619,6 +645,12 @@ spirv::IdRef OutputSPIRVTraverser::getSymbolIdAndStorageClass(const TSymbol *sym
     mBuilder.addEntryPointInterfaceVariableId(varId);
     spirv::WriteDecorate(mBuilder.getSpirvDecorations(), varId, spv::DecorationBuiltIn,
                          {spirv::LiteralInteger(builtInDecoration)});
+
+    // Additionally, decorate gl_TessLevel* with Patch.
+    if (type.getQualifier() == EvqTessLevelInner || type.getQualifier() == EvqTessLevelOuter)
+    {
+        spirv::WriteDecorate(mBuilder.getSpirvDecorations(), varId, spv::DecorationPatch, {});
+    }
 
     mSymbolIdMap.insert({symbol, varId});
     return varId;
@@ -1284,8 +1316,8 @@ spirv::IdRef OutputSPIRVTraverser::createConstructor(TIntermAggregate *node, spi
     {
         if (arguments.size() == 1 && arg0Type.isScalar())
         {
-            parameters[0] = castBasicType(parameters[0], arg0Type, type.getBasicType(), nullptr);
-            return createConstructorVectorFromScalar(node->getType(), typeId, parameters);
+            return createConstructorVectorFromScalar(arg0Type, type.getBasicType(),
+                                                     type.getNominalSize(), typeId, parameters);
         }
         if (arguments.size() == 1 && arg0Type.isMatrix())
         {
@@ -1348,15 +1380,21 @@ spirv::IdRef OutputSPIRVTraverser::createConstructorScalarFromNonScalar(
 }
 
 spirv::IdRef OutputSPIRVTraverser::createConstructorVectorFromScalar(
-    const TType &type,
+    const TType &parameterType,
+    TBasicType expectedType,
+    int vectorSize,
     spirv::IdRef typeId,
     const spirv::IdRefList &parameters)
 {
     // vecN(f) translates to OpCompositeConstruct %vecN %f ... %f
     ASSERT(parameters.size() == 1);
-    spirv::IdRefList replicatedParameter(type.getNominalSize(), parameters[0]);
 
-    const spirv::IdRef result = mBuilder.getNewId(mBuilder.getDecorations(type));
+    const spirv::IdRef castParameter =
+        castBasicType(parameters[0], parameterType, expectedType, nullptr);
+
+    spirv::IdRefList replicatedParameter(vectorSize, castParameter);
+
+    const spirv::IdRef result = mBuilder.getNewId(mBuilder.getDecorations(parameterType));
     spirv::WriteCompositeConstruct(mBuilder.getSpirvCurrentFunctionBlock(), typeId, result,
                                    replicatedParameter);
     return result;
@@ -1562,6 +1600,7 @@ spirv::IdRef OutputSPIRVTraverser::createConstructorMatrixFromMatrix(
         // If the parameter is a larger matrix than the constructor type, extract the columns
         // directly and potentially swizzle them.
         SpirvType paramColumnType     = mBuilder.getSpirvType(parameterType, {});
+        paramColumnType.primarySize   = paramColumnType.secondarySize;
         paramColumnType.secondarySize = 1;
         const spirv::IdRef paramColumnTypeId =
             mBuilder.getSpirvTypeData(paramColumnType, nullptr).id;
@@ -1900,11 +1939,14 @@ spirv::IdRef OutputSPIRVTraverser::createFunctionCall(TIntermAggregate *node,
             // Opaque uniforms are passed by pointer.
             paramValue = accessChainCollapse(&param);
         }
-        else if (IsAccessChainUnindexedLValue(param) &&
-                 (param.accessChain.storageClass == spv::StorageClassFunction &&
-                  (mCompileOptions & SH_GENERATE_SPIRV_WORKAROUNDS) == 0))
+        else if (IsAccessChainUnindexedLValue(param) && paramQualifier == EvqParamOut &&
+                 param.accessChain.storageClass == spv::StorageClassFunction)
         {
-            // Unindexed lvalues are passed directly.
+            // Unindexed lvalues are passed directly, but only when they are an out/inout.  In GLSL,
+            // in parameters are considered "copied" to the function.  In SPIR-V, every parameter is
+            // implicitly inout.  If a function takes an in parameter and modifies it, the caller
+            // has to ensure that it calls the function with a copy.  Currently, the functions don't
+            // track whether an in parameter is modified, so we conservatively assume it is.
             //
             // This optimization is not applied on buggy drivers.  http://anglebug.com/6110.
             paramValue = param.baseId;
@@ -2475,13 +2517,16 @@ spirv::IdRef OutputSPIRVTraverser::visitOperator(TIntermOperator *node, spirv::I
             extendedInst = spv::GLSLstd450PackHalf2x16;
             break;
         case EOpUnpackSnorm2x16:
-            extendedInst = spv::GLSLstd450UnpackSnorm2x16;
+            extendedInst         = spv::GLSLstd450UnpackSnorm2x16;
+            extendScalarToVector = false;
             break;
         case EOpUnpackUnorm2x16:
-            extendedInst = spv::GLSLstd450UnpackUnorm2x16;
+            extendedInst         = spv::GLSLstd450UnpackUnorm2x16;
+            extendScalarToVector = false;
             break;
         case EOpUnpackHalf2x16:
-            extendedInst = spv::GLSLstd450UnpackHalf2x16;
+            extendedInst         = spv::GLSLstd450UnpackHalf2x16;
+            extendScalarToVector = false;
             break;
         case EOpPackUnorm4x8:
             extendedInst = spv::GLSLstd450PackUnorm4x8;
@@ -2490,15 +2535,22 @@ spirv::IdRef OutputSPIRVTraverser::visitOperator(TIntermOperator *node, spirv::I
             extendedInst = spv::GLSLstd450PackSnorm4x8;
             break;
         case EOpUnpackUnorm4x8:
-            extendedInst = spv::GLSLstd450UnpackUnorm4x8;
+            extendedInst         = spv::GLSLstd450UnpackUnorm4x8;
+            extendScalarToVector = false;
             break;
         case EOpUnpackSnorm4x8:
-            extendedInst = spv::GLSLstd450UnpackSnorm4x8;
+            extendedInst         = spv::GLSLstd450UnpackSnorm4x8;
+            extendScalarToVector = false;
             break;
         case EOpPackDouble2x32:
+            // TODO: support desktop GLSL.  http://anglebug.com/6197
+            UNIMPLEMENTED();
+            break;
+
         case EOpUnpackDouble2x32:
             // TODO: support desktop GLSL.  http://anglebug.com/6197
             UNIMPLEMENTED();
+            extendScalarToVector = false;
             break;
 
         case EOpLength:
@@ -3458,6 +3510,8 @@ spirv::IdRef OutputSPIRVTraverser::createImageTextureBuiltIn(TIntermOperator *no
             }
             // No coordinates parameter.
             coordinatesIndex = 0;
+            // No dref parameter.
+            isDref = false;
             break;
 
         case EOpTextureSamples:
@@ -3466,6 +3520,8 @@ spirv::IdRef OutputSPIRVTraverser::createImageTextureBuiltIn(TIntermOperator *no
             spirvOp                      = spv::OpImageQuerySamples;
             // No coordinates parameter.
             coordinatesIndex = 0;
+            // No dref parameter.
+            isDref = false;
             break;
 
         case EOpTextureQueryLevels:
@@ -3473,10 +3529,14 @@ spirv::IdRef OutputSPIRVTraverser::createImageTextureBuiltIn(TIntermOperator *no
             spirvOp                      = spv::OpImageQueryLevels;
             // No coordinates parameter.
             coordinatesIndex = 0;
+            // No dref parameter.
+            isDref = false;
             break;
 
         case EOpTextureQueryLod:
             spirvOp = spv::OpImageQueryLod;
+            // No dref parameter.
+            isDref = false;
             break;
 
         default:
@@ -3486,7 +3546,7 @@ spirv::IdRef OutputSPIRVTraverser::createImageTextureBuiltIn(TIntermOperator *no
     // If an implicit-lod instruction is used outside a fragment shader, change that to an explicit
     // one as they are not allowed in SPIR-V outside fragment shaders.
     bool makeLodExplicit =
-        mCompiler->getShaderType() != GL_FRAGMENT_SHADER && lodIndex == 0 &&
+        mCompiler->getShaderType() != GL_FRAGMENT_SHADER && lodIndex == 0 && dPdxIndex == 0 &&
         (spirvOp == spv::OpImageSampleImplicitLod || spirvOp == spv::OpImageFetch);
 
     // Apply any necessary fix up.
@@ -3922,6 +3982,9 @@ spirv::IdRef OutputSPIRVTraverser::castBasicType(spirv::IdRef value,
         return value;
     }
 
+    // Make sure no attempt is made to cast a matrix to int/uint.
+    ASSERT(!valueType.isMatrix() || expectedBasicType == EbtFloat);
+
     SpirvType valueSpirvType                            = mBuilder.getSpirvType(valueType, {});
     valueSpirvType.type                                 = expectedBasicType;
     valueSpirvType.typeSpec.isOrHasBoolInInterfaceBlock = false;
@@ -4184,8 +4247,10 @@ void OutputSPIRVTraverser::extendScalarParamsToVector(TIntermOperator *node,
         // If the child is a scalar, replicate it to form a vector of the right size.
         if (childType.isScalar())
         {
-            (*parameters)[childIndex] = createConstructorVectorFromScalar(
-                type, resultTypeId, {{(*parameters)[childIndex]}});
+            const int vectorSize = type.isMatrix() ? type.getRows() : type.getNominalSize();
+            (*parameters)[childIndex] =
+                createConstructorVectorFromScalar(childType, type.getBasicType(), vectorSize,
+                                                  resultTypeId, {{(*parameters)[childIndex]}});
         }
     }
 }
@@ -4855,9 +4920,10 @@ bool OutputSPIRVTraverser::visitTernary(Visit visit, TIntermTernary *node)
 
     if (lastChildIndex == 0)
     {
+        const TType &conditionType = node->getCondition()->getType();
+
         spirv::IdRef typeId;
-        spirv::IdRef conditionValue =
-            accessChainLoad(&mNodeData.back(), node->getCondition()->getType(), &typeId);
+        spirv::IdRef conditionValue = accessChainLoad(&mNodeData.back(), conditionType, &typeId);
 
         // If OpSelect can be used, keep the condition for later usage.
         if (canUseOpSelect)
@@ -4866,10 +4932,10 @@ bool OutputSPIRVTraverser::visitTernary(Visit visit, TIntermTernary *node)
             // So when selecting between vectors, we must replicate the condition scalar.
             if (type.isVector())
             {
-                typeId = mBuilder.getBasicTypeId(node->getCondition()->getType().getBasicType(),
-                                                 type.getNominalSize());
-                conditionValue =
-                    createConstructorVectorFromScalar(type, typeId, {{conditionValue}});
+                typeId =
+                    mBuilder.getBasicTypeId(conditionType.getBasicType(), type.getNominalSize());
+                conditionValue = createConstructorVectorFromScalar(
+                    conditionType, EbtBool, type.getNominalSize(), typeId, {{conditionValue}});
             }
             nodeDataInitRValue(&mNodeData.back(), conditionValue, typeId);
             return true;
@@ -5179,7 +5245,7 @@ bool OutputSPIRVTraverser::visitSwitch(Visit visit, TIntermSwitch *node)
         }
 
         const spirv::IdRef mergeBlock   = conditional->blockIds.back();
-        const spirv::IdRef defaultBlock = defaultBlockIndex < caseValues.size()
+        const spirv::IdRef defaultBlock = defaultBlockIndex <= caseValues.size()
                                               ? conditional->blockIds[defaultBlockIndex]
                                               : mergeBlock;
 
@@ -5696,6 +5762,13 @@ bool OutputSPIRVTraverser::visitDeclaration(Visit visit, TIntermDeclaration *nod
             // I/O blocks are decorated with Block
             spirv::WriteDecorate(mBuilder.getSpirvDecorations(), nonArrayTypeId,
                                  spv::DecorationBlock, {});
+        }
+
+        // Tessellation shaders can have their input or output qualified with |patch|.
+        if (type.getQualifier() == EvqPatchIn || type.getQualifier() == EvqPatchOut)
+        {
+            spirv::WriteDecorate(mBuilder.getSpirvDecorations(), nonArrayTypeId,
+                                 spv::DecorationPatch, {});
         }
     }
     else if (isInterfaceBlock)
