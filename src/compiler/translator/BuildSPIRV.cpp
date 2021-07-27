@@ -36,6 +36,7 @@ bool operator==(const SpirvType &a, const SpirvType &b)
         return a.typeSpec.blockStorage == b.typeSpec.blockStorage &&
                a.typeSpec.isInvariantBlock == b.typeSpec.isInvariantBlock &&
                a.typeSpec.isRowMajorQualifiedBlock == b.typeSpec.isRowMajorQualifiedBlock &&
+               a.typeSpec.isPatchIOBlock == b.typeSpec.isPatchIOBlock &&
                a.typeSpec.isOrHasBoolInInterfaceBlock == b.typeSpec.isOrHasBoolInInterfaceBlock;
     }
 
@@ -296,6 +297,13 @@ spv::ExecutionMode GetGeometryOutputExecutionMode(TLayoutPrimitiveType primitive
 
 spv::ExecutionMode GetTessEvalInputExecutionMode(TLayoutTessEvaluationType inputType)
 {
+    // It's invalid for input type to not be specified, but that's a link-time error.  Default to
+    // anything.
+    if (inputType == EtetUndefined)
+    {
+        inputType = EtetTriangles;
+    }
+
     switch (inputType)
     {
         case EtetTriangles:
@@ -383,6 +391,12 @@ void SpirvTypeSpec::inferDefaults(const TType &type, TCompiler *compiler)
                                           type.isStructureContainingType(EbtBool) ||
                                           type.getBasicType() == EbtBool;
         }
+
+        if (!isPatchIOBlock && type.isInterfaceBlock())
+        {
+            isPatchIOBlock =
+                type.getQualifier() == EvqPatchIn || type.getQualifier() == EvqPatchOut;
+        }
     }
 
     // |invariant| is significant for structs as the fields of the type are decorated with Invariant
@@ -411,6 +425,9 @@ void SpirvTypeSpec::onArrayElementSelection(bool isElementTypeBlock, bool isElem
 
 void SpirvTypeSpec::onBlockFieldSelection(const TType &fieldType)
 {
+    // Patch is never recursively applied.
+    isPatchIOBlock = false;
+
     if (fieldType.getStruct() == nullptr)
     {
         // If the field is not a block, no difference if the parent block was invariant or
@@ -1172,7 +1189,7 @@ void SPIRVBuilder::getImageTypeParameters(TBasicType type,
         case spv::Dim3D:
             break;
         case spv::DimCube:
-            if (!isSampledImage && isArrayed && isMultisampled)
+            if (!isSampledImage && isArrayed)
             {
                 addCapability(spv::CapabilityImageCubeArray);
             }
@@ -1447,8 +1464,8 @@ spirv::IdRef SPIRVBuilder::declareVariable(spirv::IdRef typeId,
                                     ? &mSpirvCurrentFunctionBlocks.front().localVariables
                                     : &mSpirvVariableDecls;
 
-    const spirv::IdRef variableId    = getNewId(decorations);
     const spirv::IdRef typePointerId = getTypePointerId(typeId, storageClass);
+    const spirv::IdRef variableId    = getNewId(decorations);
 
     spirv::WriteVariable(spirvSection, typePointerId, variableId, storageClass, initializerId);
 
@@ -1621,6 +1638,11 @@ void SPIRVBuilder::addExecutionMode(spv::ExecutionMode executionMode)
 {
     ASSERT(static_cast<size_t>(executionMode) < mExecutionModes.size());
     mExecutionModes.set(executionMode);
+}
+
+void SPIRVBuilder::addExtension(SPIRVExtensions extension)
+{
+    mExtensions.set(extension);
 }
 
 void SPIRVBuilder::setEntryPointId(spirv::IdRef id)
@@ -1911,6 +1933,13 @@ void SPIRVBuilder::writeMemberDecorations(const SpirvType &type, spirv::IdRef ty
         // Add interpolation and auxiliary decorations
         writeInterpolationDecoration(fieldType.getQualifier(), typeId, fieldIndex);
 
+        // Add patch decoration if any.
+        if (type.typeSpec.isPatchIOBlock)
+        {
+            spirv::WriteMemberDecorate(&mSpirvDecorations, typeId,
+                                       spirv::LiteralInteger(fieldIndex), spv::DecorationPatch, {});
+        }
+
         // Add other decorations.
         SpirvDecorations decorations = getDecorations(fieldType);
         for (const spv::Decoration decoration : decorations)
@@ -2038,7 +2067,8 @@ spirv::Blob SPIRVBuilder::getSpirv()
         spirv::WriteCapability(&result, capability);
     }
 
-    // - OpExtension instructions (TODO: http://anglebug.com/4889)
+    // - OpExtension instructions
+    writeExtensions(&result);
 
     // - OpExtInstImport
     if (mExtInstImportIdStd.valid())
@@ -2062,13 +2092,14 @@ spirv::Blob SPIRVBuilder::getSpirv()
                            mEntryPointInterfaceList);
 
     // - OpExecutionMode instructions
-    generateExecutionModes(&result);
+    writeExecutionModes(&result);
 
-    // - OpSource instruction.
+    // - OpSource and OpSourceExtension instructions.
     //
     // This is to support debuggers and capture/replay tools and isn't strictly necessary.
     spirv::WriteSource(&result, spv::SourceLanguageGLSL, spirv::LiteralInteger(450), nullptr,
                        nullptr);
+    writeSourceExtensions(&result);
 
     // Append the already generated sections in order
     result.insert(result.end(), mSpirvDebug.begin(), mSpirvDebug.end());
@@ -2084,7 +2115,7 @@ spirv::Blob SPIRVBuilder::getSpirv()
     return result;
 }
 
-void SPIRVBuilder::generateExecutionModes(spirv::Blob *blob)
+void SPIRVBuilder::writeExecutionModes(spirv::Blob *blob)
 {
     switch (mShaderType)
     {
@@ -2132,11 +2163,13 @@ void SPIRVBuilder::generateExecutionModes(spirv::Blob *blob)
             const spv::ExecutionMode outputExecutionMode =
                 GetGeometryOutputExecutionMode(mCompiler->getGeometryShaderOutputPrimitiveType());
 
+            // max_vertices=0 is not valid in Vulkan
+            const int maxVertices = std::max(1, mCompiler->getGeometryShaderMaxVertices());
+
             spirv::WriteExecutionMode(blob, mEntryPointId, inputExecutionMode, {});
             spirv::WriteExecutionMode(blob, mEntryPointId, outputExecutionMode, {});
-            spirv::WriteExecutionMode(
-                blob, mEntryPointId, spv::ExecutionModeOutputVertices,
-                {spirv::LiteralInteger(mCompiler->getGeometryShaderMaxVertices())});
+            spirv::WriteExecutionMode(blob, mEntryPointId, spv::ExecutionModeOutputVertices,
+                                      {spirv::LiteralInteger(maxVertices)});
             spirv::WriteExecutionMode(
                 blob, mEntryPointId, spv::ExecutionModeInvocations,
                 {spirv::LiteralInteger(mCompiler->getGeometryShaderInvocations())});
@@ -2163,6 +2196,36 @@ void SPIRVBuilder::generateExecutionModes(spirv::Blob *blob)
     {
         spirv::WriteExecutionMode(blob, mEntryPointId,
                                   static_cast<spv::ExecutionMode>(executionMode), {});
+    }
+}
+
+void SPIRVBuilder::writeExtensions(spirv::Blob *blob)
+{
+    for (SPIRVExtensions extension : mExtensions)
+    {
+        switch (extension)
+        {
+            case SPIRVExtensions::MultiviewOVR:
+                spirv::WriteExtension(blob, "SPV_KHR_multiview");
+                break;
+            default:
+                UNREACHABLE();
+        }
+    }
+}
+
+void SPIRVBuilder::writeSourceExtensions(spirv::Blob *blob)
+{
+    for (SPIRVExtensions extension : mExtensions)
+    {
+        switch (extension)
+        {
+            case SPIRVExtensions::MultiviewOVR:
+                spirv::WriteSourceExtension(blob, "GL_OVR_multiview");
+                break;
+            default:
+                UNREACHABLE();
+        }
     }
 }
 

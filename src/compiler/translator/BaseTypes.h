@@ -729,6 +729,19 @@ inline bool IsSampler1D(TBasicType type)
     return false;
 }
 
+inline bool IsSamplerBuffer(TBasicType type)
+{
+    switch (type)
+    {
+        case EbtSamplerBuffer:
+        case EbtISamplerBuffer:
+        case EbtUSamplerBuffer:
+            return true;
+        default:
+            return false;
+    }
+}
+
 inline bool IsShadowSampler(TBasicType type)
 {
     switch (type)
@@ -969,6 +982,19 @@ inline bool IsImageCube(TBasicType type)
     return false;
 }
 
+inline bool IsImageBuffer(TBasicType type)
+{
+    switch (type)
+    {
+        case EbtImageBuffer:
+        case EbtIImageBuffer:
+        case EbtUImageBuffer:
+            return true;
+        default:
+            return false;
+    }
+}
+
 inline bool IsInteger(TBasicType type)
 {
     return type == EbtInt || type == EbtUInt;
@@ -1197,6 +1223,8 @@ inline bool IsShaderIoBlock(TQualifier qualifier)
         case EvqTessControlOut:
         case EvqTessEvaluationIn:
         case EvqTessEvaluationOut:
+        case EvqPatchIn:
+        case EvqPatchOut:
         case EvqGeometryIn:
         case EvqGeometryOut:
         case EvqFragmentIn:
