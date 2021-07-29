@@ -305,34 +305,34 @@ bool CanInsertOpcodeBeforeInstruction(
 
 bool CanMakeSynonymOf(opt::IRContext* ir_context,
                       const TransformationContext& transformation_context,
-                      opt::Instruction* inst) {
-  if (inst->opcode() == SpvOpSampledImage) {
+                      const opt::Instruction& inst) {
+  if (inst.opcode() == SpvOpSampledImage) {
     // The SPIR-V data rules say that only very specific instructions may
     // may consume the result id of an OpSampledImage, and this excludes the
     // instructions that are used for making synonyms.
     return false;
   }
-  if (!inst->HasResultId()) {
+  if (!inst.HasResultId()) {
     // We can only make a synonym of an instruction that generates an id.
     return false;
   }
   if (transformation_context.GetFactManager()->IdIsIrrelevant(
-          inst->result_id())) {
+          inst.result_id())) {
     // An irrelevant id can't be a synonym of anything.
     return false;
   }
-  if (!inst->type_id()) {
+  if (!inst.type_id()) {
     // We can only make a synonym of an instruction that has a type.
     return false;
   }
-  auto type_inst = ir_context->get_def_use_mgr()->GetDef(inst->type_id());
+  auto type_inst = ir_context->get_def_use_mgr()->GetDef(inst.type_id());
   if (type_inst->opcode() == SpvOpTypeVoid) {
     // We only make synonyms of instructions that define objects, and an object
     // cannot have void type.
     return false;
   }
   if (type_inst->opcode() == SpvOpTypePointer) {
-    switch (inst->opcode()) {
+    switch (inst.opcode()) {
       case SpvOpConstantNull:
       case SpvOpUndef:
         // We disallow making synonyms of null or undefined pointers.  This is
@@ -348,7 +348,7 @@ bool CanMakeSynonymOf(opt::IRContext* ir_context,
   // not decorated analogously, using the original object vs. its synonymous
   // form may not be equivalent.
   return ir_context->get_decoration_mgr()
-      ->GetDecorationsFor(inst->result_id(), true)
+      ->GetDecorationsFor(inst.result_id(), true)
       .empty();
 }
 
@@ -502,8 +502,12 @@ bool IsValidAndWellFormed(const opt::IRContext* ir_context,
   // this is a useful aid to debugging.
   std::unordered_map<uint32_t, opt::Instruction*> unique_ids;
   bool found_duplicate = false;
-  ir_context->module()->ForEachInst([&consumer, &found_duplicate,
+  ir_context->module()->ForEachInst([&consumer, &found_duplicate, ir_context,
                                      &unique_ids](opt::Instruction* inst) {
+    (void)ir_context;  // Only used in an assertion; keep release-mode compilers
+                       // happy.
+    assert(inst->context() == ir_context &&
+           "Instruction has wrong IR context.");
     if (unique_ids.count(inst->unique_id()) != 0) {
       consumer(SPV_MSG_INFO, nullptr, {},
                "Two instructions have the same unique id (set a breakpoint to "
@@ -787,11 +791,38 @@ uint32_t InOperandIndexFromOperandIndex(const opt::Instruction& inst,
   return absolute_index - inst.NumOperands() + inst.NumInOperands();
 }
 
-bool IsNullConstantSupported(const opt::analysis::Type& type) {
-  return type.AsBool() || type.AsInteger() || type.AsFloat() ||
-         type.AsMatrix() || type.AsVector() || type.AsArray() ||
-         type.AsStruct() || type.AsPointer() || type.AsEvent() ||
-         type.AsDeviceEvent() || type.AsReserveId() || type.AsQueue();
+bool IsNullConstantSupported(opt::IRContext* ir_context,
+                             const opt::Instruction& type_inst) {
+  switch (type_inst.opcode()) {
+    case SpvOpTypeArray:
+    case SpvOpTypeBool:
+    case SpvOpTypeDeviceEvent:
+    case SpvOpTypeEvent:
+    case SpvOpTypeFloat:
+    case SpvOpTypeInt:
+    case SpvOpTypeMatrix:
+    case SpvOpTypeQueue:
+    case SpvOpTypeReserveId:
+    case SpvOpTypeVector:
+    case SpvOpTypeStruct:
+      return true;
+    case SpvOpTypePointer:
+      // Null pointers are allowed if the VariablePointers capability is
+      // enabled, or if the VariablePointersStorageBuffer capability is enabled
+      // and the pointer type has StorageBuffer as its storage class.
+      if (ir_context->get_feature_mgr()->HasCapability(
+              SpvCapabilityVariablePointers)) {
+        return true;
+      }
+      if (ir_context->get_feature_mgr()->HasCapability(
+              SpvCapabilityVariablePointersStorageBuffer)) {
+        return type_inst.GetSingleWordInOperand(0) ==
+               SpvStorageClassStorageBuffer;
+      }
+      return false;
+    default:
+      return false;
+  }
 }
 
 bool GlobalVariablesMustBeDeclaredInEntryPointInterfaces(

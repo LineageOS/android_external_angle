@@ -44,14 +44,14 @@
 #include "compiler/translator/tree_ops/SeparateDeclarations.h"
 #include "compiler/translator/tree_ops/SimplifyLoopConditions.h"
 #include "compiler/translator/tree_ops/SplitSequenceOperator.h"
+#include "compiler/translator/tree_ops/apple/AddAndTrueToLoopCondition.h"
+#include "compiler/translator/tree_ops/apple/RewriteDoWhile.h"
+#include "compiler/translator/tree_ops/apple/UnfoldShortCircuitAST.h"
 #include "compiler/translator/tree_ops/gl/ClampFragDepth.h"
 #include "compiler/translator/tree_ops/gl/RegenerateStructNames.h"
 #include "compiler/translator/tree_ops/gl/RewriteRepeatedAssignToSwizzled.h"
 #include "compiler/translator/tree_ops/gl/UseInterfaceBlockFields.h"
 #include "compiler/translator/tree_ops/gl/VectorizeVectorScalarArithmetic.h"
-#include "compiler/translator/tree_ops/gl/mac/AddAndTrueToLoopCondition.h"
-#include "compiler/translator/tree_ops/gl/mac/RewriteDoWhile.h"
-#include "compiler/translator/tree_ops/gl/mac/UnfoldShortCircuitAST.h"
 #include "compiler/translator/tree_ops/vulkan/EarlyFragmentTestsOptimization.h"
 #include "compiler/translator/tree_util/BuiltIn.h"
 #include "compiler/translator/tree_util/IntermNodePatternMatcher.h"
@@ -578,10 +578,23 @@ bool TCompiler::disableValidateFunctionCall()
     return wasEnabled;
 }
 
-void TCompiler::enableValidateFunctionCall(bool enable)
+void TCompiler::restoreValidateFunctionCall(bool enable)
 {
     ASSERT(!mValidateASTOptions.validateFunctionCall);
     mValidateASTOptions.validateFunctionCall = enable;
+}
+
+bool TCompiler::disableValidateVariableReferences()
+{
+    bool wasEnabled                                = mValidateASTOptions.validateVariableReferences;
+    mValidateASTOptions.validateVariableReferences = false;
+    return wasEnabled;
+}
+
+void TCompiler::restoreValidateVariableReferences(bool enable)
+{
+    ASSERT(!mValidateASTOptions.validateVariableReferences);
+    mValidateASTOptions.validateVariableReferences = enable;
 }
 
 bool TCompiler::checkAndSimplifyAST(TIntermBlock *root,
