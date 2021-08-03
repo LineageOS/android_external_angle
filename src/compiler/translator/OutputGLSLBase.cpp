@@ -364,6 +364,17 @@ const char *TOutputGLSLBase::mapQualifierToString(TQualifier qualifier)
                 break;
         }
     }
+
+    // Handle qualifiers that produce different output based on shader type.
+    switch (qualifier)
+    {
+        case EvqClipDistance:
+        case EvqCullDistance:
+            return mShaderType == GL_FRAGMENT_SHADER ? "in" : "out";
+        default:
+            break;
+    }
+
     return sh::getQualifierString(qualifier);
 }
 
@@ -422,9 +433,13 @@ void TOutputGLSLBase::writeFunctionParameters(const TFunction *func)
         writeVariableType(type, param, true);
 
         if (param->symbolType() != SymbolType::Empty)
+        {
             out << " " << hashName(param);
+        }
         if (type.isArray())
+        {
             out << ArrayString(type);
+        }
 
         // Put a comma if this is not the last argument.
         if (i != paramCount - 1)
@@ -1128,12 +1143,21 @@ void TOutputGLSLBase::declareStruct(const TStructure *structure)
     const TFieldList &fields = structure->fields();
     for (size_t i = 0; i < fields.size(); ++i)
     {
-        const TField *field = fields[i];
-        if (writeVariablePrecision(field->type()->getPrecision()))
+        const TField *field    = fields[i];
+        const TType &fieldType = *field->type();
+        if (writeVariablePrecision(fieldType.getPrecision()))
+        {
             out << " ";
-        out << getTypeName(*field->type()) << " " << hashFieldName(field);
-        if (field->type()->isArray())
-            out << ArrayString(*field->type());
+        }
+        if (fieldType.isPrecise())
+        {
+            writePreciseQualifier(fieldType);
+        }
+        out << getTypeName(fieldType) << " " << hashFieldName(field);
+        if (fieldType.isArray())
+        {
+            out << ArrayString(fieldType);
+        }
         out << ";\n";
     }
     out << "}";
@@ -1237,6 +1261,10 @@ void TOutputGLSLBase::declareInterfaceBlock(const TType &type)
         if (fieldType.isInvariant())
         {
             writeInvariantQualifier(fieldType);
+        }
+        if (fieldType.isPrecise())
+        {
+            writePreciseQualifier(fieldType);
         }
 
         const char *qualifier = getVariableInterpolation(fieldType.getQualifier());

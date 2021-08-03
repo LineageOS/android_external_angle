@@ -2596,11 +2596,10 @@ out vec4 color;
 
 uniform int i;
 uniform uint u;
+uniform bool b;
 
 void main()
 {
-    bool b = i > 10;
-
     mat3x2 mi = mat3x2(i);
     mat4 mu = mat4(u);
     mat2x4 mb = mat2x4(b);
@@ -2618,10 +2617,55 @@ void main()
 
     GLint iloc = glGetUniformLocation(program, "i");
     GLint uloc = glGetUniformLocation(program, "u");
+    GLint bloc = glGetUniformLocation(program, "b");
     ASSERT_NE(iloc, -1);
     ASSERT_NE(uloc, -1);
+    ASSERT_NE(bloc, -1);
     glUniform1i(iloc, -123);
     glUniform1ui(uloc, 456);
+    glUniform1ui(bloc, 1);
+
+    drawQuad(program, essl3_shaders::PositionAttrib(), 0.5f);
+    EXPECT_GL_NO_ERROR();
+
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::white);
+}
+
+// Test that constructing vectors from non-float types works.
+TEST_P(GLSLTest_ES3, ConstructVectorFromNonFloat)
+{
+    constexpr char kFS[] = R"(#version 300 es
+precision highp float;
+out vec4 color;
+
+uniform ivec2 i;
+uniform uvec2 u;
+uniform bvec2 b;
+
+void main()
+{
+    vec2 v2 = vec2(i.x, b);
+    vec3 v3 = vec3(b, u);
+    vec4 v4 = vec4(i, u);
+
+    color = vec4(v2.x == float(i.x) && v2.y == float(b.x) ? 1 : 0,
+                 v3.x == float(b.x) && v3.y == float(b.y) && v3.z == float(u.x) ? 1 : 0,
+                 v4.x == float(i.x) && v4.y == float(i.y) && v4.z == float(u.x) && v4.w == float(u.y) ? 1 : 0,
+                 1);
+})";
+
+    ANGLE_GL_PROGRAM(program, essl3_shaders::vs::Simple(), kFS);
+    glUseProgram(program);
+
+    GLint iloc = glGetUniformLocation(program, "i");
+    GLint uloc = glGetUniformLocation(program, "u");
+    GLint bloc = glGetUniformLocation(program, "b");
+    ASSERT_NE(iloc, -1);
+    ASSERT_NE(uloc, -1);
+    ASSERT_NE(bloc, -1);
+    glUniform2i(iloc, -123, -23);
+    glUniform2ui(uloc, 456, 76);
+    glUniform2ui(bloc, 1, 0);
 
     drawQuad(program, essl3_shaders::PositionAttrib(), 0.5f);
     EXPECT_GL_NO_ERROR();
@@ -2644,11 +2688,12 @@ void main()
     ivec3 vi = ivec3(m);
     uvec2 vu = uvec2(m);
     bvec4 vb = bvec4(m);
+    bvec2 vb2 = bvec2(vi.x, m);
 
     color = vec4(vi.x == int(f) ? 1 : 0,
                  vu.x == uint(f) ? 1 : 0,
                  vb.x == bool(f) ? 1 : 0,
-                 1);
+                 vb2.x == bool(f) && vb2.y == bool(f) ? 1 : 0);
 })";
 
     ANGLE_GL_PROGRAM(program, essl3_shaders::vs::Simple(), kFS);
@@ -3091,7 +3136,10 @@ TEST_P(GLSLTest_ES3, AtanVec2)
 TEST_P(GLSLTest_ES3, UnaryMinusOperatorSignedInt)
 {
     // http://anglebug.com/5242
-    ANGLE_SKIP_TEST_IF(IsMetal() && IsIntel());
+    // Test times out on dual-GPU MacBook Pros that don't show up as
+    // IsIntel(); skip on all Metal for now.
+    // See also http://anglebug.com/6174 .
+    ANGLE_SKIP_TEST_IF(IsMetal());
 
     constexpr char kVS[] =
         "#version 300 es\n"
@@ -3141,7 +3189,10 @@ TEST_P(GLSLTest_ES3, UnaryMinusOperatorSignedInt)
 TEST_P(GLSLTest_ES3, UnaryMinusOperatorUnsignedInt)
 {
     // http://anglebug.com/5242
-    ANGLE_SKIP_TEST_IF(IsMetal() && IsIntel());
+    // Test times out on dual-GPU MacBook Pros that don't show up as
+    // IsIntel(); skip on all Metal for now.
+    // See also http://anglebug.com/6174 .
+    ANGLE_SKIP_TEST_IF(IsMetal());
 
     constexpr char kVS[] =
         "#version 300 es\n"
@@ -3207,6 +3258,44 @@ TEST_P(GLSLTest, NestedSequenceOperatorWithTernaryInside)
     ANGLE_GL_PROGRAM(prog, essl1_shaders::vs::Simple(), kFS);
     drawQuad(prog.get(), essl1_shaders::PositionAttrib(), 0.5f);
     EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green);
+}
+
+// Test that nesting ternary and short-circuitting operators work.
+TEST_P(GLSLTest, NestedTernaryAndShortCircuit)
+{
+    // Note that the uniform doesn't need to be set, and will contain the default value of false.
+    constexpr char kFS[] = R"(
+precision mediump float;
+uniform bool u;
+void main()
+{
+    int a = u ? 12345 : 2;      // will be 2
+    int b = u ? 12345 : 4;      // will be 4
+    int c = u ? 12345 : 0;      // will be 0
+
+    if (a == 2                  // true path is taken
+        ? (b == 3               // false path is taken
+            ? (a=0) != 0
+            : b != 0            // true
+          ) && (                // short-circuit evaluates RHS
+            (a=7) == 7          // true, modifies a
+            ||                  // short-circuit doesn't evaluate RHS
+            (b=8) == 8
+          )
+        : (a == 0 && b == 0
+            ? (c += int((a=0) == 0 && (b=0) == 0)) != 0
+            : (c += int((a=0) != 0 && (b=0) != 0)) != 0))
+    {
+        c += 15;                // will execute
+    }
+
+    // Verify that a is 7, b is 4 and c is 15.
+    gl_FragColor = vec4(a == 7, b == 4, c == 15, 1);
+})";
+
+    ANGLE_GL_PROGRAM(prog, essl1_shaders::vs::Simple(), kFS);
+    drawQuad(prog.get(), essl1_shaders::PositionAttrib(), 0.5f);
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::white);
 }
 
 // Test that uniform bvecN passed to functions work.

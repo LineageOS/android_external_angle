@@ -10,6 +10,7 @@
 #include <stdio.h>
 
 #include "common/mathutil.h"
+#include "common/utilities.h"
 #include "compiler/preprocessor/SourceLocation.h"
 #include "compiler/translator/Declarator.h"
 #include "compiler/translator/StaticType.h"
@@ -246,6 +247,7 @@ TParseContext::TParseContext(TSymbolTable &symt,
       mTessEvaluationShaderInputVertexSpacingType(EtetUndefined),
       mTessEvaluationShaderInputOrderingType(EtetUndefined),
       mTessEvaluationShaderInputPointType(EtetUndefined),
+      mHasAnyPreciseType(false),
       mFunctionBodyNewScope(false),
       mOutputType(outputType)
 {}
@@ -742,7 +744,7 @@ bool TParseContext::checkIsAtGlobalLevel(const TSourceLoc &line, const char *tok
 bool TParseContext::checkIsNotReserved(const TSourceLoc &line, const ImmutableString &identifier)
 {
     static const char *reservedErrMsg = "reserved built-in name";
-    if (identifier.beginsWith("gl_"))
+    if (gl::IsBuiltInName(identifier.data()))
     {
         error(line, reservedErrMsg, "gl_");
         return false;
@@ -1246,7 +1248,19 @@ bool TParseContext::declareVariable(const TSourceLoc &line,
 {
     ASSERT((*variable) == nullptr);
 
-    (*variable) = new TVariable(&symbolTable, identifier, type, SymbolType::UserDefined);
+    SymbolType symbolType = SymbolType::UserDefined;
+    switch (type->getQualifier())
+    {
+        case EvqClipDistance:
+        case EvqCullDistance:
+        case EvqLastFragData:
+            symbolType = SymbolType::BuiltIn;
+            break;
+        default:
+            ASSERT(!IsRedeclarableBuiltIn(identifier));
+    }
+
+    (*variable) = new TVariable(&symbolTable, identifier, type, symbolType);
 
     ASSERT(type->getLayoutQualifier().index == -1 ||
            (isExtensionEnabled(TExtension::EXT_blend_func_extended) &&
@@ -1411,6 +1425,11 @@ void TParseContext::checkIsParameterQualifierValid(
     if (typeQualifier.precision != EbpUndefined)
     {
         type->setPrecision(typeQualifier.precision);
+    }
+
+    if (typeQualifier.precise)
+    {
+        type->setPrecise(true);
     }
 }
 
@@ -2242,6 +2261,22 @@ TIntermTyped *TParseContext::parseVariableIdentifier(const TSourceLoc &location,
     return node;
 }
 
+void TParseContext::adjustRedeclaredBuiltInType(const ImmutableString &identifier, TType *type)
+{
+    if (identifier == "gl_ClipDistance")
+    {
+        type->setQualifier(EvqClipDistance);
+    }
+    else if (identifier == "gl_CullDistance")
+    {
+        type->setQualifier(EvqCullDistance);
+    }
+    else if (identifier == "gl_LastFragData")
+    {
+        type->setQualifier(EvqLastFragData);
+    }
+}
+
 // Initializers show up in several places in the grammar.  Have one set of
 // code to handle them here.
 //
@@ -2967,6 +3002,8 @@ TIntermDeclaration *TParseContext::parseSingleArrayDeclaration(
         checkAtomicCounterOffsetAlignment(identifierLocation, *arrayType);
     }
 
+    adjustRedeclaredBuiltInType(identifier, arrayType);
+
     TIntermDeclaration *declaration = new TIntermDeclaration();
     declaration->setLine(identifierLocation);
 
@@ -3141,6 +3178,8 @@ void TParseContext::parseDeclarator(TPublicType &publicType,
         checkAtomicCounterOffsetAlignment(identifierLocation, *type);
     }
 
+    adjustRedeclaredBuiltInType(identifier, type);
+
     TVariable *variable = nullptr;
     if (declareVariable(identifierLocation, identifier, type, &variable))
     {
@@ -3183,6 +3222,8 @@ void TParseContext::parseArrayDeclarator(TPublicType &elementType,
 
             checkAtomicCounterOffsetAlignment(identifierLocation, *arrayType);
         }
+
+        adjustRedeclaredBuiltInType(identifier, arrayType);
 
         TVariable *variable = nullptr;
         if (declareVariable(identifierLocation, identifier, arrayType, &variable))
@@ -4836,9 +4877,8 @@ TIntermTyped *TParseContext::addIndexExpression(TIntermTyped *baseExpression,
             {
                 TConstantUnion *safeConstantUnion = new TConstantUnion();
                 safeConstantUnion->setIConst(safeIndex);
-                indexExpression = new TIntermConstantUnion(
-                    safeConstantUnion, TType(EbtInt, indexExpression->getPrecision(),
-                                             indexExpression->getQualifier()));
+                indexExpression =
+                    new TIntermConstantUnion(safeConstantUnion, TType(indexExpression->getType()));
             }
 
             TIntermBinary *node =
