@@ -117,10 +117,6 @@ bool TranslatorGLSL::translate(TIntermBlock *root,
         }
     }
 
-    bool precisionEmulation = false;
-    if (!emulatePrecisionIfNeeded(root, sink, &precisionEmulation, getOutputType()))
-        return false;
-
     // Write emulated built-in functions if needed.
     if (!getBuiltInFunctionEmulator().isOutputEmpty())
     {
@@ -213,8 +209,7 @@ bool TranslatorGLSL::translate(TIntermBlock *root,
     }
 
     // Write translated shader.
-    TOutputGLSL outputGLSL(sink, getHashFunction(), getNameMap(), &getSymbolTable(),
-                           getShaderType(), getShaderVersion(), getOutputType(), compileOptions);
+    TOutputGLSL outputGLSL(this, sink, compileOptions);
 
     root->traverse(&outputGLSL);
 

@@ -56,6 +56,8 @@ struct ValidateASTOptions
     //  - Function-local variables must have the EvqTemporary qualifier.
     //  - Symbol references and declarations have identical qualifiers.
     bool validateQualifiers = true;
+    // Check that the nodes are consistent w.r.t the precision of the operands involved.
+    bool validatePrecision = true;  // TODO
     // Check that variable declarations that can't have initializers don't have initializers
     // (varyings, uniforms for example).
     bool validateInitializers = true;  // TODO
@@ -83,6 +85,10 @@ struct ValidateASTOptions
     bool validateExpressionTypes = true;
     // If SeparateDeclarations has been run, check for the absence of multi declarations as well.
     bool validateMultiDeclarations = false;
+
+    // Once set, disallows any further transformations on the tree.  Used before AST post-processing
+    // which requires that the tree remains unmodified.
+    bool validateNoMoreTransformations = false;
 };
 
 // Check for errors and output error messages on the context.

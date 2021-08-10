@@ -81,22 +81,18 @@ Stream &operator<<(Stream &out, CommaSeparatedListItemPrefixGenerator &gen)
 
 }  // namespace
 
-TOutputGLSLBase::TOutputGLSLBase(TInfoSinkBase &objSink,
-                                 ShHashFunction64 hashFunction,
-                                 NameMap &nameMap,
-                                 TSymbolTable *symbolTable,
-                                 sh::GLenum shaderType,
-                                 int shaderVersion,
-                                 ShShaderOutput output,
+TOutputGLSLBase::TOutputGLSLBase(TCompiler *compiler,
+                                 TInfoSinkBase &objSink,
                                  ShCompileOptions compileOptions)
-    : TIntermTraverser(true, true, true, symbolTable),
+    : TIntermTraverser(true, true, true, &compiler->getSymbolTable()),
       mObjSink(objSink),
       mDeclaringVariable(false),
-      mHashFunction(hashFunction),
-      mNameMap(nameMap),
-      mShaderType(shaderType),
-      mShaderVersion(shaderVersion),
-      mOutput(output),
+      mHashFunction(compiler->getHashFunction()),
+      mNameMap(compiler->getNameMap()),
+      mShaderType(compiler->getShaderType()),
+      mShaderVersion(compiler->getShaderVersion()),
+      mOutput(compiler->getOutputType()),
+      mHighPrecisionSupported(compiler->isHighPrecisionSupported()),
       mCompileOptions(compileOptions)
 {}
 
@@ -902,8 +898,10 @@ bool TOutputGLSLBase::visitAggregate(Visit visit, TIntermAggregate *node)
         ImmutableString functionName = node->getFunction()->name();
         if (visit == PreVisit)
         {
-            if (node->getOp() == EOpCallFunctionInAST ||
-                node->getOp() == EOpCallInternalRawFunction)
+            // No raw function is expected.
+            ASSERT(node->getOp() != EOpCallInternalRawFunction);
+
+            if (node->getOp() == EOpCallFunctionInAST)
             {
                 functionName = hashFunctionNameIfNeeded(node->getFunction());
             }

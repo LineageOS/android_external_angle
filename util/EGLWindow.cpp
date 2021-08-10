@@ -32,7 +32,8 @@ ConfigParameters::ConfigParameters()
       clientArraysEnabled(true),
       robustAccess(false),
       samples(-1),
-      resetStrategy(EGL_NO_RESET_NOTIFICATION_EXT)
+      resetStrategy(EGL_NO_RESET_NOTIFICATION_EXT),
+      colorSpace(EGL_COLORSPACE_LINEAR)
 {}
 
 ConfigParameters::~ConfigParameters() = default;
@@ -278,6 +279,16 @@ bool EGLWindow::initializeDisplay(OSWindow *osWindow,
         enabledFeatureOverrides.push_back("sync_vertex_arrays_to_default");
     }
 
+    if (params.captureLimits == EGL_TRUE)
+    {
+        enabledFeatureOverrides.push_back("enable_capture_limits");
+    }
+
+    if (params.forceRobustResourceInit == EGL_TRUE)
+    {
+        enabledFeatureOverrides.push_back("forceRobustResourceInit");
+    }
+
     const bool hasFeatureControlANGLE =
         strstr(extensionString, "EGL_ANGLE_feature_control") != nullptr;
 
@@ -416,6 +427,19 @@ bool EGLWindow::initializeSurface(OSWindow *osWindow,
         surfaceAttributes.push_back(EGL_ROBUST_RESOURCE_INITIALIZATION_ANGLE);
         surfaceAttributes.push_back(mConfigParams.robustResourceInit.value() ? EGL_TRUE
                                                                              : EGL_FALSE);
+    }
+
+    bool hasGLColorSpace = strstr(displayExtensions, "EGL_KHR_gl_colorspace") != nullptr;
+    if (!hasGLColorSpace && mConfigParams.colorSpace != EGL_COLORSPACE_LINEAR)
+    {
+        fprintf(stderr, "Mising EGL_KHR_gl_colorspace.\n");
+        destroyGL();
+        return false;
+    }
+    if (hasGLColorSpace)
+    {
+        surfaceAttributes.push_back(EGL_GL_COLORSPACE_KHR);
+        surfaceAttributes.push_back(mConfigParams.colorSpace);
     }
 
     surfaceAttributes.push_back(EGL_NONE);

@@ -136,6 +136,8 @@ class TCompiler : public TShHandleBase
     ShShaderOutput getOutputType() const { return mOutputType; }
     const std::string &getBuiltInResourcesString() const { return mBuiltInResourcesString; }
 
+    bool isHighPrecisionSupported() const;
+
     bool shouldRunLoopAndIndexingValidation(ShCompileOptions compileOptions) const;
     bool shouldLimitTypeSizes() const;
 
@@ -189,6 +191,9 @@ class TCompiler : public TShHandleBase
     void restoreValidateFunctionCall(bool enable);
     bool disableValidateVariableReferences();
     void restoreValidateVariableReferences(bool enable);
+    // When the AST is post-processed (such as to determine precise-ness of intermediate nodes),
+    // it's expected to no longer transform.
+    void enableValidateNoMoreTransformations();
 
   protected:
     // Add emulated functions to the built-in function emulator.
@@ -209,12 +214,6 @@ class TCompiler : public TShHandleBase
 
     virtual bool shouldFlattenPragmaStdglInvariantAll() = 0;
     virtual bool shouldCollectVariables(ShCompileOptions compileOptions);
-    // If precision emulation needed, set isNeeded to true and emulate precision for given
-    //  outputLanguage, returning false if that fails, else returning true.
-    bool emulatePrecisionIfNeeded(TIntermBlock *root,
-                                  TInfoSinkBase &sink,
-                                  bool *isNeeded,
-                                  const ShShaderOutput outputLanguage);
 
     bool wereVariablesCollected() const;
     std::vector<sh::ShaderVariable> mAttributes;

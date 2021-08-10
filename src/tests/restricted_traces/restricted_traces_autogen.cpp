@@ -46,6 +46,7 @@
 #include "farm_heroes_saga/farm_heroes_saga_capture_context2.h"
 #include "fate_grand_order/fate_grand_order_capture_context1.h"
 #include "fifa_mobile/fifa_mobile_capture_context1.h"
+#include "final_fantasy/final_fantasy_capture_context3.h"
 #include "free_fire/free_fire_capture_context1.h"
 #include "gardenscapes/gardenscapes_capture_context1.h"
 #include "genshin_impact/genshin_impact_capture_context3.h"
@@ -77,7 +78,9 @@
 #include "plants_vs_zombies_2/plants_vs_zombies_2_capture_context1.h"
 #include "pokemon_go/pokemon_go_capture_context2.h"
 #include "professional_baseball_spirits/professional_baseball_spirits_capture_context1.h"
+#include "pubg_mobile_battle_royale/pubg_mobile_battle_royale_capture_context6.h"
 #include "pubg_mobile_lite/pubg_mobile_lite_capture_context1.h"
+#include "pubg_mobile_skydive/pubg_mobile_skydive_capture_context6.h"
 #include "ragnarok_m_eternal_love/ragnarok_m_eternal_love_capture_context1.h"
 #include "raid_shadow_legends/raid_shadow_legends_capture_context1.h"
 #include "real_commando_secret_mission/real_commando_secret_mission_capture_context1.h"
@@ -310,6 +313,12 @@ constexpr angle::PackedEnumMap<RestrictedTraceID, TraceInfo> kTraceInfos = {
       fifa_mobile::kReplayFrameStart, fifa_mobile::kReplayFrameEnd,
       fifa_mobile::kReplayDrawSurfaceWidth, fifa_mobile::kReplayDrawSurfaceHeight,
       kDefaultReplayDrawSurfaceColorSpace, "fifa_mobile"}},
+    {RestrictedTraceID::final_fantasy,
+     {final_fantasy::kReplayContextClientMajorVersion,
+      final_fantasy::kReplayContextClientMinorVersion, final_fantasy::kReplayFrameStart,
+      final_fantasy::kReplayFrameEnd, final_fantasy::kReplayDrawSurfaceWidth,
+      final_fantasy::kReplayDrawSurfaceHeight, final_fantasy::kReplayDrawSurfaceColorSpace,
+      "final_fantasy"}},
     {RestrictedTraceID::free_fire,
      {free_fire::kReplayContextClientMajorVersion, free_fire::kReplayContextClientMinorVersion,
       free_fire::kReplayFrameStart, free_fire::kReplayFrameEnd, free_fire::kReplayDrawSurfaceWidth,
@@ -479,12 +488,25 @@ constexpr angle::PackedEnumMap<RestrictedTraceID, TraceInfo> kTraceInfos = {
       professional_baseball_spirits::kReplayDrawSurfaceWidth,
       professional_baseball_spirits::kReplayDrawSurfaceHeight, kDefaultReplayDrawSurfaceColorSpace,
       "professional_baseball_spirits"}},
+    {RestrictedTraceID::pubg_mobile_battle_royale,
+     {pubg_mobile_battle_royale::kReplayContextClientMajorVersion,
+      pubg_mobile_battle_royale::kReplayContextClientMinorVersion,
+      pubg_mobile_battle_royale::kReplayFrameStart, pubg_mobile_battle_royale::kReplayFrameEnd,
+      pubg_mobile_battle_royale::kReplayDrawSurfaceWidth,
+      pubg_mobile_battle_royale::kReplayDrawSurfaceHeight,
+      pubg_mobile_battle_royale::kReplayDrawSurfaceColorSpace, "pubg_mobile_battle_royale"}},
     {RestrictedTraceID::pubg_mobile_lite,
      {pubg_mobile_lite::kReplayContextClientMajorVersion,
       pubg_mobile_lite::kReplayContextClientMinorVersion, pubg_mobile_lite::kReplayFrameStart,
       pubg_mobile_lite::kReplayFrameEnd, pubg_mobile_lite::kReplayDrawSurfaceWidth,
       pubg_mobile_lite::kReplayDrawSurfaceHeight, kDefaultReplayDrawSurfaceColorSpace,
       "pubg_mobile_lite"}},
+    {RestrictedTraceID::pubg_mobile_skydive,
+     {pubg_mobile_skydive::kReplayContextClientMajorVersion,
+      pubg_mobile_skydive::kReplayContextClientMinorVersion, pubg_mobile_skydive::kReplayFrameStart,
+      pubg_mobile_skydive::kReplayFrameEnd, pubg_mobile_skydive::kReplayDrawSurfaceWidth,
+      pubg_mobile_skydive::kReplayDrawSurfaceHeight,
+      pubg_mobile_skydive::kReplayDrawSurfaceColorSpace, "pubg_mobile_skydive"}},
     {RestrictedTraceID::ragnarok_m_eternal_love,
      {ragnarok_m_eternal_love::kReplayContextClientMajorVersion,
       ragnarok_m_eternal_love::kReplayContextClientMinorVersion,
