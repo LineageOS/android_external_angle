@@ -1952,6 +1952,7 @@ cc_library_static {
         "src/compiler/translator/tree_ops/NameNamelessUniformBuffers.cpp",
         "src/compiler/translator/tree_ops/PruneEmptyCases.cpp",
         "src/compiler/translator/tree_ops/PruneNoOps.cpp",
+        "src/compiler/translator/tree_ops/RecordConstantPrecision.cpp",
         "src/compiler/translator/tree_ops/RemoveArrayLengthMethod.cpp",
         "src/compiler/translator/tree_ops/RemoveAtomicCounterBuiltins.cpp",
         "src/compiler/translator/tree_ops/RemoveDynamicIndexing.cpp",
