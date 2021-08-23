@@ -16,6 +16,11 @@
 #include "platform/PlatformMethods.h"
 #include "util/OSWindow.h"
 
+namespace
+{
+constexpr EGLint kDefaultSwapInterval = 1;
+}  // anonymous namespace
+
 // ConfigParameters implementation.
 ConfigParameters::ConfigParameters()
     : redBits(-1),
@@ -33,7 +38,8 @@ ConfigParameters::ConfigParameters()
       robustAccess(false),
       samples(-1),
       resetStrategy(EGL_NO_RESET_NOTIFICATION_EXT),
-      colorSpace(EGL_COLORSPACE_LINEAR)
+      colorSpace(EGL_COLORSPACE_LINEAR),
+      swapInterval(kDefaultSwapInterval)
 {}
 
 ConfigParameters::~ConfigParameters() = default;
@@ -294,6 +300,11 @@ bool EGLWindow::initializeDisplay(OSWindow *osWindow,
         enabledFeatureOverrides.push_back("forceRobustResourceInit");
     }
 
+    if (params.forceInitShaderOutputVariables == EGL_TRUE)
+    {
+        enabledFeatureOverrides.push_back("forceInitShaderOutputVariables");
+    }
+
     const bool hasFeatureControlANGLE =
         strstr(extensionString, "EGL_ANGLE_feature_control") != nullptr;
 
@@ -445,6 +456,14 @@ bool EGLWindow::initializeSurface(OSWindow *osWindow,
     {
         surfaceAttributes.push_back(EGL_GL_COLORSPACE_KHR);
         surfaceAttributes.push_back(mConfigParams.colorSpace);
+    }
+
+    bool hasCreateSurfaceSwapInterval =
+        strstr(displayExtensions, "EGL_ANGLE_create_surface_swap_interval") != nullptr;
+    if (hasCreateSurfaceSwapInterval && mConfigParams.swapInterval != kDefaultSwapInterval)
+    {
+        surfaceAttributes.push_back(EGL_SWAP_INTERVAL_ANGLE);
+        surfaceAttributes.push_back(mConfigParams.swapInterval);
     }
 
     surfaceAttributes.push_back(EGL_NONE);

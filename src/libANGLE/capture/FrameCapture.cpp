@@ -1209,7 +1209,9 @@ void WriteAuxiliaryContextCppSetupReplay(bool compression,
     std::stringstream include;
     std::stringstream header;
 
-    include << "#include \"" << FmtCapturePrefix(context->id(), captureLabel) << ".h\"\n";
+    include << "#include \""
+            << FmtCapturePrefix(frameCaptureShared.getWindowSurfaceContextID(), captureLabel)
+            << ".h\"\n";
     include << "#include \"angle_trace_gl.h\"\n";
     include << "";
     include << "\n";
@@ -1270,191 +1272,35 @@ void WriteAuxiliaryContextCppSetupReplay(bool compression,
     }
 }
 
-void WriteWindowSurfaceContextCppReplay(bool compression,
-                                        const std::string &outDir,
-                                        const gl::Context *context,
-                                        const std::string &captureLabel,
-                                        uint32_t frameIndex,
-                                        uint32_t frameCount,
-                                        const std::vector<CallCapture> &frameCalls,
-                                        const std::vector<CallCapture> &setupCalls,
-                                        ResourceTracker *resourceTracker,
-                                        std::vector<uint8_t> *binaryData,
-                                        bool serializeStateEnabled,
-                                        const FrameCaptureShared &frameCaptureShared)
-{
-    ASSERT(frameCaptureShared.getWindowSurfaceContextID() == context->id());
-
-    DataTracker dataTracker;
-
-    std::stringstream out;
-    std::stringstream header;
-
-    egl::ShareGroup *shareGroup      = context->getShareGroup();
-    egl::ContextSet *shareContextSet = shareGroup->getContexts();
-
-    header << "#include \"" << FmtCapturePrefix(kSharedContextId, captureLabel) << ".h\"\n";
-    for (gl::Context *shareContext : *shareContextSet)
-    {
-        header << "#include \"" << FmtCapturePrefix(shareContext->id(), captureLabel) << ".h\"\n";
-    }
-
-    header << "#include \"angle_trace_gl.h\"\n";
-    header << "";
-    header << "\n";
-    header << "namespace\n";
-    header << "{\n";
-
-    if (frameIndex == 1 || frameIndex == frameCount)
-    {
-        out << "extern \"C\" {\n";
-    }
-
-    if (frameIndex == 1)
-    {
-        std::stringstream setupCallStream;
-
-        setupCallStream << "void " << FmtSetupFunction(kNoPartId, context->id()) << "\n";
-        setupCallStream << "{\n";
-
-        WriteCppReplayFunctionWithParts(context->id(), ReplayFunc::Setup, &dataTracker, frameIndex,
-                                        binaryData, setupCalls, header, setupCallStream, out);
-
-        out << setupCallStream.str();
-        out << "}\n";
-        out << "\n";
-        out << "void SetupReplay()\n";
-        out << "{\n";
-        out << "    " << captureLabel << "::InitReplay();\n";
-
-        // Setup all of the shared objects.
-        out << "    " << captureLabel << "::" << FmtSetupFunction(kNoPartId, kSharedContextId)
-            << ";\n";
-
-        // Setup the presentation (this) context before any other contexts in the share group.
-        out << "    " << FmtSetupFunction(kNoPartId, context->id()) << ";\n";
-        out << "}\n";
-        out << "\n";
-    }
-
-    if (frameIndex == frameCount)
-    {
-        // Emit code to reset back to starting state
-        out << "void " << FmtResetFunction() << "\n";
-        out << "{\n";
-
-        // TODO(http://anglebug.com/5878): Look at moving this into the shared context file since
-        // it's resetting shared objects.
-        std::stringstream restoreCallStream;
-        for (ResourceIDType resourceType : AllEnums<ResourceIDType>())
-        {
-            MaybeResetResources(restoreCallStream, resourceType, &dataTracker, header,
-                                resourceTracker, binaryData);
-        }
-
-        // Reset opaque type objects that don't have IDs, so are not ResourceIDTypes.
-        MaybeResetOpaqueTypeObjects(restoreCallStream, &dataTracker, header, resourceTracker,
-                                    binaryData);
-
-        out << restoreCallStream.str();
-        out << "}\n";
-    }
-
-    if (frameIndex == 1 || frameIndex == frameCount)
-    {
-        out << "}  // extern \"C\"\n";
-        out << "\n";
-    }
-
-    if (!captureLabel.empty())
-    {
-        out << "namespace " << captureLabel << "\n";
-        out << "{\n";
-    }
-
-    if (!frameCalls.empty())
-    {
-        std::stringstream callStream;
-
-        callStream << "void " << FmtReplayFunction(context->id(), frameIndex) << "\n";
-        callStream << "{\n";
-
-        WriteCppReplayFunctionWithParts(context->id(), ReplayFunc::Replay, &dataTracker, frameIndex,
-                                        binaryData, frameCalls, header, callStream, out);
-
-        out << callStream.str();
-        out << "}\n";
-    }
-
-    if (serializeStateEnabled)
-    {
-        std::string serializedContextString;
-        if (SerializeContextToString(const_cast<gl::Context *>(context),
-                                     &serializedContextString) == Result::Continue)
-        {
-            out << "const char *" << FmtGetSerializedContextStateFunction(context->id(), frameIndex)
-                << "\n";
-            out << "{\n";
-            out << "    return R\"(" << serializedContextString << ")\";\n";
-            out << "}\n";
-            out << "\n";
-        }
-    }
-
-    if (!captureLabel.empty())
-    {
-        out << "} // namespace " << captureLabel << "\n";
-    }
-
-    header << "}  // namespace\n";
-
-    {
-        std::string outString    = out.str();
-        std::string headerString = header.str();
-
-        std::string cppFilePath =
-            GetCaptureFilePath(outDir, context->id(), captureLabel, frameIndex, ".cpp");
-
-        SaveFileHelper saveCpp(cppFilePath);
-        saveCpp << headerString << "\n" << outString;
-    }
-}
-
-void WriteSharedContextCppReplay(bool compression,
-                                 const std::string &outDir,
-                                 const std::string &captureLabel,
-                                 uint32_t frameIndex,
-                                 uint32_t frameCount,
-                                 const std::vector<CallCapture> &setupCalls,
-                                 ResourceTracker *resourceTracker,
-                                 std::vector<uint8_t> *binaryData,
-                                 bool serializeStateEnabled,
-                                 const FrameCaptureShared &frameCaptureShared)
+void WriteShareGroupCppSetupReplay(bool compression,
+                                   const std::string &outDir,
+                                   const std::string &captureLabel,
+                                   uint32_t frameIndex,
+                                   uint32_t frameCount,
+                                   const std::vector<CallCapture> &setupCalls,
+                                   ResourceTracker *resourceTracker,
+                                   std::vector<uint8_t> *binaryData,
+                                   bool serializeStateEnabled,
+                                   const FrameCaptureShared &frameCaptureShared)
 {
     DataTracker dataTracker;
 
     std::stringstream out;
     std::stringstream include;
-    std::stringstream header;
 
-    include << "#include \"" << FmtCapturePrefix(kSharedContextId, captureLabel) << ".h\"\n";
     include << "#include \"angle_trace_gl.h\"\n";
-    include << "";
     include << "\n";
     include << "namespace\n";
     include << "{\n";
 
     if (!captureLabel.empty())
     {
-        header << "namespace " << captureLabel << "\n";
-        header << "{\n";
         out << "namespace " << captureLabel << "\n";
         out << "{\n";
     }
 
     std::stringstream setupCallStream;
 
-    header << "void " << FmtSetupFunction(kNoPartId, kSharedContextId) << ";\n";
     setupCallStream << "void " << FmtSetupFunction(kNoPartId, kSharedContextId) << "\n";
     setupCallStream << "{\n";
 
@@ -1467,7 +1313,6 @@ void WriteSharedContextCppReplay(bool compression,
 
     if (!captureLabel.empty())
     {
-        header << "} // namespace " << captureLabel << "\n";
         out << "} // namespace " << captureLabel << "\n";
     }
 
@@ -1483,18 +1328,6 @@ void WriteSharedContextCppReplay(bool compression,
 
         SaveFileHelper saveCpp(cppFilePath);
         saveCpp << headerString << "\n" << outString;
-    }
-
-    // Write out the header file.
-    {
-        std::string headerContents = header.str();
-
-        std::stringstream headerPathStream;
-        headerPathStream << outDir << FmtCapturePrefix(kSharedContextId, captureLabel) << ".h";
-        std::string headerPath = headerPathStream.str();
-
-        SaveFileHelper saveHeader(headerPath);
-        saveHeader << headerContents;
     }
 }
 
@@ -1866,9 +1699,9 @@ void CaptureFramebufferAttachment(std::vector<CallCapture> *setupCalls,
     }
 }
 
-void CaptureUpdateUniformValues(const gl::State &replayState,
+void CaptureUpdateUniformValues(gl::State &replayState,
                                 const gl::Context *context,
-                                const gl::Program *program,
+                                gl::Program *program,
                                 std::vector<CallCapture> *callsOut)
 {
     if (!program->isLinked())
@@ -1878,9 +1711,12 @@ void CaptureUpdateUniformValues(const gl::State &replayState,
     }
 
     // We need to bind the program and update its uniforms
-    // TODO (http://anglebug.com/3662): Only bind if different from currently bound
-    Capture(callsOut, CaptureUseProgram(replayState, true, program->id()));
-    CaptureUpdateCurrentProgram(callsOut->back(), callsOut);
+    if (!replayState.getProgram() || replayState.getProgram()->id() != program->id())
+    {
+        Capture(callsOut, CaptureUseProgram(replayState, true, program->id()));
+        CaptureUpdateCurrentProgram(callsOut->back(), callsOut);
+        (void)replayState.setProgram(context, program);
+    }
 
     const std::vector<gl::LinkedUniform> &uniforms = program->getState().getUniforms();
 
@@ -2129,10 +1965,22 @@ void CaptureVertexPointerES1(std::vector<CallCapture> *setupCalls,
     }
 }
 
-void CaptureVertexArrayData(std::vector<CallCapture> *setupCalls,
-                            const gl::Context *context,
-                            const gl::VertexArray *vertexArray,
-                            gl::State *replayState)
+bool VertexBindingMatchesAttribStride(const gl::VertexAttribute &attrib,
+                                      const gl::VertexBinding &binding)
+{
+    if (attrib.vertexAttribArrayStride == 0 &&
+        binding.getStride() == ComputeVertexAttributeTypeSize(attrib))
+    {
+        return true;
+    }
+
+    return attrib.vertexAttribArrayStride == binding.getStride();
+}
+
+void CaptureVertexArrayState(std::vector<CallCapture> *setupCalls,
+                             const gl::Context *context,
+                             const gl::VertexArray *vertexArray,
+                             gl::State *replayState)
 {
     const std::vector<gl::VertexAttribute> &vertexAttribs = vertexArray->getVertexAttributes();
     const std::vector<gl::VertexBinding> &vertexBindings  = vertexArray->getVertexBindings();
@@ -2179,13 +2027,21 @@ void CaptureVertexArrayData(std::vector<CallCapture> *setupCalls,
             {
                 CaptureVertexPointerES1(setupCalls, replayState, attribIndex, attrib, binding);
             }
-            else
+            else if (attrib.bindingIndex == attribIndex &&
+                     VertexBindingMatchesAttribStride(attrib, binding) &&
+                     (!buffer || binding.getOffset() == reinterpret_cast<GLintptr>(attrib.pointer)))
             {
+                // Check if we can use strictly ES2 semantics.
                 Capture(setupCalls,
                         CaptureVertexAttribPointer(
                             *replayState, true, attribIndex, attrib.format->channelCount,
                             attrib.format->vertexAttribType, attrib.format->isNorm(),
-                            binding.getStride(), attrib.pointer));
+                            attrib.vertexAttribArrayStride, attrib.pointer));
+            }
+            else
+            {
+                // TOOD: http://anglebug.com/6274. ES 3.1 vertex array state is not yet implemented.
+                UNIMPLEMENTED();
             }
         }
 
@@ -2499,16 +2355,14 @@ void CaptureDefaultVertexAttribs(const gl::State &replayState,
 //     Objects which contain references to other objects include framebuffer, program
 //   pipeline, transform feedback, and vertex array objects. Such objects are called
 //   container objects and are not shared.
-void CaptureSharedContextMidExecutionSetup(const gl::Context *context,
-                                           std::vector<CallCapture> *setupCalls,
-                                           ResourceTracker *resourceTracker)
+void CaptureShareGroupMidExecutionSetup(const gl::Context *context,
+                                        std::vector<CallCapture> *setupCalls,
+                                        ResourceTracker *resourceTracker,
+                                        gl::State &replayState)
 {
 
     FrameCaptureShared *frameCaptureShared = context->getShareGroup()->getFrameCaptureShared();
     const gl::State &apiState              = context->getState();
-    gl::State replayState(nullptr, nullptr, nullptr, nullptr, nullptr, EGL_OPENGL_ES_API,
-                          apiState.getClientVersion(), false, true, true, true, false,
-                          EGL_CONTEXT_PRIORITY_MEDIUM_IMG, apiState.hasProtectedContent());
 
     // Small helper function to make the code more readable.
     auto cap = [frameCaptureShared, setupCalls](CallCapture &&call) {
@@ -2652,6 +2506,7 @@ void CaptureSharedContextMidExecutionSetup(const gl::Context *context,
         {
             Capture(calls, CaptureBindTexture(replayState, true, texture->getType(), id));
         }
+        replayState.setSamplerTexture(context, texture->getType(), texture);
 
         // Capture sampler parameter states.
         // TODO(jmadill): More sampler / texture states. http://anglebug.com/3662
@@ -2919,8 +2774,8 @@ void CaptureSharedContextMidExecutionSetup(const gl::Context *context,
     gl::ShaderProgramID tempShaderID = {resourceTracker->getMaxShaderPrograms()};
     for (const auto &programIter : programs)
     {
-        gl::ShaderProgramID id     = {programIter.first};
-        const gl::Program *program = programIter.second;
+        gl::ShaderProgramID id = {programIter.first};
+        gl::Program *program   = programIter.second;
 
         // Unlinked programs don't have an executable. Thus they don't need to be captured.
         // Programs are shared by contexts in the share group and only need to be captured once.
@@ -3146,24 +3001,15 @@ void CaptureSharedContextMidExecutionSetup(const gl::Context *context,
 
 void CaptureMidExecutionSetup(const gl::Context *context,
                               std::vector<CallCapture> *setupCalls,
-                              ResourceTracker *resourceTracker)
+                              ResourceTracker *resourceTracker,
+                              gl::State &replayState)
 {
     const gl::State &apiState = context->getState();
-    gl::State replayState(nullptr, nullptr, nullptr, nullptr, nullptr, EGL_OPENGL_ES_API,
-                          context->getState().getClientVersion(), false, true, true, true, false,
-                          EGL_CONTEXT_PRIORITY_MEDIUM_IMG, apiState.hasProtectedContent());
 
     // Small helper function to make the code more readable.
     auto cap = [setupCalls](CallCapture &&call) { setupCalls->emplace_back(std::move(call)); };
 
-    // Currently this code assumes we can use create-on-bind. It does not support 'Gen' usage.
-    // TODO(jmadill): Use handle mapping for captured objects. http://anglebug.com/3662
-
-    // Vertex input states. Only handles GLES 2.0 states right now.
-    // Must happen after buffer data initialization.
-    // TODO(http://anglebug.com/3662): Complete state capture.
-
-    // Capture default vertex attribs. Do not capture on GLES1.
+    // Vertex input states. Must happen after buffer data initialization. Do not capture on GLES1.
     if (!context->isGLES1())
     {
         CaptureDefaultVertexAttribs(replayState, apiState, setupCalls);
@@ -3191,7 +3037,7 @@ void CaptureMidExecutionSetup(const gl::Context *context,
                 cap(CaptureBindVertexArray(replayState, true, vertexArrayID));
                 boundVertexArrayID = vertexArrayID;
             }
-            CaptureVertexArrayData(setupCalls, context, vertexArray, &replayState);
+            CaptureVertexArrayState(setupCalls, context, vertexArray, &replayState);
         }
     }
 
@@ -3250,42 +3096,42 @@ void CaptureMidExecutionSetup(const gl::Context *context,
     }
 
     // Capture Texture setup and data.
-    const gl::TextureBindingMap &boundTextures = apiState.getBoundTexturesForCapture();
+    const gl::TextureBindingMap &apiBoundTextures = apiState.getBoundTexturesForCapture();
 
     // Set Texture bindings.
-    size_t currentActiveTexture = 0;
-    gl::TextureTypeMap<gl::TextureID> currentTextureBindings;
     for (gl::TextureType textureType : angle::AllEnums<gl::TextureType>())
     {
-        const gl::TextureBindingVector &bindings = boundTextures[textureType];
-        for (size_t bindingIndex = 0; bindingIndex < bindings.size(); ++bindingIndex)
+        const gl::TextureBindingVector &apiBindings = apiBoundTextures[textureType];
+        const gl::TextureBindingVector &replayBindings =
+            replayState.getBoundTexturesForCapture()[textureType];
+        ASSERT(apiBindings.size() == replayBindings.size());
+        for (size_t bindingIndex = 0; bindingIndex < apiBindings.size(); ++bindingIndex)
         {
-            gl::TextureID textureID = bindings[bindingIndex].id();
+            gl::TextureID apiTextureID    = apiBindings[bindingIndex].id();
+            gl::TextureID replayTextureID = replayBindings[bindingIndex].id();
 
-            if (textureID.value != 0)
+            if (apiTextureID != replayTextureID)
             {
-                if (currentActiveTexture != bindingIndex)
+                if (replayState.getActiveSampler() != bindingIndex)
                 {
                     cap(CaptureActiveTexture(replayState, true,
                                              GL_TEXTURE0 + static_cast<GLenum>(bindingIndex)));
-                    currentActiveTexture = bindingIndex;
+                    replayState.setActiveSampler(static_cast<unsigned int>(bindingIndex));
                 }
 
-                if (currentTextureBindings[textureType] != textureID)
-                {
-                    cap(CaptureBindTexture(replayState, true, textureType, textureID));
-                    currentTextureBindings[textureType] = textureID;
-                }
+                cap(CaptureBindTexture(replayState, true, textureType, apiTextureID));
+                replayState.setSamplerTexture(context, textureType,
+                                              apiBindings[bindingIndex].get());
             }
         }
     }
 
     // Set active Texture.
-    size_t stateActiveTexture = apiState.getActiveSampler();
-    if (currentActiveTexture != stateActiveTexture)
+    if (replayState.getActiveSampler() != apiState.getActiveSampler())
     {
         cap(CaptureActiveTexture(replayState, true,
-                                 GL_TEXTURE0 + static_cast<GLenum>(stateActiveTexture)));
+                                 GL_TEXTURE0 + static_cast<GLenum>(apiState.getActiveSampler())));
+        replayState.setActiveSampler(apiState.getActiveSampler());
     }
 
     // Set Renderbuffer binding.
@@ -3435,27 +3281,34 @@ void CaptureMidExecutionSetup(const gl::Context *context,
 
     // For now we assume the installed program executable is the same as the current program.
     // TODO(jmadill): Handle installed program executable. http://anglebug.com/3662
-    if (apiState.getProgram() && !context->isGLES1())
+    if (!context->isGLES1())
     {
-        cap(CaptureUseProgram(replayState, true, apiState.getProgram()->id()));
-        CaptureUpdateCurrentProgram(setupCalls->back(), setupCalls);
-    }
-    else if (apiState.getProgramPipeline())
-    {
-        // glUseProgram() is called above to update the necessary uniform values for each program
-        // that's being recreated. If there is no program currently bound, then we need to unbind
-        // the last bound program so the PPO will be used instead:
-        // 7.4 Program Pipeline Objects
-        // If no current program object has been established by UseProgram, the program objects used
-        // for each shader stage and for uniform updates are taken from the bound program pipeline
-        // object, if any. If there is a current program object established by UseProgram, the bound
-        // program pipeline object has no effect on rendering or uniform updates.
-        cap(CaptureUseProgram(replayState, true, {0}));
-        CaptureUpdateCurrentProgram(setupCalls->back(), setupCalls);
-        cap(CaptureBindProgramPipeline(replayState, true, apiState.getProgramPipeline()->id()));
-    }
+        // If we have a program bound in the API, or if there is no program bound to the API at
+        // time of capture and we bound a program for uniform updates during MEC, we must add
+        // a set program call to replay the correct states.
+        if (apiState.getProgram())
+        {
+            cap(CaptureUseProgram(replayState, true, apiState.getProgram()->id()));
+            CaptureUpdateCurrentProgram(setupCalls->back(), setupCalls);
+            (void)replayState.setProgram(context, apiState.getProgram());
+        }
+        else if (replayState.getProgram())
+        {
+            cap(CaptureUseProgram(replayState, true, {0}));
+            CaptureUpdateCurrentProgram(setupCalls->back(), setupCalls);
+            (void)replayState.setProgram(context, nullptr);
+        }
 
-    // TODO(http://anglebug.com/3662): ES 3.x objects.
+        // Same for program pipelines as for programs, see comment above.
+        if (apiState.getProgramPipeline())
+        {
+            cap(CaptureBindProgramPipeline(replayState, true, apiState.getProgramPipeline()->id()));
+        }
+        else if (replayState.getProgramPipeline())
+        {
+            cap(CaptureBindProgramPipeline(replayState, true, {0}));
+        }
+    }
 
     // Create existing queries. Note that queries may be genned and not yet started. In that
     // case the queries will exist in the query map as nullptr entries.
@@ -3934,6 +3787,9 @@ void CaptureMidExecutionSetup(const gl::Context *context,
 
     // Allow the replayState object to be destroyed conveniently.
     replayState.setBufferBinding(context, gl::BufferBinding::Array, nullptr);
+
+    // Clean up the replay state.
+    replayState.reset(context);
 }
 
 bool SkipCall(EntryPoint entryPoint)
@@ -4217,6 +4073,11 @@ FrameCaptureShared::FrameCaptureShared()
     if (!startFromEnv.empty())
     {
         mCaptureStartFrame = atoi(startFromEnv.c_str());
+    }
+    if (mCaptureStartFrame < 1)
+    {
+        WARN() << "Cannot use a capture start frame less than 1.";
+        mCaptureStartFrame = 1;
     }
 
     std::string endFromEnv =
@@ -4792,11 +4653,7 @@ void FrameCaptureShared::maybeCapturePreCallUpdates(const gl::Context *context, 
             for (GLsizei i = 0; i < count; i++)
             {
                 // If we're capturing, track what new textures have been genned
-                if (isCaptureActive())
-                {
-                    mResourceTracker.getTrackedResource(ResourceIDType::Texture)
-                        .setGennedResource(textureIDs[i].value);
-                }
+                handleGennedResource(textureIDs[i]);
             }
             break;
         }
@@ -4807,9 +4664,6 @@ void FrameCaptureShared::maybeCapturePreCallUpdates(const gl::Context *context, 
             const gl::BufferID *bufferIDs =
                 call.params.getParam("buffersPacked", ParamType::TBufferIDConstPointer, 1)
                     .value.BufferIDConstPointerVal;
-            FrameCaptureShared *frameCaptureShared =
-                context->getShareGroup()->getFrameCaptureShared();
-            ResourceTracker &resourceTracker = context->getFrameCaptureSharedResourceTracker();
             for (GLsizei i = 0; i < count; i++)
             {
                 // For each buffer being deleted, check our backup of data and remove it
@@ -4819,11 +4673,7 @@ void FrameCaptureShared::maybeCapturePreCallUpdates(const gl::Context *context, 
                     mBufferDataMap.erase(bufferDataInfo);
                 }
                 // If we're capturing, track what buffers have been deleted
-                if (frameCaptureShared->isCaptureActive())
-                {
-                    resourceTracker.getTrackedResource(ResourceIDType::Buffer)
-                        .setDeletedResource(bufferIDs[i].value);
-                }
+                handleDeletedResource(bufferIDs[i]);
             }
             break;
         }
@@ -4834,17 +4684,9 @@ void FrameCaptureShared::maybeCapturePreCallUpdates(const gl::Context *context, 
             const gl::BufferID *bufferIDs =
                 call.params.getParam("buffersPacked", ParamType::TBufferIDPointer, 1)
                     .value.BufferIDPointerVal;
-            FrameCaptureShared *frameCaptureShared =
-                context->getShareGroup()->getFrameCaptureShared();
-            ResourceTracker &resourceTracker = context->getFrameCaptureSharedResourceTracker();
             for (GLsizei i = 0; i < count; i++)
             {
-                // If we're capturing, track what new buffers have been genned
-                if (frameCaptureShared->isCaptureActive())
-                {
-                    resourceTracker.getTrackedResource(ResourceIDType::Buffer)
-                        .setGennedResource(bufferIDs[i].value);
-                }
+                handleGennedResource(bufferIDs[i]);
             }
             break;
         }
@@ -4854,11 +4696,10 @@ void FrameCaptureShared::maybeCapturePreCallUpdates(const gl::Context *context, 
             GLsync sync = call.params.getParam("sync", ParamType::TGLsync, 0).value.GLsyncVal;
             FrameCaptureShared *frameCaptureShared =
                 context->getShareGroup()->getFrameCaptureShared();
-            ResourceTracker &resourceTracker = context->getFrameCaptureSharedResourceTracker();
             // If we're capturing, track which fence sync has been deleted
             if (frameCaptureShared->isCaptureActive())
             {
-                resourceTracker.setDeletedFenceSync(sync);
+                mResourceTracker.setDeletedFenceSync(sync);
             }
             break;
         }
@@ -4911,45 +4752,26 @@ void FrameCaptureShared::maybeCapturePreCallUpdates(const gl::Context *context, 
             ASSERT(program);
             const gl::Shader *shader = program->getAttachedShader(shaderType);
             ASSERT(shader);
-            FrameCaptureShared *frameCaptureShared =
-                context->getShareGroup()->getFrameCaptureShared();
-            frameCaptureShared->setShaderSource(shader->getHandle(), shader->getSourceString());
-            frameCaptureShared->setProgramSources(programID, GetAttachedProgramSources(program));
-
-            if (isCaptureActive())
-            {
-                frameCaptureShared->getResourceTracker()
-                    .getTrackedResource(ResourceIDType::ShaderProgram)
-                    .setGennedResource(programID.value);
-            }
+            setShaderSource(shader->getHandle(), shader->getSourceString());
+            setProgramSources(programID, GetAttachedProgramSources(program));
+            handleGennedResource(programID);
             break;
         }
 
         case EntryPoint::GLCreateProgram:
         {
             // If we're capturing, track which programs have been created
-            if (isCaptureActive())
-            {
-                gl::ShaderProgramID programID    = {call.params.getReturnValue().value.GLuintVal};
-                ResourceTracker &resourceTracker = context->getFrameCaptureSharedResourceTracker();
-                resourceTracker.getTrackedResource(ResourceIDType::ShaderProgram)
-                    .setGennedResource(programID.value);
-            }
+            gl::ShaderProgramID programID = {call.params.getReturnValue().value.GLuintVal};
+            handleGennedResource(programID);
             break;
         }
 
         case EntryPoint::GLDeleteProgram:
         {
             // If we're capturing, track which programs have been deleted
-            if (isCaptureActive())
-            {
-                const ParamCapture &param =
-                    call.params.getParam("programPacked", ParamType::TShaderProgramID, 0);
-
-                ResourceTracker &resourceTracker = context->getFrameCaptureSharedResourceTracker();
-                resourceTracker.getTrackedResource(ResourceIDType::ShaderProgram)
-                    .setDeletedResource(param.value.ShaderProgramIDVal.value);
-            }
+            const ParamCapture &param =
+                call.params.getParam("programPacked", ParamType::TShaderProgramID, 0);
+            handleDeletedResource(param.value.ShaderProgramIDVal);
             break;
         }
 
@@ -4960,8 +4782,7 @@ void FrameCaptureShared::maybeCapturePreCallUpdates(const gl::Context *context, 
                 call.params.getParam("shaderPacked", ParamType::TShaderProgramID, 0)
                     .value.ShaderProgramIDVal;
             const gl::Shader *shader = context->getShader(shaderID);
-            context->getShareGroup()->getFrameCaptureShared()->setShaderSource(
-                shaderID, shader->getSourceString());
+            setShaderSource(shaderID, shader->getSourceString());
             break;
         }
 
@@ -4972,8 +4793,7 @@ void FrameCaptureShared::maybeCapturePreCallUpdates(const gl::Context *context, 
                 call.params.getParam("programPacked", ParamType::TShaderProgramID, 0)
                     .value.ShaderProgramIDVal;
             const gl::Program *program = context->getProgramResolveLink(programID);
-            context->getShareGroup()->getFrameCaptureShared()->setProgramSources(
-                programID, GetAttachedProgramSources(program));
+            setProgramSources(programID, GetAttachedProgramSources(program));
             break;
         }
 
@@ -5016,22 +4836,14 @@ void FrameCaptureShared::maybeCapturePreCallUpdates(const gl::Context *context, 
                 call.params.getParam("texturesPacked", ParamType::TTextureIDConstPointer, 1)
                     .value.TextureIDConstPointerVal;
 
-            ResourceTracker &resourceTracker = context->getFrameCaptureSharedResourceTracker();
-
             // For each texture listed for deletion
             for (int32_t i = 0; i < n; ++i)
             {
                 // Look it up in the cache, and delete it if found
-                context->getShareGroup()->getFrameCaptureShared()->deleteCachedTextureLevelData(
-                    textureIDs[i]);
+                deleteCachedTextureLevelData(textureIDs[i]);
 
                 // If we're capturing, track what textures have been deleted
-                if (isCaptureActive())
-                {
-
-                    resourceTracker.getTrackedResource(ResourceIDType::Texture)
-                        .setDeletedResource(textureIDs[i].value);
-                }
+                handleDeletedResource(textureIDs[i]);
             }
             break;
         }
@@ -5095,12 +4907,11 @@ void FrameCaptureShared::maybeCapturePreCallUpdates(const gl::Context *context, 
             captureMappedBufferSnapshot(context, call);
 
             // Track that the buffer was unmapped, for use during state reset
-            ResourceTracker &resourceTracker = context->getFrameCaptureSharedResourceTracker();
             gl::BufferBinding target =
                 call.params.getParam("targetPacked", ParamType::TBufferBinding, 0)
                     .value.BufferBindingVal;
             gl::Buffer *buffer = context->getState().getTargetBuffer(target);
-            resourceTracker.setBufferUnmapped(buffer->id().value);
+            mResourceTracker.setBufferUnmapped(buffer->id().value);
             break;
         }
 
@@ -5114,8 +4925,7 @@ void FrameCaptureShared::maybeCapturePreCallUpdates(const gl::Context *context, 
             gl::Buffer *buffer = context->getState().getTargetBuffer(target);
 
             // Track that this buffer's contents have been modified
-            ResourceTracker &resourceTracker = context->getFrameCaptureSharedResourceTracker();
-            resourceTracker.getTrackedResource(ResourceIDType::Buffer)
+            mResourceTracker.getTrackedResource(ResourceIDType::Buffer)
                 .setModifiedResource(buffer->id().value);
 
             // BufferData is equivalent to UnmapBuffer, for what we're tracking.
@@ -5125,7 +4935,7 @@ void FrameCaptureShared::maybeCapturePreCallUpdates(const gl::Context *context, 
             //     6.3.1) is executed in each such context prior to deleting the existing data
             //     store.
             // Track that the buffer was unmapped, for use during state reset
-            resourceTracker.setBufferUnmapped(buffer->id().value);
+            mResourceTracker.setBufferUnmapped(buffer->id().value);
 
             break;
         }
@@ -5144,8 +4954,7 @@ void FrameCaptureShared::maybeCapturePreCallUpdates(const gl::Context *context, 
     gl::ShaderProgramID shaderProgramID;
     if (FindShaderProgramIDInCall(call, &shaderProgramID))
     {
-        ResourceTracker &resourceTracker = context->getFrameCaptureSharedResourceTracker();
-        resourceTracker.onShaderProgramAccess(shaderProgramID);
+        mResourceTracker.onShaderProgramAccess(shaderProgramID);
     }
 }
 
@@ -5360,11 +5169,11 @@ void FrameCaptureShared::checkForCaptureTrigger()
     uint32_t captureTrigger = atoi(captureTriggerStr.c_str());
     if (captureTrigger != mCaptureTrigger)
     {
-        // Start mid-execution capture for the next frame
+        // Start mid-execution capture for the current frame
         mCaptureStartFrame = mFrameIndex + 1;
 
         // Use the original trigger value as the frame count
-        mCaptureEndFrame = mCaptureStartFrame + (mCaptureTrigger - 1);
+        mCaptureEndFrame = mCaptureStartFrame + mCaptureTrigger - 1;
 
         INFO() << "Capture triggered after frame " << mFrameIndex << " for " << mCaptureTrigger
                << " frames";
@@ -5374,42 +5183,49 @@ void FrameCaptureShared::checkForCaptureTrigger()
     }
 }
 
-void FrameCaptureShared::setupSharedAndAuxReplay(const gl::Context *context,
-                                                 bool isMidExecutionCapture)
+void FrameCaptureShared::runMidExecutionCapture(const gl::Context *mainContext)
 {
     // Make sure all pending work for every Context in the share group has completed so all data
     // (buffers, textures, etc.) has been updated and no resources are in use.
-    egl::ShareGroup *shareGroup            = context->getShareGroup();
-    const egl::ContextSet *shareContextSet = shareGroup->getContexts();
-    for (gl::Context *shareContext : *shareContextSet)
-    {
-        shareContext->finish();
-    }
+    egl::ShareGroup *shareGroup = mainContext->getShareGroup();
+    shareGroup->finishAllContexts();
 
-    clearSetupCalls();
-    if (isMidExecutionCapture)
-    {
-        CaptureSharedContextMidExecutionSetup(context, &mSetupCalls, &mResourceTracker);
-    }
+    const gl::State &contextState = mainContext->getState();
+    gl::State mainContextReplayState(nullptr, nullptr, nullptr, nullptr, nullptr, EGL_OPENGL_ES_API,
+                                     contextState.getClientVersion(), false, true, true, true,
+                                     false, EGL_CONTEXT_PRIORITY_MEDIUM_IMG,
+                                     contextState.hasProtectedContent());
+    mainContextReplayState.initializeForCapture(mainContext);
 
-    WriteSharedContextCppReplay(mCompression, mOutDirectory, mCaptureLabel, 1, 1, mSetupCalls,
-                                &mResourceTracker, &mBinaryData, mSerializeStateEnabled, *this);
+    std::vector<CallCapture> shareGroupSetupCalls;
+    CaptureShareGroupMidExecutionSetup(mainContext, &shareGroupSetupCalls, &mResourceTracker,
+                                       mainContextReplayState);
 
-    for (const gl::Context *shareContext : *shareContextSet)
+    WriteShareGroupCppSetupReplay(mCompression, mOutDirectory, mCaptureLabel, 1, 1,
+                                  shareGroupSetupCalls, &mResourceTracker, &mBinaryData,
+                                  mSerializeStateEnabled, *this);
+
+    for (const gl::Context *shareContext : shareGroup->getContexts())
     {
         FrameCapture *frameCapture = shareContext->getFrameCapture();
-        frameCapture->clearSetupCalls();
+        ASSERT(frameCapture->getSetupCalls().empty());
 
-        if (isMidExecutionCapture)
+        if (shareContext->id() == mainContext->id())
         {
             CaptureMidExecutionSetup(shareContext, &frameCapture->getSetupCalls(),
-                                     &mResourceTracker);
+                                     &mResourceTracker, mainContextReplayState);
         }
-
-        if (!frameCapture->getSetupCalls().empty() && shareContext->id() != context->id())
+        else
         {
-            // The presentation context's setup functions will be written later as part of the
-            // WriteWindowSurfaceContextCppReplay() output.
+            gl::State auxContextReplayState(
+                nullptr, nullptr, nullptr, nullptr, nullptr, EGL_OPENGL_ES_API,
+                shareContext->getState().getClientVersion(), false, true, true, true, false,
+                EGL_CONTEXT_PRIORITY_MEDIUM_IMG, shareContext->getState().hasProtectedContent());
+            auxContextReplayState.initializeForCapture(shareContext);
+
+            CaptureMidExecutionSetup(shareContext, &frameCapture->getSetupCalls(),
+                                     &mResourceTracker, auxContextReplayState);
+
             WriteAuxiliaryContextCppSetupReplay(mCompression, mOutDirectory, shareContext,
                                                 mCaptureLabel, 1, frameCapture->getSetupCalls(),
                                                 &mBinaryData, mSerializeStateEnabled, *this);
@@ -5441,57 +5257,42 @@ void FrameCaptureShared::onEndFrame(const gl::Context *context)
         }
     }
 
+    // Assume that the context performing the swap is the "main" context.
+    ASSERT(mWindowSurfaceContextID.value == 0 || mWindowSurfaceContextID == context->id());
+    mWindowSurfaceContextID = context->id();
+
     // On Android, we can trigger a capture during the run
     checkForCaptureTrigger();
-    // Done after checkForCaptureTrigger(), since that can modify mCaptureStartFrame.
+
+    // Check for MEC. Done after checkForCaptureTrigger(), since that can modify mCaptureStartFrame.
     if (mFrameIndex < mCaptureStartFrame)
     {
-        reset();
-        mFrameIndex++;
-        if (mFrameIndex == mCaptureStartFrame)
+        if (mFrameIndex == mCaptureStartFrame - 1)
         {
+            runMidExecutionCapture(context);
+
             // Set the capture active to ensure all GLES commands issued by the next frame are
             // handled correctly by maybeCapturePreCallUpdates() and maybeCapturePostCallUpdates().
             setCaptureActive();
         }
-
-        // Not capturing the current frame, so return.
+        mFrameIndex++;
+        reset();
         return;
     }
 
-    if (mIsFirstFrame)
-    {
-        mCaptureStartFrame = mFrameIndex;
-        // Assume that the context performing the swap is the "main" context.
-        mWindowSurfaceContextID = context->id();
-
-        // When *not* performing a mid-execution capture, setup the replay with the first frame.
-        bool isMidExecutionCapture = mCaptureStartFrame != 1;
-        setupSharedAndAuxReplay(context, isMidExecutionCapture);
-    }
+    ASSERT(isCaptureActive());
 
     if (!mFrameCalls.empty())
     {
         mActiveFrameIndices.push_back(getReplayFrameIndex());
     }
 
-    // For simplicity, it's currently a requirement that the same context is used to perform the
-    // swap every frame.
-    ASSERT(mWindowSurfaceContextID == context->id());
-
     // Make sure all pending work for every Context in the share group has completed so all data
     // (buffers, textures, etc.) has been updated and no resources are in use.
-    egl::ShareGroup *shareGroup            = context->getShareGroup();
-    const egl::ContextSet *shareContextSet = shareGroup->getContexts();
-    for (gl::Context *shareContext : *shareContextSet)
-    {
-        shareContext->finish();
-    }
+    egl::ShareGroup *shareGroup = context->getShareGroup();
+    shareGroup->finishAllContexts();
 
-    WriteWindowSurfaceContextCppReplay(mCompression, mOutDirectory, context, mCaptureLabel,
-                                       getReplayFrameIndex(), getFrameCount(), mFrameCalls,
-                                       frameCapture->getSetupCalls(), &mResourceTracker,
-                                       &mBinaryData, mSerializeStateEnabled, *this);
+    writeMainContextCppReplay(context, frameCapture->getSetupCalls());
 
     if (mFrameIndex == mCaptureEndFrame)
     {
@@ -5504,7 +5305,6 @@ void FrameCaptureShared::onEndFrame(const gl::Context *context)
 
     reset();
     mFrameIndex++;
-    mIsFirstFrame = false;
 }
 
 void FrameCaptureShared::onDestroyContext(const gl::Context *context)
@@ -5517,7 +5317,7 @@ void FrameCaptureShared::onDestroyContext(const gl::Context *context)
     {
         // If context is destroyed before end frame is reached and at least
         // 1 frame has been recorded, then write the index files.
-        // It doesnt make sense to write the index files when no frame has been recorded
+        // It doesn't make sense to write the index files when no frame has been recorded
         mFrameIndex -= 1;
         mCaptureEndFrame = mFrameIndex;
         writeCppReplayIndexFiles(context, true);
@@ -5747,6 +5547,7 @@ void FrameCaptureShared::writeCppReplayIndexFiles(const gl::Context *context,
     const gl::ContextID contextId       = context->id();
     const egl::Config *config           = context->getConfig();
     const egl::AttributeMap &attributes = context->getDisplay()->getAttributeMap();
+    const egl::ShareGroup *shareGroup   = context->getShareGroup();
 
     unsigned frameCount = getFrameCount();
 
@@ -5830,6 +5631,15 @@ void FrameCaptureShared::writeCppReplayIndexFiles(const gl::Context *context,
     }
 
     header << "void InitReplay();\n";
+    if (mCaptureStartFrame != 1)
+    {
+        header << "void SetupReplayContextShared();\n";
+    }
+
+    for (const gl::Context *shareContext : shareGroup->getContexts())
+    {
+        header << "void " << FmtSetupFunction(kNoPartId, shareContext->id()) << ";\n";
+    }
 
     source << "#include \"" << FmtCapturePrefix(contextId, mCaptureLabel) << ".h\"\n";
     source << "#include \"trace_fixture.h\"\n";
@@ -5935,9 +5745,7 @@ void FrameCaptureShared::writeCppReplayIndexFiles(const gl::Context *context,
             saveIndex << GetCaptureFileName(contextId, mCaptureLabel, frameIndex, ".cpp") << "\n";
         }
 
-        egl::ShareGroup *shareGroup      = context->getShareGroup();
-        egl::ContextSet *shareContextSet = shareGroup->getContexts();
-        for (gl::Context *shareContext : *shareContextSet)
+        for (gl::Context *shareContext : shareGroup->getContexts())
         {
             if (shareContext->id() == contextId)
             {
@@ -5946,7 +5754,150 @@ void FrameCaptureShared::writeCppReplayIndexFiles(const gl::Context *context,
             }
             saveIndex << GetCaptureFileName(shareContext->id(), mCaptureLabel, 1, ".cpp") << "\n";
         }
-        saveIndex << GetCaptureFileName(kSharedContextId, mCaptureLabel, 1, ".cpp") << "\n";
+
+        // Only save the MEC setup if we are using MEC.
+        if (mCaptureStartFrame != 1)
+        {
+            saveIndex << GetCaptureFileName(kSharedContextId, mCaptureLabel, 1, ".cpp") << "\n";
+        }
+    }
+}
+
+void FrameCaptureShared::writeMainContextCppReplay(const gl::Context *context,
+                                                   const std::vector<CallCapture> &setupCalls)
+{
+    ASSERT(mWindowSurfaceContextID == context->id());
+
+    DataTracker dataTracker;
+
+    std::stringstream out;
+    std::stringstream header;
+
+    header << "#include \"" << FmtCapturePrefix(context->id(), mCaptureLabel) << ".h\"\n";
+    header << "#include \"angle_trace_gl.h\"\n";
+    header << "";
+    header << "\n";
+    header << "namespace\n";
+    header << "{\n";
+
+    uint32_t frameCount = getFrameCount();
+    uint32_t frameIndex = getReplayFrameIndex();
+
+    if (frameIndex == 1 || frameIndex == frameCount)
+    {
+        out << "extern \"C\" {\n";
+    }
+
+    if (frameIndex == 1)
+    {
+        std::stringstream setupCallStream;
+
+        setupCallStream << "void " << FmtSetupFunction(kNoPartId, context->id()) << "\n";
+        setupCallStream << "{\n";
+
+        WriteCppReplayFunctionWithParts(context->id(), ReplayFunc::Setup, &dataTracker, frameIndex,
+                                        &mBinaryData, setupCalls, header, setupCallStream, out);
+
+        out << setupCallStream.str();
+        out << "}\n";
+        out << "\n";
+        out << "void SetupReplay()\n";
+        out << "{\n";
+        out << "    " << mCaptureLabel << "::InitReplay();\n";
+
+        // Setup all of the share group objects if we're using MEC.
+        if (mCaptureStartFrame != 1)
+        {
+            out << "    " << mCaptureLabel << "::" << FmtSetupFunction(kNoPartId, kSharedContextId)
+                << ";\n";
+
+            // Setup the main (this) context before any other contexts in the share group.
+            out << "    " << FmtSetupFunction(kNoPartId, context->id()) << ";\n";
+        }
+        out << "}\n";
+        out << "\n";
+    }
+
+    if (frameIndex == frameCount)
+    {
+        // Emit code to reset back to starting state
+        out << "void " << FmtResetFunction() << "\n";
+        out << "{\n";
+
+        // TODO(http://anglebug.com/5878): Look at moving this into the shared context file since
+        // it's resetting shared objects.
+        std::stringstream restoreCallStream;
+        for (ResourceIDType resourceType : AllEnums<ResourceIDType>())
+        {
+            MaybeResetResources(restoreCallStream, resourceType, &dataTracker, header,
+                                &mResourceTracker, &mBinaryData);
+        }
+
+        // Reset opaque type objects that don't have IDs, so are not ResourceIDTypes.
+        MaybeResetOpaqueTypeObjects(restoreCallStream, &dataTracker, header, &mResourceTracker,
+                                    &mBinaryData);
+
+        out << restoreCallStream.str();
+        out << "}\n";
+    }
+
+    if (frameIndex == 1 || frameIndex == frameCount)
+    {
+        out << "}  // extern \"C\"\n";
+        out << "\n";
+    }
+
+    if (!mCaptureLabel.empty())
+    {
+        out << "namespace " << mCaptureLabel << "\n";
+        out << "{\n";
+    }
+
+    if (!mFrameCalls.empty())
+    {
+        std::stringstream callStream;
+
+        callStream << "void " << FmtReplayFunction(context->id(), frameIndex) << "\n";
+        callStream << "{\n";
+
+        WriteCppReplayFunctionWithParts(context->id(), ReplayFunc::Replay, &dataTracker, frameIndex,
+                                        &mBinaryData, mFrameCalls, header, callStream, out);
+
+        out << callStream.str();
+        out << "}\n";
+    }
+
+    if (mSerializeStateEnabled)
+    {
+        std::string serializedContextString;
+        if (SerializeContextToString(const_cast<gl::Context *>(context),
+                                     &serializedContextString) == Result::Continue)
+        {
+            out << "const char *" << FmtGetSerializedContextStateFunction(context->id(), frameIndex)
+                << "\n";
+            out << "{\n";
+            out << "    return R\"(" << serializedContextString << ")\";\n";
+            out << "}\n";
+            out << "\n";
+        }
+    }
+
+    if (!mCaptureLabel.empty())
+    {
+        out << "} // namespace " << mCaptureLabel << "\n";
+    }
+
+    header << "}  // namespace\n";
+
+    {
+        std::string outString    = out.str();
+        std::string headerString = header.str();
+
+        std::string cppFilePath =
+            GetCaptureFilePath(mOutDirectory, context->id(), mCaptureLabel, frameIndex, ".cpp");
+
+        SaveFileHelper saveCpp(cppFilePath);
+        saveCpp << headerString << "\n" << outString;
     }
 }
 

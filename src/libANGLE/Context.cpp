@@ -522,7 +522,7 @@ void Context::initializeDefaultResources()
     ANGLE_CONTEXT_TRY(mImplementation->initialize());
 
     // Add context into the share group
-    mState.getShareGroup()->getContexts()->insert(this);
+    mState.getShareGroup()->addSharedContext(this);
 
     bindVertexArray({0});
 
@@ -8789,12 +8789,6 @@ Shader *Context::getShader(ShaderProgramID handle) const
 const angle::FrontendFeatures &Context::getFrontendFeatures() const
 {
     return mDisplay->getFrontendFeatures();
-}
-
-angle::ResourceTracker &Context::getFrameCaptureSharedResourceTracker() const
-{
-    angle::FrameCaptureShared *frameCaptureShared = getShareGroup()->getFrameCaptureShared();
-    return frameCaptureShared->getResourceTracker();
 }
 
 bool Context::isRenderbufferGenerated(RenderbufferID renderbuffer) const
