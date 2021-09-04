@@ -283,6 +283,11 @@ std::ostream &operator<<(std::ostream &stream, const PlatformParameters &pp)
         stream << "_DirectMetalGen";
     }
 
+    if (pp.eglParameters.forceInitShaderVariables == EGL_TRUE)
+    {
+        stream << "_InitShaderVars";
+    }
+
     return stream;
 }
 

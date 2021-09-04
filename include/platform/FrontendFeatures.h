@@ -82,11 +82,16 @@ struct FrontendFeatures : angle::FeatureSetBase
         "forceRobustResourceInit", angle::FeatureCategory::FrontendFeatures,
         "Force-enable robust resource init", &members, "http://anglebug.com/6041"};
 
-    // Forces on shader output initialization to avoid undefined values in tests. Normally this
-    // feature is only enabled for WebGL.
-    angle::Feature forceInitShaderOutputVariables = {
-        "forceInitShaderOutputVariables", angle::FeatureCategory::FrontendFeatures,
-        "Force-enable shader output variable initialization", &members};
+    // Forces on shader variable init to avoid undefined values in tests. This feature is enabled
+    // for WebGL and frame capture, which both require deterministic results.
+    angle::Feature forceInitShaderVariables = {
+        "forceInitShaderVariables", angle::FeatureCategory::FrontendFeatures,
+        "Force-enable shader variable initialization", &members};
+
+    angle::Feature enableProgramBinaryForCapture = {
+        "enableProgramBinaryForCapture", angle::FeatureCategory::FrontendFeatures,
+        "Even if FrameCapture is enabled, enable GL_OES_get_program_binary", &members,
+        "http://anglebug.com/5658"};
 };
 
 inline FrontendFeatures::FrontendFeatures()  = default;

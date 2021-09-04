@@ -76,6 +76,15 @@ class TracePerfTest : public ANGLERenderTest
     void destroyBenchmark() override;
     void drawBenchmark() override;
 
+    // TODO(http://www.anglebug.com/5878): Add support for creating EGLSurface:
+    // - eglCreatePbufferSurface()
+    // - eglCreateWindowSurface()
+    EGLContext onEglCreateContext(EGLDisplay display,
+                                  EGLConfig config,
+                                  EGLContext share_context,
+                                  EGLint const *attrib_list);
+    void onEglMakeCurrent(EGLDisplay display, EGLSurface draw, EGLSurface read, EGLContext context);
+    EGLContext onEglGetCurrentContext();
     void onReplayFramebufferChange(GLenum target, GLuint framebuffer);
     void onReplayInvalidateFramebuffer(GLenum target,
                                        GLsizei numAttachments,
@@ -92,6 +101,8 @@ class TracePerfTest : public ANGLERenderTest
     void onReplayDiscardFramebufferEXT(GLenum target,
                                        GLsizei numAttachments,
                                        const GLenum *attachments);
+
+    void validateSerializedState(const char *serializedState, const char *fileName, uint32_t line);
 
     bool isDefaultFramebuffer(GLenum target) const;
 
@@ -153,7 +164,28 @@ class TracePerfTest : public ANGLERenderTest
 
 TracePerfTest *gCurrentTracePerfTest = nullptr;
 
-// Don't forget to include KHRONOS_APIENTRY in override methods. Neccessary on Win/x86.
+// Don't forget to include KHRONOS_APIENTRY in override methods. Necessary on Win/x86.
+EGLContext KHRONOS_APIENTRY EglCreateContext(EGLDisplay display,
+                                             EGLConfig config,
+                                             EGLContext share_context,
+                                             EGLint const *attrib_list)
+{
+    return gCurrentTracePerfTest->onEglCreateContext(display, config, share_context, attrib_list);
+}
+
+void KHRONOS_APIENTRY EglMakeCurrent(EGLDisplay display,
+                                     EGLSurface draw,
+                                     EGLSurface read,
+                                     EGLContext context)
+{
+    gCurrentTracePerfTest->onEglMakeCurrent(display, draw, read, context);
+}
+
+EGLContext KHRONOS_APIENTRY EglGetCurrentContext()
+{
+    return gCurrentTracePerfTest->onEglGetCurrentContext();
+}
+
 void KHRONOS_APIENTRY BindFramebufferProc(GLenum target, GLuint framebuffer)
 {
     gCurrentTracePerfTest->onReplayFramebufferChange(target, framebuffer);
@@ -437,6 +469,21 @@ void KHRONOS_APIENTRY BeginTransformFeedbackMinimizedProc(GLenum primitiveMode)
 
 angle::GenericProc KHRONOS_APIENTRY TraceLoadProc(const char *procName)
 {
+    // EGL
+    if (strcmp(procName, "eglCreateContext") == 0)
+    {
+        return reinterpret_cast<angle::GenericProc>(EglCreateContext);
+    }
+    if (strcmp(procName, "eglMakeCurrent") == 0)
+    {
+        return reinterpret_cast<angle::GenericProc>(EglMakeCurrent);
+    }
+    if (strcmp(procName, "eglGetCurrentContext") == 0)
+    {
+        return reinterpret_cast<angle::GenericProc>(EglGetCurrentContext);
+    }
+
+    // GLES
     if (strcmp(procName, "glBindFramebuffer") == 0)
     {
         return reinterpret_cast<angle::GenericProc>(BindFramebufferProc);
@@ -577,6 +624,11 @@ angle::GenericProc KHRONOS_APIENTRY TraceLoadProc(const char *procName)
     }
 
     return gCurrentTracePerfTest->getGLWindow()->getProcAddress(procName);
+}
+
+void ValidateSerializedState(const char *serializedState, const char *fileName, uint32_t line)
+{
+    gCurrentTracePerfTest->validateSerializedState(serializedState, fileName, line);
 }
 
 TracePerfTest::TracePerfTest(const TracePerfParams &params)
@@ -1008,10 +1060,26 @@ TracePerfTest::TracePerfTest(const TracePerfParams &params)
         }
     }
 
+    if (mParams.testID == RestrictedTraceID::scrabble_go)
+    {
+        addExtensionPrerequisite("GL_KHR_texture_compression_astc_ldr");
+    }
+
+    if (mParams.testID == RestrictedTraceID::world_of_kings)
+    {
+        addExtensionPrerequisite("GL_OES_EGL_image_external");
+    }
+
     // We already swap in TracePerfTest::drawBenchmark, no need to swap again in the harness.
     disableTestHarnessSwap();
 
     gCurrentTracePerfTest = this;
+
+    if (gTraceTestValidation)
+    {
+        const TraceInfo &traceInfo = GetTraceInfo(mParams.testID);
+        mStepsToRun                = (traceInfo.endFrame - traceInfo.startFrame + 1);
+    }
 }
 
 void TracePerfTest::initializeBenchmark()
@@ -1032,6 +1100,7 @@ void TracePerfTest::initializeBenchmark()
         angle::SetCWD(exeDir.c_str());
     }
 
+    trace_angle::LoadEGL(TraceLoadProc);
     trace_angle::LoadGLES(TraceLoadProc);
 
     if (!mTraceLibrary->valid())
@@ -1044,6 +1113,8 @@ void TracePerfTest::initializeBenchmark()
     mStartFrame = traceInfo.startFrame;
     mEndFrame   = traceInfo.endFrame;
     mTraceLibrary->setBinaryDataDecompressCallback(DecompressBinaryData);
+
+    mTraceLibrary->setValidateSerializedStateCallback(ValidateSerializedState);
 
     std::string relativeTestDataDir = std::string("src/tests/restricted_traces/") + traceInfo.name;
 
@@ -1077,7 +1148,7 @@ void TracePerfTest::initializeBenchmark()
         getWindow()->setOrientation(mTestParams.windowWidth, mTestParams.windowHeight);
     }
 
-    // If we're rendering offscreen we set up a default backbuffer.
+    // If we're rendering offscreen we set up a default back buffer.
     if (mParams.surfaceType == SurfaceType::Offscreen)
     {
         if (!IsAndroid())
@@ -1117,16 +1188,15 @@ void TracePerfTest::initializeBenchmark()
 
     glFinish();
 
-    ASSERT_TRUE(mEndFrame > mStartFrame);
+    ASSERT_GE(mEndFrame, mStartFrame);
 
     getWindow()->ignoreSizeEvents();
     getWindow()->setVisible(true);
 
     // If we're re-tracing, trigger capture start after setup. This ensures the Setup function gets
     // recaptured into another Setup function and not merged with the first frame.
-    if (angle::gRetraceMode)
+    if (gRetraceMode)
     {
-        angle::SetEnvironmentVar("ANGLE_CAPTURE_TRIGGER", "0");
         getGLWindow()->swap();
     }
 }
@@ -1375,6 +1445,29 @@ double TracePerfTest::getHostTimeFromGLTime(GLint64 glTime)
     return mTimeline[firstSampleIndex].hostTime + hostRange * t;
 }
 
+EGLContext TracePerfTest::onEglCreateContext(EGLDisplay display,
+                                             EGLConfig config,
+                                             EGLContext share_context,
+                                             EGLint const *attrib_list)
+{
+    GLWindowContext newContext =
+        getGLWindow()->createContextGeneric(reinterpret_cast<GLWindowContext>(share_context));
+    return reinterpret_cast<EGLContext>(newContext);
+}
+
+void TracePerfTest::onEglMakeCurrent(EGLDisplay display,
+                                     EGLSurface draw,
+                                     EGLSurface read,
+                                     EGLContext context)
+{
+    getGLWindow()->makeCurrentGeneric(reinterpret_cast<GLWindowContext>(context));
+}
+
+EGLContext TracePerfTest::onEglGetCurrentContext()
+{
+    return getGLWindow()->getCurrentContextGeneric();
+}
+
 // Triggered when the replay calls glBindFramebuffer.
 void TracePerfTest::onReplayFramebufferChange(GLenum target, GLuint framebuffer)
 {
@@ -1424,6 +1517,95 @@ void TracePerfTest::onReplayFramebufferChange(GLenum target, GLuint framebuffer)
     glGenQueriesEXT(1, &mCurrentQuery.beginTimestampQuery);
     glQueryCounterEXT(mCurrentQuery.beginTimestampQuery, GL_TIMESTAMP_EXT);
     mCurrentQuery.framebuffer = framebuffer;
+}
+
+std::string GetDiffPath()
+{
+#if defined(ANGLE_PLATFORM_WINDOWS)
+    std::array<char, MAX_PATH> filenameBuffer = {};
+    char *filenamePtr                         = nullptr;
+    if (SearchPathA(NULL, "diff", ".exe", MAX_PATH, filenameBuffer.data(), &filenamePtr) == 0)
+    {
+        return "";
+    }
+    return std::string(filenameBuffer.data());
+#else
+    return "/usr/bin/diff";
+#endif  // defined(ANGLE_PLATFORM_WINDOWS)
+}
+
+void PrintFileDiff(const char *aFilePath, const char *bFilePath)
+{
+    std::string pathToDiff = GetDiffPath();
+    if (pathToDiff.empty())
+    {
+        printf("Could not find diff in the path.\n");
+        return;
+    }
+
+    std::vector<const char *> args;
+    args.push_back(pathToDiff.c_str());
+    args.push_back(aFilePath);
+    args.push_back(bFilePath);
+    args.push_back("-u3");
+
+    printf("Calling");
+    for (const char *arg : args)
+    {
+        printf(" %s", arg);
+    }
+    printf("\n");
+
+    ProcessHandle proc(LaunchProcess(args, ProcessOutputCapture::StdoutOnly));
+    if (proc && proc->finish())
+    {
+        printf("\n%s\n", proc->getStdout().c_str());
+    }
+}
+
+void TracePerfTest::validateSerializedState(const char *expectedCapturedSerializedState,
+                                            const char *fileName,
+                                            uint32_t line)
+{
+    if (!gTraceTestValidation)
+    {
+        return;
+    }
+
+    printf("Serialization checkpoint %s:%u...\n", fileName, line);
+
+    const GLubyte *bytes                      = glGetString(GL_SERIALIZED_CONTEXT_STRING_ANGLE);
+    const char *actualReplayedSerializedState = reinterpret_cast<const char *>(bytes);
+    if (strcmp(expectedCapturedSerializedState, actualReplayedSerializedState) == 0)
+    {
+        printf("Serialization match.\n");
+        return;
+    }
+
+    printf("Serialization mismatch!\n");
+
+    constexpr size_t kMaxPath = 1024;
+    char aFilePath[kMaxPath]  = {};
+    if (CreateTemporaryFile(aFilePath, kMaxPath))
+    {
+        printf("Saving \"expected\" capture serialization to \"%s\".\n", aFilePath);
+        FILE *fpA = fopen(aFilePath, "wt");
+        ASSERT(fpA);
+        fprintf(fpA, "%s", expectedCapturedSerializedState);
+        fclose(fpA);
+    }
+
+    char bFilePath[kMaxPath] = {};
+    if (CreateTemporaryFile(bFilePath, kMaxPath))
+    {
+        printf("Saving \"actual\" replay serialization to \"%s\".\n", bFilePath);
+        FILE *fpB = fopen(bFilePath, "wt");
+        ASSERT(fpB);
+        fprintf(fpB, "%s", actualReplayedSerializedState);
+        fclose(fpB);
+    }
+
+    PrintFileDiff(aFilePath, bFilePath);
 }
 
 bool TracePerfTest::isDefaultFramebuffer(GLenum target) const
@@ -1686,7 +1868,18 @@ void RegisterTraceTests()
 
     for (const TracePerfParams &params : filteredTests)
     {
-        auto factory          = [params]() { return new TracePerfTest(params); };
+        // Force on features if we're validating serialization.
+        TracePerfParams overrideParams = params;
+        if (gTraceTestValidation)
+        {
+            // Enable limits when validating traces because we usually turn off capture.
+            overrideParams.eglParameters.captureLimits = EGL_TRUE;
+
+            // This feature should also be enabled in capture to mirror the replay.
+            overrideParams.eglParameters.forceInitShaderVariables = EGL_TRUE;
+        }
+
+        auto factory          = [overrideParams]() { return new TracePerfTest(overrideParams); };
         std::string paramName = testing::PrintToString(params);
         std::stringstream testNameStr;
         testNameStr << "Run/" << paramName;

@@ -7,6 +7,7 @@
 # gen_restricted_traces.py:
 #   Generates integration code for the restricted trace tests.
 
+import getpass
 import glob
 import fnmatch
 import json
@@ -39,42 +40,15 @@ HEADER_TEMPLATE = """\
 //
 // {filename}: Types and enumerations for trace tests.
 
-#ifndef ANGLE_RESTRICTED_TRACES_H_
-#define ANGLE_RESTRICTED_TRACES_H_
+#ifndef ANGLE_RESTRICTED_TRACES_AUTOGEN_H_
+#define ANGLE_RESTRICTED_TRACES_AUTOGEN_H_
 
 #include <cstdint>
 #include <vector>
 #include <KHR/khrplatform.h>
 #include <EGL/egl.h>
 
-// See util/util_export.h for details on import/export labels.
-#if !defined(ANGLE_TRACE_EXPORT)
-#    if defined(_WIN32)
-#        if defined(ANGLE_TRACE_IMPLEMENTATION)
-#            define ANGLE_TRACE_EXPORT __declspec(dllexport)
-#        else
-#            define ANGLE_TRACE_EXPORT __declspec(dllimport)
-#        endif
-#    elif defined(__GNUC__)
-#        define ANGLE_TRACE_EXPORT __attribute__((visibility("default")))
-#    else
-#        define ANGLE_TRACE_EXPORT
-#    endif
-#endif  // !defined(ANGLE_TRACE_EXPORT)
-
-#if !defined(ANGLE_TRACE_LOADER_EXPORT)
-#    if defined(_WIN32)
-#        if defined(ANGLE_TRACE_LOADER_IMPLEMENTATION)
-#            define ANGLE_TRACE_LOADER_EXPORT __declspec(dllexport)
-#        else
-#            define ANGLE_TRACE_LOADER_EXPORT __declspec(dllimport)
-#        endif
-#    elif defined(__GNUC__)
-#        define ANGLE_TRACE_LOADER_EXPORT __attribute__((visibility("default")))
-#    else
-#        define ANGLE_TRACE_LOADER_EXPORT
-#    endif
-#endif  // !defined(ANGLE_TRACE_LOADER_EXPORT)
+#include "restricted_traces_export.h"
 
 namespace trace_angle
 {{
@@ -112,7 +86,7 @@ struct TraceInfo
 ANGLE_TRACE_EXPORT const TraceInfo &GetTraceInfo(RestrictedTraceID traceID);
 }}  // namespace angle
 
-#endif  // ANGLE_RESTRICTED_TRACES_H_
+#endif  // ANGLE_RESTRICTED_TRACES_AUTOGEN_H_
 """
 
 SOURCE_TEMPLATE = """\
@@ -149,6 +123,7 @@ const TraceInfo &GetTraceInfo(RestrictedTraceID traceID)
 """
 
 CIPD_TRACE_PREFIX = 'angle/traces'
+EXPERIMENTAL_CIPD_PREFIX = 'experimental/google.com/%s/angle/traces'
 DEPS_PATH = '../../../DEPS'
 DEPS_START = '# === ANGLE Restricted Trace Generated Code Start ==='
 DEPS_END = '# === ANGLE Restricted Trace Generated Code End ==='
@@ -181,7 +156,7 @@ def get_angledata_filename(trace):
     angledata_files = glob.glob('%s/%s*angledata.gz' % (trace, trace))
     assert len(angledata_files) == 1, "Trace '%s' has %d angledata.gz files" % (
         trace, len(angledata_files))
-    return angledata_files[0]
+    return angledata_files[0].replace('\\', '/')
 
 
 def gen_gni(traces, gni_file, format_args):
@@ -307,7 +282,12 @@ def update_deps(trace_pairs):
     # Generate substitution string
     replacement = ""
     for (trace, version) in trace_pairs:
-        sub = {'trace': trace, 'version': version, 'trace_prefix': CIPD_TRACE_PREFIX}
+        if 'x' in version:
+            version = version.strip('x')
+            trace_prefix = EXPERIMENTAL_CIPD_PREFIX % getpass.getuser()
+        else:
+            trace_prefix = CIPD_TRACE_PREFIX
+        sub = {'trace': trace, 'version': version, 'trace_prefix': trace_prefix}
         replacement += DEPS_TEMPLATE.format(**sub)
 
     # Update DEPS to download CIPD dependencies

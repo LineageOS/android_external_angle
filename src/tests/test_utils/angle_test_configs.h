@@ -310,6 +310,13 @@ inline PlatformParameters WithDirectMetalGeneration(const PlatformParameters &pa
     directMetalGeneration.eglParameters.directMetalGeneration = EGL_TRUE;
     return directMetalGeneration;
 }
+
+inline PlatformParameters WithInitShaderVariables(const PlatformParameters &params)
+{
+    PlatformParameters initShaderVariables                     = params;
+    initShaderVariables.eglParameters.forceInitShaderVariables = EGL_TRUE;
+    return initShaderVariables;
+}
 }  // namespace angle
 
 #endif  // ANGLE_TEST_CONFIGS_H_

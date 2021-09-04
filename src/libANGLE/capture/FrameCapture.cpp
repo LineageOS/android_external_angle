@@ -39,6 +39,7 @@
 #include "libANGLE/capture/capture_gles_ext_autogen.h"
 #include "libANGLE/capture/frame_capture_utils.h"
 #include "libANGLE/capture/gl_enum_utils.h"
+#include "libANGLE/entry_points_utils.h"
 #include "libANGLE/queryconversions.h"
 #include "libANGLE/queryutils.h"
 
@@ -62,6 +63,7 @@ constexpr char kCaptureTriggerVarName[] = "ANGLE_CAPTURE_TRIGGER";
 constexpr char kCaptureLabelVarName[]   = "ANGLE_CAPTURE_LABEL";
 constexpr char kCompressionVarName[]    = "ANGLE_CAPTURE_COMPRESSION";
 constexpr char kSerializeStateVarName[] = "ANGLE_CAPTURE_SERIALIZE_STATE";
+constexpr char kValidationVarName[]     = "ANGLE_CAPTURE_VALIDATION";
 
 constexpr size_t kBinaryAlignment   = 16;
 constexpr size_t kFunctionSizeLimit = 5000;
@@ -77,6 +79,7 @@ constexpr char kAndroidFrameEnd[]       = "debug.angle.capture.frame_end";
 constexpr char kAndroidCaptureTrigger[] = "debug.angle.capture.trigger";
 constexpr char kAndroidCaptureLabel[]   = "debug.angle.capture.label";
 constexpr char kAndroidCompression[]    = "debug.angle.capture.compression";
+constexpr char kAndroidValidation[]     = "debug.angle.capture.validation";
 
 struct FramebufferCaptureFuncs
 {
@@ -454,13 +457,43 @@ void WriteInlineData<GLchar>(const std::vector<uint8_t> &vec, std::ostream &out)
     out << "\"";
 }
 
-void WriteStringParamReplay(std::ostream &out, const ParamCapture &param)
+void WriteStringParamReplay(DataTracker *dataTracker,
+                            std::ostream &out,
+                            std::ostream &header,
+                            const CallCapture &call,
+                            const ParamCapture &param,
+                            std::vector<uint8_t> *binaryData)
 {
     const std::vector<uint8_t> &data = param.data[0];
     // null terminate C style string
     ASSERT(data.size() > 0 && data.back() == '\0');
     std::string str(data.begin(), data.end() - 1);
-    out << "\"" << str << "\"";
+
+    constexpr size_t kMaxInlineStringLength = 20000;
+    if (str.size() > kMaxInlineStringLength)
+    {
+        // Store in binary file if the string is too long.
+        // Round up to 16-byte boundary for cross ABI safety.
+        size_t offset = rx::roundUpPow2(binaryData->size(), kBinaryAlignment);
+        binaryData->resize(offset + str.size() + 1);
+        memcpy(binaryData->data() + offset, str.data(), str.size() + 1);
+        out << "reinterpret_cast<const char *>(&gBinaryData[" << offset << "])";
+    }
+    else if (str.find('\n') != std::string::npos)
+    {
+        // Move multi-line strings into the header.
+        int counter = dataTracker->getCounters().getAndIncrement(call.entryPoint, param.name);
+
+        header << "const char ";
+        WriteParamStaticVarName(call, param, counter, header);
+        header << "[] = R\"(" << str << ")\";\n";
+
+        WriteParamStaticVarName(call, param, counter, out);
+    }
+    else
+    {
+        out << "\"" << str << "\"";
+    }
 }
 
 void WriteStringPointerParamReplay(DataTracker *dataTracker,
@@ -546,7 +579,7 @@ void WriteResourceIDPointerParamReplay(DataTracker *dataTracker,
         {
             header << ", ";
         }
-        header << "g" << name << "Map[" << id.value << "]";
+        header << "g" << name << "Map2[" << id.value << "]";
     }
 
     header << " };\n    ";
@@ -620,7 +653,7 @@ void WriteCppReplayForCall(const CallCapture &call,
         call.entryPoint == EntryPoint::GLCreateShaderProgramv)
     {
         GLuint id = call.params.getReturnValue().value.GLuintVal;
-        callOut << "gShaderProgramMap[" << id << "] = ";
+        callOut << "gShaderProgramMap2[" << id << "] = ";
     }
 
     if (call.entryPoint == EntryPoint::GLFenceSync)
@@ -715,7 +748,7 @@ void WriteCppReplayForCall(const CallCapture &call,
             switch (param.type)
             {
                 case ParamType::TGLcharConstPointer:
-                    WriteStringParamReplay(callOut, param);
+                    WriteStringParamReplay(dataTracker, callOut, header, call, param, binaryData);
                     break;
                 case ParamType::TGLcharConstPointerPointer:
                     WriteStringPointerParamReplay(dataTracker, callOut, header, call, param);
@@ -794,6 +827,20 @@ size_t MaxClientArraySize(const gl::AttribArray<size_t> &clientArraySizes)
     }
 
     return found;
+}
+
+CallCapture CaptureMakeCurrent(EGLDisplay display,
+                               EGLSurface draw,
+                               EGLSurface read,
+                               EGLContext context)
+{
+    ParamBuffer paramBuffer;
+    paramBuffer.addValueParam("display", ParamType::TEGLDisplay, display);
+    paramBuffer.addValueParam("draw", ParamType::TEGLSurface, draw);
+    paramBuffer.addValueParam("read", ParamType::TEGLSurface, read);
+    paramBuffer.addValueParam("context", ParamType::TEGLContext, context);
+
+    return CallCapture(angle::EntryPoint::EGLMakeCurrent, std::move(paramBuffer));
 }
 
 struct SaveFileHelper
@@ -885,11 +932,25 @@ void WriteInitReplayCall(bool compression,
                          gl::ContextID contextId,
                          const std::string &captureLabel,
                          size_t maxClientArraySize,
-                         size_t readBufferSize)
+                         size_t readBufferSize,
+                         const PackedEnumMap<ResourceIDType, uint32_t> &maxIDs)
 {
+    for (ResourceIDType resourceID : AllEnums<ResourceIDType>())
+    {
+        const char *name = GetResourceIDTypeName(resourceID);
+        out << "    uint32_t kMax" << name << " = " << maxIDs[resourceID] << ";\n";
+    }
+
     std::string binaryDataFileName = GetBinaryDataFilePath(compression, captureLabel);
-    out << "    InitializeReplay(\"" << binaryDataFileName << "\", " << maxClientArraySize << ", "
-        << readBufferSize << ");\n";
+    out << "    InitializeReplay2(\"" << binaryDataFileName << "\", " << maxClientArraySize << ", "
+        << readBufferSize;
+
+    for (ResourceIDType resourceID : AllEnums<ResourceIDType>())
+    {
+        out << ", kMax" << GetResourceIDTypeName(resourceID);
+    }
+
+    out << ");\n";
 }
 
 // TODO (http://anglebug.com/4599): Reset more state on frame loop
@@ -1025,7 +1086,7 @@ void MaybeResetResources(std::stringstream &out,
             // If we have any new programs created and not deleted during the run, delete them now
             for (const auto &newProgram : newPrograms)
             {
-                out << "    glDeleteProgram(gShaderProgramMap[" << newProgram << "]);\n";
+                out << "    glDeleteProgram(gShaderProgramMap2[" << newProgram << "]);\n";
             }
 
             // TODO (http://anglebug.com/5968): Handle programs that need regen
@@ -1357,7 +1418,7 @@ void CaptureUpdateResourceIDs(const CallCapture &call,
     const char *resourceName = GetResourceIDTypeName(resourceIDType);
 
     std::stringstream updateFuncNameStr;
-    updateFuncNameStr << "Update" << resourceName << "ID";
+    updateFuncNameStr << "Update" << resourceName << "ID2";
     std::string updateFuncName = updateFuncNameStr.str();
 
     const IDType *returnedIDs = reinterpret_cast<const IDType *>(param.data[0].data());
@@ -1427,8 +1488,30 @@ void CaptureUpdateUniformLocations(const gl::Program *program, std::vector<CallC
         params.addParam(std::move(nameParam));
         params.addValueParam("location", ParamType::TGLint, location);
         params.addValueParam("count", ParamType::TGLint, static_cast<GLint>(count));
-        callsOut->emplace_back("UpdateUniformLocation", std::move(params));
+        callsOut->emplace_back("UpdateUniformLocation2", std::move(params));
     }
+}
+
+void CaptureValidateSerializedState(const gl::Context *context, std::vector<CallCapture> *callsOut)
+{
+    INFO() << "Capturing validation checkpoint at position " << callsOut->size();
+
+    context->finishImmutable();
+
+    std::string serializedState;
+    angle::Result result = angle::SerializeContextToString(context, &serializedState);
+    if (result != angle::Result::Continue)
+    {
+        ERR() << "Internal error serializing context state.";
+        return;
+    }
+    ParamCapture serializedStateParam("serializedState", ParamType::TGLcharConstPointer);
+    CaptureString(serializedState.c_str(), &serializedStateParam);
+
+    ParamBuffer params;
+    params.addParam(std::move(serializedStateParam));
+
+    callsOut->emplace_back("VALIDATE_CHECKPOINT", std::move(params));
 }
 
 void CaptureUpdateUniformBlockIndexes(const gl::Program *program,
@@ -1456,7 +1539,7 @@ void CaptureDeleteUniformLocations(gl::ShaderProgramID program, std::vector<Call
 {
     ParamBuffer params;
     params.addValueParam("program", ParamType::TShaderProgramID, program);
-    callsOut->emplace_back("DeleteUniformLocations", std::move(params));
+    callsOut->emplace_back("DeleteUniformLocations2", std::move(params));
 }
 
 void MaybeCaptureUpdateResourceIDs(std::vector<CallCapture> *callsOut)
@@ -1699,7 +1782,7 @@ void CaptureFramebufferAttachment(std::vector<CallCapture> *setupCalls,
     }
 }
 
-void CaptureUpdateUniformValues(gl::State &replayState,
+void CaptureUpdateUniformValues(const gl::State &replayState,
                                 const gl::Context *context,
                                 gl::Program *program,
                                 std::vector<CallCapture> *callsOut)
@@ -1715,7 +1798,6 @@ void CaptureUpdateUniformValues(gl::State &replayState,
     {
         Capture(callsOut, CaptureUseProgram(replayState, true, program->id()));
         CaptureUpdateCurrentProgram(callsOut->back(), callsOut);
-        (void)replayState.setProgram(context, program);
     }
 
     const std::vector<gl::LinkedUniform> &uniforms = program->getState().getUniforms();
@@ -2217,6 +2299,113 @@ void CaptureTextureContents(std::vector<CallCapture> *setupCalls,
     }
 }
 
+void GenerateLinkedProgram(const gl::Context *context,
+                           const gl::State &replayState,
+                           ResourceTracker *resourceTracker,
+                           std::vector<CallCapture> *setupCalls,
+                           gl::Program *program,
+                           gl::ShaderProgramID id,
+                           const ProgramSources &linkedSources)
+{
+    // Bump up our max program ID before creating temp shaders
+    resourceTracker->onShaderProgramAccess(id);
+
+    // Use max ID as a temporary shader ID.
+    // Note this isn't the real ID of the shader, just a lookup into the gShaderProgram map.
+    gl::ShaderProgramID tempShaderID = {resourceTracker->getMaxShaderPrograms()};
+
+    // Compile with last linked sources.
+    for (gl::ShaderType shaderType : program->getExecutable().getLinkedShaderStages())
+    {
+        const std::string &sourceString = linkedSources[shaderType];
+        const char *sourcePointer       = sourceString.c_str();
+
+        if (sourceString.empty())
+        {
+            // If we don't have source for this shader, that means it was populated by the app
+            // using glProgramBinary.  We need to look it up from our cached copy.
+            const ProgramSources &cachedLinkedSources =
+                context->getShareGroup()->getFrameCaptureShared()->getProgramSources(id);
+
+            const std::string &cachedSourceString = cachedLinkedSources[shaderType];
+            sourcePointer                         = cachedSourceString.c_str();
+            ASSERT(!cachedSourceString.empty());
+        }
+
+        // Compile and attach the temporary shader. Then free it immediately.
+        Capture(setupCalls, CaptureCreateShader(replayState, true, shaderType, tempShaderID.value));
+        Capture(setupCalls,
+                CaptureShaderSource(replayState, true, tempShaderID, 1, &sourcePointer, nullptr));
+        Capture(setupCalls, CaptureCompileShader(replayState, true, tempShaderID));
+        Capture(setupCalls, CaptureAttachShader(replayState, true, id, tempShaderID));
+        Capture(setupCalls, CaptureDeleteShader(replayState, true, tempShaderID));
+    }
+
+    // Gather XFB varyings
+    std::vector<std::string> xfbVaryings;
+    for (const gl::TransformFeedbackVarying &xfbVarying :
+         program->getState().getLinkedTransformFeedbackVaryings())
+    {
+        xfbVaryings.push_back(xfbVarying.nameWithArrayIndex());
+    }
+
+    if (!xfbVaryings.empty())
+    {
+        std::vector<const char *> varyingsStrings;
+        for (const std::string &varyingString : xfbVaryings)
+        {
+            varyingsStrings.push_back(varyingString.data());
+        }
+
+        GLenum xfbMode = program->getState().getTransformFeedbackBufferMode();
+        Capture(setupCalls, CaptureTransformFeedbackVaryings(replayState, true, id,
+                                                             static_cast<GLint>(xfbVaryings.size()),
+                                                             varyingsStrings.data(), xfbMode));
+    }
+
+    // Force the attributes to be bound the same way as in the existing program.
+    // This can affect attributes that are optimized out in some implementations.
+    for (const sh::ShaderVariable &attrib : program->getState().getProgramInputs())
+    {
+        if (gl::IsBuiltInName(attrib.name))
+        {
+            // Don't try to bind built-in attributes
+            continue;
+        }
+
+        // Separable programs may not have a VS, meaning it may not have attributes.
+        if (program->getExecutable().hasLinkedShaderStage(gl::ShaderType::Vertex))
+        {
+            ASSERT(attrib.location != -1);
+            Capture(setupCalls, CaptureBindAttribLocation(replayState, true, id,
+                                                          static_cast<GLuint>(attrib.location),
+                                                          attrib.name.c_str()));
+        }
+    }
+
+    if (program->isSeparable())
+    {
+        // MEC manually recreates separable programs, rather than attempting to recreate a call
+        // to glCreateShaderProgramv(), so insert a call to mark it separable.
+        Capture(setupCalls,
+                CaptureProgramParameteri(replayState, true, id, GL_PROGRAM_SEPARABLE, GL_TRUE));
+    }
+
+    Capture(setupCalls, CaptureLinkProgram(replayState, true, id));
+    CaptureUpdateUniformLocations(program, setupCalls);
+    CaptureUpdateUniformValues(replayState, context, program, setupCalls);
+    CaptureUpdateUniformBlockIndexes(program, setupCalls);
+
+    // Capture uniform block bindings for each program
+    for (unsigned int uniformBlockIndex = 0;
+         uniformBlockIndex < program->getActiveUniformBlockCount(); uniformBlockIndex++)
+    {
+        GLuint blockBinding = program->getUniformBlockBinding(uniformBlockIndex);
+        Capture(setupCalls, CaptureUniformBlockBinding(replayState, true, id, {uniformBlockIndex},
+                                                       blockBinding));
+    }
+}
+
 // TODO(http://anglebug.com/4599): Improve reset/restore call generation
 // There are multiple ways to track reset calls for individual resources. For now, we are tracking
 // separate lists of instructions that mirror the calls created during mid-execution setup. Other
@@ -2648,13 +2837,19 @@ void CaptureShareGroupMidExecutionSetup(const gl::Context *context,
 
             const gl::InternalFormat &format = *desc.format.info;
 
+            bool supportedType = (index.getType() == gl::TextureType::_2D ||
+                                  index.getType() == gl::TextureType::_3D ||
+                                  index.getType() == gl::TextureType::_2DArray ||
+                                  index.getType() == gl::TextureType::Buffer ||
+                                  index.getType() == gl::TextureType::CubeMap ||
+                                  index.getType() == gl::TextureType::CubeMapArray);
+
             // Check for supported textures
-            ASSERT(index.getType() == gl::TextureType::_2D ||
-                   index.getType() == gl::TextureType::_3D ||
-                   index.getType() == gl::TextureType::_2DArray ||
-                   index.getType() == gl::TextureType::Buffer ||
-                   index.getType() == gl::TextureType::CubeMap ||
-                   index.getType() == gl::TextureType::CubeMapArray);
+            if (!supportedType)
+            {
+                ERR() << "Unsupported texture type: " << index.getType();
+                UNREACHABLE();
+            }
 
             if (index.getType() == gl::TextureType::Buffer)
             {
@@ -2770,8 +2965,7 @@ void CaptureShareGroupMidExecutionSetup(const gl::Context *context,
     const gl::ResourceMap<gl::Program, gl::ShaderProgramID> &programs =
         shadersAndPrograms.getProgramsForCaptureAndPerf();
 
-    // Capture Program binary state. Use max ID as a temporary shader ID.
-    gl::ShaderProgramID tempShaderID = {resourceTracker->getMaxShaderPrograms()};
+    // Capture Program binary state.
     for (const auto &programIter : programs)
     {
         gl::ShaderProgramID id = {programIter.first};
@@ -2790,84 +2984,16 @@ void CaptureShareGroupMidExecutionSetup(const gl::Context *context,
 
         cap(CaptureCreateProgram(replayState, true, id.value));
 
-        // Compile with last linked sources.
-        for (gl::ShaderType shaderType : program->getExecutable().getLinkedShaderStages())
-        {
-            const std::string &sourceString = linkedSources[shaderType];
-            const char *sourcePointer       = sourceString.c_str();
+        GenerateLinkedProgram(context, replayState, resourceTracker, setupCalls, program, id,
+                              linkedSources);
 
-            // Compile and attach the temporary shader. Then free it immediately.
-            cap(CaptureCreateShader(replayState, true, shaderType, tempShaderID.value));
-            cap(CaptureShaderSource(replayState, true, tempShaderID, 1, &sourcePointer, nullptr));
-            cap(CaptureCompileShader(replayState, true, tempShaderID));
-            cap(CaptureAttachShader(replayState, true, id, tempShaderID));
-            cap(CaptureDeleteShader(replayState, true, tempShaderID));
+        // Update the program in replayState
+        if (!replayState.getProgram() || replayState.getProgram()->id() != program->id())
+        {
+            // Note: We don't do this in GenerateLinkedProgram because it can't modify state
+            (void)replayState.setProgram(context, program);
         }
 
-        // Gather XFB varyings
-        std::vector<std::string> xfbVaryings;
-        for (const gl::TransformFeedbackVarying &xfbVarying :
-             program->getState().getLinkedTransformFeedbackVaryings())
-        {
-            xfbVaryings.push_back(xfbVarying.nameWithArrayIndex());
-        }
-
-        if (!xfbVaryings.empty())
-        {
-            std::vector<const char *> varyingsStrings;
-            for (const std::string &varyingString : xfbVaryings)
-            {
-                varyingsStrings.push_back(varyingString.data());
-            }
-
-            GLenum xfbMode = program->getState().getTransformFeedbackBufferMode();
-            cap(CaptureTransformFeedbackVaryings(replayState, true, id,
-                                                 static_cast<GLint>(xfbVaryings.size()),
-                                                 varyingsStrings.data(), xfbMode));
-        }
-
-        // Force the attributes to be bound the same way as in the existing program.
-        // This can affect attributes that are optimized out in some implementations.
-        for (const sh::ShaderVariable &attrib : program->getState().getProgramInputs())
-        {
-            if (gl::IsBuiltInName(attrib.name))
-            {
-                // Don't try to bind built-in attributes
-                continue;
-            }
-
-            // Separable programs may not have a VS, meaning it may not have attributes.
-            if (program->getExecutable().hasLinkedShaderStage(gl::ShaderType::Vertex))
-            {
-                ASSERT(attrib.location != -1);
-                cap(CaptureBindAttribLocation(replayState, true, id,
-                                              static_cast<GLuint>(attrib.location),
-                                              attrib.name.c_str()));
-            }
-        }
-
-        if (program->isSeparable())
-        {
-            // MEC manually recreates separable programs, rather than attempting to recreate a call
-            // to glCreateShaderProgramv(), so insert a call to mark it separable.
-            cap(CaptureProgramParameteri(replayState, true, id, GL_PROGRAM_SEPARABLE, GL_TRUE));
-        }
-
-        cap(CaptureLinkProgram(replayState, true, id));
-        CaptureUpdateUniformLocations(program, setupCalls);
-        CaptureUpdateUniformValues(replayState, context, program, setupCalls);
-        CaptureUpdateUniformBlockIndexes(program, setupCalls);
-
-        // Capture uniform block bindings for each program
-        for (unsigned int uniformBlockIndex = 0;
-             uniformBlockIndex < program->getActiveUniformBlockCount(); uniformBlockIndex++)
-        {
-            GLuint blockBinding = program->getUniformBlockBinding(uniformBlockIndex);
-            cap(CaptureUniformBlockBinding(replayState, true, id, {uniformBlockIndex},
-                                           blockBinding));
-        }
-
-        resourceTracker->onShaderProgramAccess(id);
         resourceTracker->getTrackedResource(ResourceIDType::ShaderProgram)
             .getStartingResources()
             .insert(id.value);
@@ -3002,12 +3128,21 @@ void CaptureShareGroupMidExecutionSetup(const gl::Context *context,
 void CaptureMidExecutionSetup(const gl::Context *context,
                               std::vector<CallCapture> *setupCalls,
                               ResourceTracker *resourceTracker,
-                              gl::State &replayState)
+                              gl::State &replayState,
+                              bool validationEnabled)
 {
     const gl::State &apiState = context->getState();
 
     // Small helper function to make the code more readable.
     auto cap = [setupCalls](CallCapture &&call) { setupCalls->emplace_back(std::move(call)); };
+
+    // Need to go from uint32 -> uint64 -> EGLContext (void*) to handle MSVC compiler
+    // warning on 64b systems:
+    //   error C4312: 'reinterpret_cast': conversion from 'uint32_t' to 'EGLContext' of
+    //   greater size
+    uint64_t contextID    = static_cast<uint64_t>(context->id().value);
+    EGLContext eglContext = reinterpret_cast<EGLContext>(contextID);
+    cap(CaptureMakeCurrent(EGL_NO_DISPLAY, EGL_NO_SURFACE, EGL_NO_SURFACE, eglContext));
 
     // Vertex input states. Must happen after buffer data initialization. Do not capture on GLES1.
     if (!context->isGLES1())
@@ -3418,7 +3553,6 @@ void CaptureMidExecutionSetup(const gl::Context *context,
     }
 
     // Capture GL Context states.
-    // TODO(http://anglebug.com/3662): Complete state capture.
     auto capCap = [cap, &replayState](GLenum capEnum, bool capValue) {
         if (capValue)
         {
@@ -3790,6 +3924,11 @@ void CaptureMidExecutionSetup(const gl::Context *context,
 
     // Clean up the replay state.
     replayState.reset(context);
+
+    if (validationEnabled)
+    {
+        CaptureValidateSerializedState(context, setupCalls);
+    }
 }
 
 bool SkipCall(EntryPoint entryPoint)
@@ -4028,7 +4167,8 @@ void FrameCapture::reset()
 }
 
 FrameCaptureShared::FrameCaptureShared()
-    : mEnabled(true),
+    : mLastContextId{0},
+      mEnabled(true),
       mSerializeStateEnabled(false),
       mCompression(true),
       mClientVertexArrayMap{},
@@ -4038,6 +4178,7 @@ FrameCaptureShared::FrameCaptureShared()
       mClientArraySizes{},
       mReadBufferSize(0),
       mHasResourceType{},
+      mMaxAccessedResourceIDs{},
       mCaptureTrigger(0),
       mCaptureActive(false),
       mWindowSurfaceContextID({0})
@@ -4119,6 +4260,13 @@ FrameCaptureShared::FrameCaptureShared()
         mSerializeStateEnabled = true;
     }
 
+    std::string validateSerialiedStateFromEnv =
+        GetEnvironmentVarOrUnCachedAndroidProperty(kValidationVarName, kAndroidValidation);
+    if (validateSerialiedStateFromEnv == "1")
+    {
+        mValidateSerializedState = true;
+    }
+
     if (mFrameIndex == mCaptureStartFrame)
     {
         // Capture is starting from the first frame, so set the capture active to ensure all GLES
@@ -4155,16 +4303,16 @@ void FrameCaptureShared::copyCompressedTextureData(const gl::Context *context,
         call.params.getParam("dstName", ParamType::TTextureID, 6).value.TextureIDVal;
     GLint dstLevel = call.params.getParam("dstLevel", ParamType::TGLint, 8).value.GLintVal;
 
-    // Look up the texture type
-    gl::TextureTarget dstTargetPacked = gl::PackParam<gl::TextureTarget>(dstTarget);
-    gl::TextureType dstTextureType    = gl::TextureTargetToType(dstTargetPacked);
-
-    // Look up the currently bound texture
-    gl::Texture *dstTexture = context->getState().getTargetTexture(dstTextureType);
+    // Inspect the dest texture to see if this is compressed in case we need to back it up
+    gl::Texture *dstTexture = context->getTexture(dstName);
     ASSERT(dstTexture);
 
-    const gl::InternalFormat &dstFormat = *dstTexture->getFormat(dstTargetPacked, dstLevel).info;
+    // Look up its target using dstZ as the slice in case of 3D/Cube/Array
+    GLint dstZ = call.params.getParam("dstZ", ParamType::TGLint, 11).value.GLintVal;
+    gl::TextureTarget dstTargetPacked = gl::TextureTypeToTarget(dstTexture->getType(), dstZ);
 
+    // Pull the info and check
+    const gl::InternalFormat &dstFormat = *dstTexture->getFormat(dstTargetPacked, dstLevel).info;
     if (dstFormat.compressed)
     {
         context->getShareGroup()->getFrameCaptureShared()->copyCachedTextureLevel(
@@ -4405,6 +4553,7 @@ void FrameCaptureShared::trackTextureUpdate(const gl::Context *context, const Ca
             break;
         case EntryPoint::GLCopyTextureCHROMIUM:
         case EntryPoint::GLCopySubTextureCHROMIUM:
+        case EntryPoint::GLCopyTexture3DANGLE:
             index     = 3;
             paramName = "destIdPacked";
             break;
@@ -4498,17 +4647,76 @@ void FrameCaptureShared::updateCopyImageSubData(CallCapture &call)
     }
 }
 
-void FrameCaptureShared::maybeOverrideEntryPoint(const gl::Context *context, CallCapture &call)
+void FrameCaptureShared::overrideProgramBinary(const gl::Context *context,
+                                               CallCapture &inCall,
+                                               std::vector<CallCapture> &outCalls)
 {
-    switch (call.entryPoint)
+    // Program binaries are inherently non-portable, even between two ANGLE builds.
+    // If an application is using glProgramBinary in the middle of a trace, we need to replace
+    // those calls with an equivalent sequence of portable calls.
+    //
+    // For example, here is a sequence an app could use for glProgramBinary:
+    //
+    //   gShaderProgramMap[42] = glCreateProgram();
+    //   glProgramBinary(gShaderProgramMap[42], GL_PROGRAM_BINARY_ANGLE, gBinaryData[x], 1000);
+    //   glGetProgramiv(gShaderProgramMap[42], GL_LINK_STATUS, gReadBuffer);
+    //   glGetProgramiv(gShaderProgramMap[42], GL_PROGRAM_BINARY_LENGTH, gReadBuffer);
+    //
+    // With this override, the glProgramBinary call will be replaced like so:
+    //
+    //   gShaderProgramMap[42] = glCreateProgram();
+    //   === Begin override ===
+    //   gShaderProgramMap[43] = glCreateShader(GL_VERTEX_SHADER);
+    //   glShaderSource(gShaderProgramMap[43], 1, string_0, &gBinaryData[100]);
+    //   glCompileShader(gShaderProgramMap[43]);
+    //   glAttachShader(gShaderProgramMap[42], gShaderProgramMap[43]);
+    //   glDeleteShader(gShaderProgramMap[43]);
+    //   gShaderProgramMap[43] = glCreateShader(GL_FRAGMENT_SHADER);
+    //   glShaderSource(gShaderProgramMap[43], 1, string_1, &gBinaryData[200]);
+    //   glCompileShader(gShaderProgramMap[43]);
+    //   glAttachShader(gShaderProgramMap[42], gShaderProgramMap[43]);
+    //   glDeleteShader(gShaderProgramMap[43]);
+    //   glBindAttribLocation(gShaderProgramMap[42], 0, "attrib1");
+    //   glBindAttribLocation(gShaderProgramMap[42], 1, "attrib2");
+    //   glLinkProgram(gShaderProgramMap[42]);
+    //   UpdateUniformLocation(gShaderProgramMap[42], "foo", 0, 20);
+    //   UpdateUniformLocation(gShaderProgramMap[42], "bar", 72, 1);
+    //   glUseProgram(gShaderProgramMap[42]);
+    //   UpdateCurrentProgram(gShaderProgramMap[42]);
+    //   glUniform4fv(gUniformLocations[gCurrentProgram][0], 20, &gBinaryData[300]);
+    //   glUniform1iv(gUniformLocations[gCurrentProgram][72], 1, &gBinaryData[400]);
+    //   === End override ===
+    //   glGetProgramiv(gShaderProgramMap[42], GL_LINK_STATUS, gReadBuffer);
+    //   glGetProgramiv(gShaderProgramMap[42], GL_PROGRAM_BINARY_LENGTH, gReadBuffer);
+    //
+    // To facilitate this override, we are serializing each shader stage source into the binary
+    // itself.  See Program::serialize and Program::deserialize.  Once extracted from the binary,
+    // they will be available via getProgramSources.
+
+    gl::ShaderProgramID id = inCall.params.getParam("programPacked", ParamType::TShaderProgramID, 0)
+                                 .value.ShaderProgramIDVal;
+
+    gl::Program *program = context->getProgramResolveLink(id);
+    ASSERT(program);
+
+    GenerateLinkedProgram(context, context->getState(), &mResourceTracker, &outCalls, program, id,
+                          getProgramSources(id));
+}
+
+void FrameCaptureShared::maybeOverrideEntryPoint(const gl::Context *context,
+                                                 CallCapture &inCall,
+                                                 std::vector<CallCapture> &outCalls)
+{
+    switch (inCall.entryPoint)
     {
         case EntryPoint::GLEGLImageTargetTexture2DOES:
         {
             // We don't support reading EGLImages. Instead, just pull from a tiny null texture.
             // TODO (anglebug.com/4964): Read back the image data and populate the texture.
             std::vector<uint8_t> pixelData = {0, 0, 0, 0};
-            call = CaptureTexSubImage2D(context->getState(), true, gl::TextureTarget::_2D, 0, 0, 0,
-                                        1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixelData.data());
+            outCalls.emplace_back(
+                CaptureTexSubImage2D(context->getState(), true, gl::TextureTarget::_2D, 0, 0, 0, 1,
+                                     1, GL_RGBA, GL_UNSIGNED_BYTE, pixelData.data()));
             break;
         }
         case EntryPoint::GLEGLImageTargetRenderbufferStorageOES:
@@ -4521,11 +4729,24 @@ void FrameCaptureShared::maybeOverrideEntryPoint(const gl::Context *context, Cal
         case EntryPoint::GLCopyImageSubDataOES:
         {
             // We must look at the src and dst target types to determine which remap table to use
-            updateCopyImageSubData(call);
+            updateCopyImageSubData(inCall);
+            outCalls.emplace_back(std::move(inCall));
+            break;
+        }
+        case EntryPoint::GLProgramBinary:
+        case EntryPoint::GLProgramBinaryOES:
+        {
+            // Binary formats are not portable at all, so replace the calls with full linking
+            // sequence
+            overrideProgramBinary(context, inCall, outCalls);
             break;
         }
         default:
+        {
+            // Pass the single call through
+            outCalls.emplace_back(std::move(inCall));
             break;
+        }
     }
 }
 
@@ -4691,6 +4912,35 @@ void FrameCaptureShared::maybeCapturePreCallUpdates(const gl::Context *context, 
             break;
         }
 
+        case EntryPoint::GLDeleteProgramPipelines:
+        case EntryPoint::GLDeleteProgramPipelinesEXT:
+        {
+            GLsizei count = call.params.getParam("n", ParamType::TGLsizei, 0).value.GLsizeiVal;
+            const gl::ProgramPipelineID *pipelineIDs =
+                call.params
+                    .getParam("pipelinesPacked", ParamType::TProgramPipelineIDConstPointer, 1)
+                    .value.ProgramPipelineIDPointerVal;
+            for (GLsizei i = 0; i < count; i++)
+            {
+                handleDeletedResource(pipelineIDs[i]);
+            }
+            break;
+        }
+
+        case EntryPoint::GLGenProgramPipelines:
+        case EntryPoint::GLGenProgramPipelinesEXT:
+        {
+            GLsizei count = call.params.getParam("n", ParamType::TGLsizei, 0).value.GLsizeiVal;
+            const gl::ProgramPipelineID *pipelineIDs =
+                call.params.getParam("pipelinesPacked", ParamType::TProgramPipelineIDPointer, 1)
+                    .value.ProgramPipelineIDPointerVal;
+            for (GLsizei i = 0; i < count; i++)
+            {
+                handleGennedResource(pipelineIDs[i]);
+            }
+            break;
+        }
+
         case EntryPoint::GLDeleteSync:
         {
             GLsync sync = call.params.getParam("sync", ParamType::TGLsync, 0).value.GLsyncVal;
@@ -4782,7 +5032,11 @@ void FrameCaptureShared::maybeCapturePreCallUpdates(const gl::Context *context, 
                 call.params.getParam("shaderPacked", ParamType::TShaderProgramID, 0)
                     .value.ShaderProgramIDVal;
             const gl::Shader *shader = context->getShader(shaderID);
-            setShaderSource(shaderID, shader->getSourceString());
+            // Shaders compiled for ProgramBinary will not have a shader created
+            if (shader)
+            {
+                setShaderSource(shaderID, shader->getSourceString());
+            }
             break;
         }
 
@@ -4793,7 +5047,11 @@ void FrameCaptureShared::maybeCapturePreCallUpdates(const gl::Context *context, 
                 call.params.getParam("programPacked", ParamType::TShaderProgramID, 0)
                     .value.ShaderProgramIDVal;
             const gl::Program *program = context->getProgramResolveLink(programID);
-            setProgramSources(programID, GetAttachedProgramSources(program));
+            // Programs linked in support of ProgramBinary will not have attached shaders
+            if (program->getState().hasAttachedShader())
+            {
+                setProgramSources(programID, GetAttachedProgramSources(program));
+            }
             break;
         }
 
@@ -4956,28 +5214,92 @@ void FrameCaptureShared::maybeCapturePreCallUpdates(const gl::Context *context, 
     {
         mResourceTracker.onShaderProgramAccess(shaderProgramID);
     }
+
+    updatePreCallResourceCounts(call);
+}
+
+void FrameCaptureShared::updatePreCallResourceCounts(const CallCapture &call)
+{
+    for (const ParamCapture &param : call.params.getParamCaptures())
+    {
+        ResourceIDType idType = GetResourceIDTypeFromParamType(param.type);
+        if (idType != ResourceIDType::InvalidEnum)
+        {
+            mHasResourceType.set(idType);
+
+            // Capture resource IDs for non-pointer types.
+            if (strcmp(ParamTypeToString(param.type), "GLuint") == 0)
+            {
+                mMaxAccessedResourceIDs[idType] =
+                    std::max(mMaxAccessedResourceIDs[idType], param.value.GLuintVal);
+            }
+            // Capture resource IDs for pointer types.
+            if (strstr(ParamTypeToString(param.type), "GLuint *") != nullptr)
+            {
+                if (param.data.size() == 1u)
+                {
+                    const GLuint *dataPtr = reinterpret_cast<const GLuint *>(param.data[0].data());
+                    size_t numHandles     = param.data[0].size() / sizeof(GLuint);
+                    for (size_t handleIndex = 0; handleIndex < numHandles; ++handleIndex)
+                    {
+                        mMaxAccessedResourceIDs[idType] =
+                            std::max(mMaxAccessedResourceIDs[idType], dataPtr[handleIndex]);
+                    }
+                }
+            }
+        }
+    }
 }
 
 void FrameCaptureShared::captureCall(const gl::Context *context,
-                                     CallCapture &&call,
+                                     CallCapture &&inCall,
                                      bool isCallValid)
 {
-    if (SkipCall(call.entryPoint))
+    if (SkipCall(inCall.entryPoint))
     {
         return;
     }
 
     if (isCallValid)
     {
-        maybeOverrideEntryPoint(context, call);
-        maybeCapturePreCallUpdates(context, call);
-        mFrameCalls.emplace_back(std::move(call));
-        maybeCapturePostCallUpdates(context);
+        // If the context ID has changed, then we need to inject an eglMakeCurrent() call. Only do
+        // this if there is more than 1 context in the share group to avoid unnecessary
+        // eglMakeCurrent() calls.
+        size_t contextCount = context->getShareGroup()->getShareGroupContextCount();
+        if (contextCount > 1 && mLastContextId != context->id())
+        {
+            // Inject the eglMakeCurrent() call.
+            // The EGLDisplay and EGLSurface values can't be known here, since we may not even be
+            // running the trace with ANGLE.
+            // The EGLContext value is actually the context ID, so we can look it up in
+            // 'gContextMap'.
+            // Need to go from uint32 -> uint64 -> EGLContext (void*) to handle MSVC compiler
+            // warning on 64b systems:
+            //   error C4312: 'reinterpret_cast': conversion from 'uint32_t' to 'EGLContext' of
+            //   greater size
+            uint64_t contextID    = static_cast<uint64_t>(context->id().value);
+            EGLContext eglContext = reinterpret_cast<EGLContext>(contextID);
+            CallCapture makeCurrentCall =
+                CaptureMakeCurrent(EGL_NO_DISPLAY, EGL_NO_SURFACE, EGL_NO_SURFACE, eglContext);
+            mFrameCalls.emplace_back(std::move(makeCurrentCall));
+            mLastContextId = context->id();
+        }
+
+        std::vector<CallCapture> outCalls;
+        maybeOverrideEntryPoint(context, inCall, outCalls);
+
+        // Need to loop on any new calls we added during override
+        for (CallCapture &call : outCalls)
+        {
+            maybeCapturePreCallUpdates(context, call);
+            mFrameCalls.emplace_back(std::move(call));
+            maybeCapturePostCallUpdates(context);
+        }
     }
     else
     {
         INFO() << "FrameCapture: Not capturing invalid call to "
-               << GetEntryPointName(call.entryPoint);
+               << GetEntryPointName(inCall.entryPoint);
     }
 }
 
@@ -5088,8 +5410,8 @@ void FrameCaptureShared::captureClientArraySnapshot(const gl::Context *context,
 void FrameCaptureShared::captureMappedBufferSnapshot(const gl::Context *context,
                                                      const CallCapture &call)
 {
-    // If the buffer was mapped writable, we need to restore its data, since we have no visibility
-    // into what the client did to the buffer while mapped
+    // If the buffer was mapped writable, we need to restore its data, since we have no
+    // visibility into what the client did to the buffer while mapped.
     // This sequence will result in replay calls like this:
     //   ...
     //   gMappedBufferData[gBufferMap[42]] = glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, 65536,
@@ -5140,7 +5462,7 @@ void FrameCaptureShared::captureMappedBufferSnapshot(const gl::Context *context,
     dataParamBuffer.addValueParam<GLsizeiptr>("size", ParamType::TGLsizeiptr, length);
 
     // Call the helper that populates the buffer with captured data
-    mFrameCalls.emplace_back("UpdateClientBufferData", std::move(dataParamBuffer));
+    mFrameCalls.emplace_back("UpdateClientBufferData2", std::move(dataParamBuffer));
 
     // Unmap the buffer and move on
     GLboolean dontCare;
@@ -5213,7 +5535,8 @@ void FrameCaptureShared::runMidExecutionCapture(const gl::Context *mainContext)
         if (shareContext->id() == mainContext->id())
         {
             CaptureMidExecutionSetup(shareContext, &frameCapture->getSetupCalls(),
-                                     &mResourceTracker, mainContextReplayState);
+                                     &mResourceTracker, mainContextReplayState,
+                                     mValidateSerializedState);
         }
         else
         {
@@ -5224,7 +5547,8 @@ void FrameCaptureShared::runMidExecutionCapture(const gl::Context *mainContext)
             auxContextReplayState.initializeForCapture(shareContext);
 
             CaptureMidExecutionSetup(shareContext, &frameCapture->getSetupCalls(),
-                                     &mResourceTracker, auxContextReplayState);
+                                     &mResourceTracker, auxContextReplayState,
+                                     mValidateSerializedState);
 
             WriteAuxiliaryContextCppSetupReplay(mCompression, mOutDirectory, shareContext,
                                                 mCaptureLabel, 1, frameCapture->getSetupCalls(),
@@ -5291,6 +5615,12 @@ void FrameCaptureShared::onEndFrame(const gl::Context *context)
     // (buffers, textures, etc.) has been updated and no resources are in use.
     egl::ShareGroup *shareGroup = context->getShareGroup();
     shareGroup->finishAllContexts();
+
+    // Only validate the first frame for now to save on retracing time.
+    if (mValidateSerializedState && mFrameIndex == mCaptureStartFrame)
+    {
+        CaptureValidateSerializedState(context, &mFrameCalls);
+    }
 
     writeMainContextCppReplay(context, frameCapture->getSetupCalls());
 
@@ -5655,7 +5985,8 @@ void FrameCaptureShared::writeCppReplayIndexFiles(const gl::Context *context,
     source << "void " << mCaptureLabel << "::InitReplay()\n";
     source << "{\n";
     WriteInitReplayCall(mCompression, source, kSharedContextId, mCaptureLabel,
-                        MaxClientArraySize(mClientArraySizes), mReadBufferSize);
+                        MaxClientArraySize(mClientArraySizes), mReadBufferSize,
+                        mMaxAccessedResourceIDs);
     source << "}\n";
 
     source << "extern \"C\" {\n";
@@ -5803,17 +6134,57 @@ void FrameCaptureShared::writeMainContextCppReplay(const gl::Context *context,
         out << "\n";
         out << "void SetupReplay()\n";
         out << "{\n";
-        out << "    " << mCaptureLabel << "::InitReplay();\n";
+        out << "    EGLContext context = eglGetCurrentContext();\n";
+        out << "    gContextMap[" << context->id().value << "] = context;\n";
+        out << "\n";
 
-        // Setup all of the share group objects if we're using MEC.
-        if (mCaptureStartFrame != 1)
+        // Setup all of the shared objects.
+        out << "    " << mCaptureLabel << "::InitReplay();\n";
+        if (usesMidExecutionCapture())
         {
             out << "    " << mCaptureLabel << "::" << FmtSetupFunction(kNoPartId, kSharedContextId)
                 << ";\n";
-
-            // Setup the main (this) context before any other contexts in the share group.
-            out << "    " << FmtSetupFunction(kNoPartId, context->id()) << ";\n";
         }
+
+        // Setup the presentation (this) context first.
+        out << "    " << FmtSetupFunction(kNoPartId, context->id()) << ";\n";
+        out << "\n";
+
+        // Setup each of the auxiliary contexts.
+        egl::ShareGroup *shareGroup            = context->getShareGroup();
+        const egl::ContextSet &shareContextSet = shareGroup->getContexts();
+        for (gl::Context *shareContext : shareContextSet)
+        {
+            // Skip the presentation context, since that context was created by the test framework.
+            if (shareContext->id() == context->id())
+            {
+                continue;
+            }
+
+            // TODO(http://www.anglebug.com/5878): Support capture/replay of eglCreateContext() so
+            // this block can be moved into SetupReplayContextXX() by injecting them into the
+            // beginning of the setup call stream.
+            out << "    EGLContext context" << shareContext->id()
+                << " = eglCreateContext(nullptr, nullptr, context, nullptr);\n";
+            out << "    gContextMap[" << shareContext->id().value << "] = context"
+                << shareContext->id() << ";\n";
+            // The SetupReplayContextXX() calls only exist if this is a mid-execution capture and
+            // we can only call them if they exist, so only output the calls if this is a MEC.
+            if (usesMidExecutionCapture())
+            {
+                out << "    " << mCaptureLabel
+                    << "::" << FmtSetupFunction(kNoPartId, shareContext->id()) << ";\n";
+            }
+        }
+
+        // If there are other contexts that were initialized, we need to make the main context
+        // current again.
+        if (shareContextSet.size() > 1)
+        {
+            out << "\n";
+            out << "    eglMakeCurrent(EGL_NO_DISPLAY, EGL_NO_SURFACE, EGL_NO_SURFACE, context);\n";
+        }
+
         out << "}\n";
         out << "\n";
     }
@@ -5941,12 +6312,22 @@ const std::vector<uint8_t> &FrameCaptureShared::retrieveCachedTextureLevel(gl::T
 {
     // Look up the data for the requested texture
     const auto &foundTextureLevels = mCachedTextureLevelData.find(id);
-    ASSERT(foundTextureLevels != mCachedTextureLevelData.end());
+    if (foundTextureLevels == mCachedTextureLevelData.end())
+    {
+        ERR() << "Cached texture level not found for id=" << id.value << " target=" << target
+              << " level=" << level;
+        UNREACHABLE();
+    }
 
     GLint adjustedLevel = GetAdjustedTextureCacheLevel(target, level);
 
     const auto &foundTextureLevel = foundTextureLevels->second.find(adjustedLevel);
-    ASSERT(foundTextureLevel != foundTextureLevels->second.end());
+    if (foundTextureLevel == foundTextureLevels->second.end())
+    {
+        ERR() << "Cached texture level not found for id=" << id.value << " target=" << target
+              << " level=" << level << " adjustedLevel=" << adjustedLevel;
+        UNREACHABLE();
+    }
     const std::vector<uint8_t> &capturedTextureLevel = foundTextureLevel->second;
 
     return capturedTextureLevel;
@@ -6215,6 +6596,22 @@ void WriteParamValueReplay<ParamType::TGLboolean>(std::ostream &os,
 }
 
 template <>
+void WriteParamValueReplay<ParamType::TGLbooleanPointer>(std::ostream &os,
+                                                         const CallCapture &call,
+                                                         GLboolean *value)
+{
+    if (value == 0)
+    {
+        os << "nullptr";
+    }
+    else
+    {
+        os << "reinterpret_cast<GLboolean *>("
+           << static_cast<int>(reinterpret_cast<uintptr_t>(value)) << ")";
+    }
+}
+
+template <>
 void WriteParamValueReplay<ParamType::TvoidConstPointer>(std::ostream &os,
                                                          const CallCapture &call,
                                                          const void *value)
@@ -6279,7 +6676,7 @@ void WriteParamValueReplay<ParamType::TBufferID>(std::ostream &os,
                                                  const CallCapture &call,
                                                  gl::BufferID value)
 {
-    os << "gBufferMap[" << value.value << "]";
+    os << "gBufferMap2[" << value.value << "]";
 }
 
 template <>
@@ -6287,7 +6684,7 @@ void WriteParamValueReplay<ParamType::TFenceNVID>(std::ostream &os,
                                                   const CallCapture &call,
                                                   gl::FenceNVID value)
 {
-    os << "gFenceNVMap[" << value.value << "]";
+    os << "gFenceNVMap2[" << value.value << "]";
 }
 
 template <>
@@ -6295,7 +6692,7 @@ void WriteParamValueReplay<ParamType::TFramebufferID>(std::ostream &os,
                                                       const CallCapture &call,
                                                       gl::FramebufferID value)
 {
-    os << "gFramebufferMap[" << value.value << "]";
+    os << "gFramebufferMap2[" << value.value << "]";
 }
 
 template <>
@@ -6303,7 +6700,7 @@ void WriteParamValueReplay<ParamType::TMemoryObjectID>(std::ostream &os,
                                                        const CallCapture &call,
                                                        gl::MemoryObjectID value)
 {
-    os << "gMemoryObjectMap[" << value.value << "]";
+    os << "gMemoryObjectMap2[" << value.value << "]";
 }
 
 template <>
@@ -6311,7 +6708,7 @@ void WriteParamValueReplay<ParamType::TProgramPipelineID>(std::ostream &os,
                                                           const CallCapture &call,
                                                           gl::ProgramPipelineID value)
 {
-    os << "gProgramPipelineMap[" << value.value << "]";
+    os << "gProgramPipelineMap2[" << value.value << "]";
 }
 
 template <>
@@ -6319,7 +6716,7 @@ void WriteParamValueReplay<ParamType::TQueryID>(std::ostream &os,
                                                 const CallCapture &call,
                                                 gl::QueryID value)
 {
-    os << "gQueryMap[" << value.value << "]";
+    os << "gQueryMap2[" << value.value << "]";
 }
 
 template <>
@@ -6327,7 +6724,7 @@ void WriteParamValueReplay<ParamType::TRenderbufferID>(std::ostream &os,
                                                        const CallCapture &call,
                                                        gl::RenderbufferID value)
 {
-    os << "gRenderbufferMap[" << value.value << "]";
+    os << "gRenderbufferMap2[" << value.value << "]";
 }
 
 template <>
@@ -6335,7 +6732,7 @@ void WriteParamValueReplay<ParamType::TSamplerID>(std::ostream &os,
                                                   const CallCapture &call,
                                                   gl::SamplerID value)
 {
-    os << "gSamplerMap[" << value.value << "]";
+    os << "gSamplerMap2[" << value.value << "]";
 }
 
 template <>
@@ -6343,7 +6740,7 @@ void WriteParamValueReplay<ParamType::TSemaphoreID>(std::ostream &os,
                                                     const CallCapture &call,
                                                     gl::SemaphoreID value)
 {
-    os << "gSemaphoreMap[" << value.value << "]";
+    os << "gSemaphoreMap2[" << value.value << "]";
 }
 
 template <>
@@ -6351,7 +6748,7 @@ void WriteParamValueReplay<ParamType::TShaderProgramID>(std::ostream &os,
                                                         const CallCapture &call,
                                                         gl::ShaderProgramID value)
 {
-    os << "gShaderProgramMap[" << value.value << "]";
+    os << "gShaderProgramMap2[" << value.value << "]";
 }
 
 template <>
@@ -6367,7 +6764,7 @@ void WriteParamValueReplay<ParamType::TTextureID>(std::ostream &os,
                                                   const CallCapture &call,
                                                   gl::TextureID value)
 {
-    os << "gTextureMap[" << value.value << "]";
+    os << "gTextureMap2[" << value.value << "]";
 }
 
 template <>
@@ -6375,7 +6772,7 @@ void WriteParamValueReplay<ParamType::TTransformFeedbackID>(std::ostream &os,
                                                             const CallCapture &call,
                                                             gl::TransformFeedbackID value)
 {
-    os << "gTransformFeedbackMap[" << value.value << "]";
+    os << "gTransformFeedbackMap2[" << value.value << "]";
 }
 
 template <>
@@ -6383,7 +6780,7 @@ void WriteParamValueReplay<ParamType::TVertexArrayID>(std::ostream &os,
                                                       const CallCapture &call,
                                                       gl::VertexArrayID value)
 {
-    os << "gVertexArrayMap[" << value.value << "]";
+    os << "gVertexArrayMap2[" << value.value << "]";
 }
 
 template <>
@@ -6397,13 +6794,13 @@ void WriteParamValueReplay<ParamType::TUniformLocation>(std::ostream &os,
         return;
     }
 
-    os << "gUniformLocations[";
+    os << "gUniformLocations2[";
 
     // Find the program from the call parameters.
     gl::ShaderProgramID programID;
     if (FindShaderProgramIDInCall(call, &programID))
     {
-        os << "gShaderProgramMap[" << programID.value << "]";
+        os << "gShaderProgramMap2[" << programID.value << "]";
     }
     else
     {
@@ -6423,7 +6820,7 @@ void WriteParamValueReplay<ParamType::TUniformBlockIndex>(std::ostream &os,
     bool foundProgram = FindShaderProgramIDInCall(call, &programID);
     ASSERT(foundProgram);
 
-    os << "gUniformBlockIndexes[gShaderProgramMap[" << programID.value << "]][" << value.value
+    os << "gUniformBlockIndexes[gShaderProgramMap2[" << programID.value << "]][" << value.value
        << "]";
 }
 
@@ -6443,6 +6840,44 @@ void WriteParamValueReplay<ParamType::TGLubyte>(std::ostream &os,
 {
     const int v = value;
     os << v;
+}
+
+template <>
+void WriteParamValueReplay<ParamType::TEGLContext>(std::ostream &os,
+                                                   const CallCapture &call,
+                                                   EGLContext value)
+{
+    os << "gContextMap[" << reinterpret_cast<size_t>(value) << "]";
+}
+
+template <>
+void WriteParamValueReplay<ParamType::TEGLDisplay>(std::ostream &os,
+                                                   const CallCapture &call,
+                                                   EGLDisplay value)
+{
+    if (value == EGL_NO_DISPLAY)
+    {
+        os << "EGL_NO_DISPLAY";
+        return;
+    }
+
+    // We don't support capturing real EGL calls.
+    UNREACHABLE();
+}
+
+template <>
+void WriteParamValueReplay<ParamType::TEGLSurface>(std::ostream &os,
+                                                   const CallCapture &call,
+                                                   EGLSurface value)
+{
+    if (value == EGL_NO_SURFACE)
+    {
+        os << "EGL_NO_SURFACE";
+        return;
+    }
+
+    // We don't support capturing real EGL calls.
+    UNREACHABLE();
 }
 
 template <>

@@ -48,8 +48,15 @@ struct BufferFormatInitInfo final
     bool vertexLoadRequiresConversion;
 };
 
-VkFormat GetVkFormatFromFormatID(angle::FormatID formatID);
+VkFormat GetVkFormatFromFormatID(angle::FormatID actualFormatID);
 angle::FormatID GetFormatIDFromVkFormat(VkFormat vkFormat);
+
+// Returns buffer alignment for image-copy operations (to or from a buffer).
+size_t GetImageCopyBufferAlignment(angle::FormatID actualFormatID);
+size_t GetValidImageCopyBufferAlignment(angle::FormatID intendedFormatID,
+                                        angle::FormatID actualFormatID);
+bool HasEmulatedImageChannels(const angle::Format &intendedFormat,
+                              const angle::Format &actualFormat);
 
 // Describes a Vulkan format. For more information on formats in the Vulkan back-end please see
 // https://chromium.googlesource.com/angle/angle/+/master/src/libANGLE/renderer/vulkan/doc/FormatTablesAndEmulation.md
@@ -105,10 +112,6 @@ struct Format final : private angle::NonCopyable
         return gl::GetInternalFormatInfo(intendedGLFormat, type);
     }
 
-    // Returns buffer alignment for image-copy operations (to or from a buffer).
-    size_t getImageCopyBufferAlignment() const;
-    size_t getValidImageCopyBufferAlignment() const;
-
     // Returns true if the image format has more channels than the ANGLE format.
     bool hasEmulatedImageChannels() const;
 
@@ -116,7 +119,7 @@ struct Format final : private angle::NonCopyable
     bool hasEmulatedImageFormat() const { return actualImageFormatID != intendedFormatID; }
 
     // This is an auto-generated method in vk_format_table_autogen.cpp.
-    void initialize(RendererVk *renderer, const angle::Format &angleFormat);
+    void initialize(RendererVk *renderer, const angle::Format &intendedAngleFormat);
 
     // These are used in the format table init.
     void initImageFallback(RendererVk *renderer, const ImageFormatInitInfo *info, int numInfo);
@@ -196,7 +199,7 @@ size_t GetVertexInputAlignment(const vk::Format &format, bool compressed);
 
 // Get the swizzle state based on format's requirements and emulations.
 gl::SwizzleState GetFormatSwizzle(const ContextVk *contextVk,
-                                  const vk::Format &format,
+                                  const angle::Format &angleFormat,
                                   const bool sized);
 
 // Apply application's swizzle to the swizzle implied by format as received from GetFormatSwizzle.

@@ -2655,6 +2655,39 @@ TEST_P(Texture2DTest, TexImageWithRGBA5551PBO)
     EXPECT_PIXEL_EQ(width / 2 - 1, height / 2 - 1, 0, 255, 0, 255);
 }
 
+// Test if the KHR debug label is set and passed to D3D correctly using glCopyTexImage2D.
+TEST_P(Texture2DTest, TextureKHRDebugLabelWithCopyTexImage2D)
+{
+    GLTexture texture2D;
+    glBindTexture(GL_TEXTURE_2D, texture2D);
+    // Create a texture and copy into, to initialize storage object.
+    glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 0, 0, 32, 32, 0);
+
+    // Set KHR Debug Label.
+    const std::string &label = "TestKHR.DebugLabel";
+    glObjectLabelKHR(GL_TEXTURE, texture2D, -1, label.c_str());
+
+    std::vector<char> labelBuf(label.length() + 1);
+    GLsizei labelLengthBuf = 0;
+
+    glGetObjectLabelKHR(GL_TEXTURE, texture2D, static_cast<GLsizei>(labelBuf.size()),
+                        &labelLengthBuf, labelBuf.data());
+
+    EXPECT_EQ(static_cast<GLsizei>(label.length()), labelLengthBuf);
+    EXPECT_STREQ(label.c_str(), labelBuf.data());
+
+    // Delete the texture.
+    texture2D.reset();
+    EXPECT_GL_NO_ERROR();
+
+    glObjectLabelKHR(GL_TEXTURE, texture2D, -1, label.c_str());
+    EXPECT_GL_ERROR(GL_INVALID_VALUE);
+
+    glGetObjectLabelKHR(GL_TEXTURE, texture2D, static_cast<GLsizei>(labelBuf.size()),
+                        &labelLengthBuf, labelBuf.data());
+    EXPECT_GL_ERROR(GL_INVALID_VALUE);
+}
+
 // Test that glTexSubImage2D combined with a PBO works properly when glTexStorage2D has
 // initialized the image with a depth-only format.
 TEST_P(Texture2DTestES3, TexImageWithDepthPBO)
@@ -5647,6 +5680,20 @@ TEST_P(Texture2DTest, TextureLuminance16ImplicitAlpha1)
     drawQuad(mProgram, "position", 0.5f);
 
     EXPECT_PIXEL_ALPHA_EQ(0, 0, 255);
+}
+
+// Test that CopyTexImage2D does not trigger assertion after CompressedTexImage2D.
+// https://crbug.com/1216276
+TEST_P(Texture2DTest, CopyAfterCompressed)
+{
+    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_EXT_texture_compression_dxt1"));
+
+    glBindTexture(GL_TEXTURE_2D, mTexture2D);
+    glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, 4, 4, 0, 8, nullptr);
+    EXPECT_GL_NO_ERROR();
+
+    glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE_ALPHA, 0, 0, 4, 4, 0);
+    EXPECT_GL_NO_ERROR();
 }
 
 // When sampling a texture without an alpha channel, "1" is returned as the alpha value.

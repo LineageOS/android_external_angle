@@ -570,6 +570,7 @@ inline probe_seq<Group::kWidth> probe(const ctrl_t* ctrl, size_t hash,
 // - the input is already a set
 // - there are enough slots
 // - the element with the hash is not in the table
+template <typename = void>
 inline FindInfo find_first_non_full(const ctrl_t* ctrl, size_t hash,
                                     size_t capacity) {
   auto seq = probe(ctrl, hash, capacity);
@@ -592,6 +593,11 @@ inline FindInfo find_first_non_full(const ctrl_t* ctrl, size_t hash,
     assert(seq.index() <= capacity && "full table!");
   }
 }
+
+// Extern template for inline function keep possibility of inlining.
+// When compiler decided to not inline, no symbols will be added to the
+// corresponding translation unit.
+extern template FindInfo find_first_non_full(const ctrl_t*, size_t, size_t);
 
 // Reset all ctrl bytes back to ctrl_t::kEmpty, except the sentinel.
 inline void ResetCtrl(size_t capacity, ctrl_t* ctrl, const void* slot,
@@ -1915,11 +1921,12 @@ class raw_hash_set {
 
 // Erases all elements that satisfy the predicate `pred` from the container `c`.
 template <typename P, typename H, typename E, typename A, typename Predicate>
-void EraseIf(Predicate pred, raw_hash_set<P, H, E, A>* c) {
+void EraseIf(Predicate& pred, raw_hash_set<P, H, E, A>* c) {
   for (auto it = c->begin(), last = c->end(); it != last;) {
-    auto copy_it = it++;
-    if (pred(*copy_it)) {
-      c->erase(copy_it);
+    if (pred(*it)) {
+      c->erase(it++);
+    } else {
+      ++it;
     }
   }
 }

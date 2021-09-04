@@ -139,8 +139,15 @@ class EGLSurfaceTest : public ANGLETest
 
     void initializeContext()
     {
-        initializeSingleContext(&mContext);
-        initializeSingleContext(&mSecondContext);
+        // Only initialize the contexts once.
+        if (mContext == EGL_NO_CONTEXT)
+        {
+            initializeSingleContext(&mContext);
+        }
+        if (mSecondContext == EGL_NO_CONTEXT)
+        {
+            initializeSingleContext(&mSecondContext);
+        }
     }
 
     void initializeWindowSurfaceWithAttribs(EGLConfig config,
@@ -487,7 +494,6 @@ TEST_P(EGLSurfaceTest, ResizeWindow)
 
     initializeDisplay();
     initializeSurfaceWithDefaultConfig(true);
-    initializeContext();
     ASSERT_NE(mWindowSurface, EGL_NO_SURFACE);
 
     eglMakeCurrent(mDisplay, mWindowSurface, mWindowSurface, mContext);
@@ -1270,6 +1276,62 @@ TEST_P(EGLSurfaceTest3, BlitBetweenSurfaces)
     // Confirm surface2 has the blited clear color.
     EXPECT_EGL_TRUE(eglMakeCurrent(mDisplay, surface2, surface2, mContext));
     EXPECT_PIXEL_COLOR_EQ(32, 32, GLColor::red);
+
+    eglDestroySurface(mDisplay, surface1);
+    eglDestroySurface(mDisplay, surface2);
+}
+
+// Verify bliting between two surfaces works correctly.
+TEST_P(EGLSurfaceTest3, BlitBetweenSurfacesWithDeferredClear)
+{
+    initializeDisplay();
+    ASSERT_NE(mDisplay, EGL_NO_DISPLAY);
+
+    initializeSurfaceWithDefaultConfig(true);
+    ASSERT_NE(mWindowSurface, EGL_NO_SURFACE);
+    ASSERT_NE(mContext, EGL_NO_CONTEXT);
+
+    EGLSurface surface1;
+    EGLSurface surface2;
+
+    const EGLint surfaceAttributes[] = {
+        EGL_WIDTH, 64, EGL_HEIGHT, 64, EGL_NONE,
+    };
+
+    surface1 = eglCreatePbufferSurface(mDisplay, mConfig, surfaceAttributes);
+    ASSERT_EGL_SUCCESS();
+    surface2 = eglCreatePbufferSurface(mDisplay, mConfig, surfaceAttributes);
+    ASSERT_EGL_SUCCESS();
+
+    // Clear surface1.
+    EXPECT_EGL_TRUE(eglMakeCurrent(mDisplay, surface1, surface1, mContext));
+
+    // TODO(http://www.anglebug.com/6284): Failing with OpenGL ES backend on Android and Windows.
+    // Must be after the eglMakeCurrent() so the renderer string is initialized.
+    ANGLE_SKIP_TEST_IF(IsOpenGLES() && (IsAndroid() || IsWindows()));
+
+    glClearColor(GLColor::red.R, GLColor::red.G, GLColor::red.B, GLColor::red.A);
+    glClear(GL_COLOR_BUFFER_BIT);
+    ASSERT_GL_NO_ERROR();
+    // Force the clear to be flushed
+    EXPECT_PIXEL_COLOR_EQ(32, 32, GLColor::red);
+
+    // Clear to green, but don't read it back so the clear is deferred.
+    glClearColor(GLColor::green.R, GLColor::green.G, GLColor::green.B, GLColor::green.A);
+    glClear(GL_COLOR_BUFFER_BIT);
+    ASSERT_GL_NO_ERROR();
+
+    // Blit from surface1 to surface2.
+    EXPECT_EGL_TRUE(eglMakeCurrent(mDisplay, surface2, surface1, mContext));
+    glBlitFramebuffer(0, 0, 64, 64, 0, 0, 64, 64, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    ASSERT_GL_NO_ERROR();
+
+    // Confirm surface1 has the clear color.
+    EXPECT_PIXEL_COLOR_EQ(32, 32, GLColor::green);
+
+    // Confirm surface2 has the blited clear color.
+    EXPECT_EGL_TRUE(eglMakeCurrent(mDisplay, surface2, surface2, mContext));
+    EXPECT_PIXEL_COLOR_EQ(32, 32, GLColor::green);
 
     eglDestroySurface(mDisplay, surface1);
     eglDestroySurface(mDisplay, surface2);

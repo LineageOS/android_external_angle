@@ -91,6 +91,7 @@
 #include "rope_hero_vice_town/rope_hero_vice_town_capture_context1.h"
 #include "saint_seiya_awakening/saint_seiya_awakening_capture_context1.h"
 #include "sakura_school_simulator/sakura_school_simulator_capture_context2.h"
+#include "scrabble_go/scrabble_go_capture_context2.h"
 #include "shadow_fight_2/shadow_fight_2_capture_context1.h"
 #include "slingshot_test1/slingshot_test1_capture_context2.h"
 #include "slingshot_test2/slingshot_test2_capture_context2.h"
@@ -107,6 +108,9 @@
 #include "township/township_capture_context2.h"
 #include "trex_200/trex_200_capture_context1.h"
 #include "whatsapp/whatsapp_capture_context1.h"
+#include "words_with_friends_2/words_with_friends_2_capture_context1.h"
+#include "wordscapes/wordscapes_capture_context3.h"
+#include "world_of_kings/world_of_kings_capture_context3.h"
 #include "world_of_tanks_blitz/world_of_tanks_blitz_capture_context1.h"
 #include "world_war_doh/world_war_doh_capture_context1.h"
 #include "worms_zone_io/worms_zone_io_capture_context1.h"
@@ -573,6 +577,11 @@ constexpr angle::PackedEnumMap<RestrictedTraceID, TraceInfo> kTraceInfos = {
       sakura_school_simulator::kReplayDrawSurfaceWidth,
       sakura_school_simulator::kReplayDrawSurfaceHeight, kDefaultReplayDrawSurfaceColorSpace,
       "sakura_school_simulator"}},
+    {RestrictedTraceID::scrabble_go,
+     {scrabble_go::kReplayContextClientMajorVersion, scrabble_go::kReplayContextClientMinorVersion,
+      scrabble_go::kReplayFrameStart, scrabble_go::kReplayFrameEnd,
+      scrabble_go::kReplayDrawSurfaceWidth, scrabble_go::kReplayDrawSurfaceHeight,
+      scrabble_go::kReplayDrawSurfaceColorSpace, "scrabble_go"}},
     {RestrictedTraceID::shadow_fight_2,
      {shadow_fight_2::kReplayContextClientMajorVersion,
       shadow_fight_2::kReplayContextClientMinorVersion, shadow_fight_2::kReplayFrameStart,
@@ -660,6 +669,23 @@ constexpr angle::PackedEnumMap<RestrictedTraceID, TraceInfo> kTraceInfos = {
      {whatsapp::kReplayContextClientMajorVersion, whatsapp::kReplayContextClientMinorVersion,
       whatsapp::kReplayFrameStart, whatsapp::kReplayFrameEnd, whatsapp::kReplayDrawSurfaceWidth,
       whatsapp::kReplayDrawSurfaceHeight, kDefaultReplayDrawSurfaceColorSpace, "whatsapp"}},
+    {RestrictedTraceID::words_with_friends_2,
+     {words_with_friends_2::kReplayContextClientMajorVersion,
+      words_with_friends_2::kReplayContextClientMinorVersion,
+      words_with_friends_2::kReplayFrameStart, words_with_friends_2::kReplayFrameEnd,
+      words_with_friends_2::kReplayDrawSurfaceWidth, words_with_friends_2::kReplayDrawSurfaceHeight,
+      words_with_friends_2::kReplayDrawSurfaceColorSpace, "words_with_friends_2"}},
+    {RestrictedTraceID::wordscapes,
+     {wordscapes::kReplayContextClientMajorVersion, wordscapes::kReplayContextClientMinorVersion,
+      wordscapes::kReplayFrameStart, wordscapes::kReplayFrameEnd,
+      wordscapes::kReplayDrawSurfaceWidth, wordscapes::kReplayDrawSurfaceHeight,
+      wordscapes::kReplayDrawSurfaceColorSpace, "wordscapes"}},
+    {RestrictedTraceID::world_of_kings,
+     {world_of_kings::kReplayContextClientMajorVersion,
+      world_of_kings::kReplayContextClientMinorVersion, world_of_kings::kReplayFrameStart,
+      world_of_kings::kReplayFrameEnd, world_of_kings::kReplayDrawSurfaceWidth,
+      world_of_kings::kReplayDrawSurfaceHeight, world_of_kings::kReplayDrawSurfaceColorSpace,
+      "world_of_kings"}},
     {RestrictedTraceID::world_of_tanks_blitz,
      {world_of_tanks_blitz::kReplayContextClientMajorVersion,
       world_of_tanks_blitz::kReplayContextClientMinorVersion,

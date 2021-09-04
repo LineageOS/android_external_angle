@@ -179,7 +179,7 @@ class DeclarePerVertexBlocksTraverser : public TIntermTraverser
             {
                 // Traverse the parents and promote the new type.  Replace the root of
                 // EOpIndex[In]Direct chain.
-                replaceAccessChain(new TIntermSymbol(mPerVertexOutVar));
+                queueAccessChainReplacement(new TIntermSymbol(mPerVertexOutVar));
             }
 
             return;
@@ -202,7 +202,7 @@ class DeclarePerVertexBlocksTraverser : public TIntermTraverser
             {
                 // Traverse the parents and promote the new type.  Replace the root of
                 // EOpIndex[In]Direct chain.
-                replaceAccessChain(new TIntermSymbol(mPerVertexInVar));
+                queueAccessChainReplacement(new TIntermSymbol(mPerVertexInVar));
             }
 
             return;
@@ -299,8 +299,8 @@ class DeclarePerVertexBlocksTraverser : public TIntermTraverser
         // TODO: handle interaction with GS and T*S where the two can have different sizes.  These
         // values are valid for EvqPerVertexOut only.  For EvqPerVertexIn, the size should come from
         // the declaration of gl_in.  http://anglebug.com/5466.
-        clipDistanceType->makeArray(mClipDistanceArraySize);
-        cullDistanceType->makeArray(mCullDistanceArraySize);
+        clipDistanceType->makeArray(std::max(mClipDistanceArraySize, 1u));
+        cullDistanceType->makeArray(std::max(mCullDistanceArraySize, 1u));
 
         if (qualifier == EvqPerVertexOut)
         {
@@ -378,39 +378,6 @@ class DeclarePerVertexBlocksTraverser : public TIntermTraverser
 
         mPerVertexInVar           = declarePerVertex(EvqPerVertexIn, arraySize, varName);
         mPerVertexInVarRedeclared = true;
-    }
-
-    void replaceAccessChain(TIntermTyped *replacement)
-    {
-        uint32_t ancestorIndex  = 0;
-        TIntermTyped *toReplace = nullptr;
-        while (true)
-        {
-            TIntermNode *ancestor = getAncestorNode(ancestorIndex);
-            ASSERT(ancestor != nullptr);
-
-            TIntermBinary *asBinary = ancestor->getAsBinaryNode();
-            if (asBinary == nullptr ||
-                (asBinary->getOp() != EOpIndexDirect && asBinary->getOp() != EOpIndexIndirect))
-            {
-                break;
-            }
-
-            replacement = new TIntermBinary(asBinary->getOp(), replacement, asBinary->getRight());
-            toReplace   = asBinary;
-
-            ++ancestorIndex;
-        }
-
-        if (toReplace == nullptr)
-        {
-            queueReplacement(replacement, OriginalNode::IS_DROPPED);
-        }
-        else
-        {
-            queueReplacementWithParent(getAncestorNode(ancestorIndex), toReplace, replacement,
-                                       OriginalNode::IS_DROPPED);
-        }
     }
 
     GLenum mShaderType;

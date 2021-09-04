@@ -183,8 +183,8 @@ constexpr const char *kSkippedMessages[] = {
     "VUID-VkImageViewCreateInfo-pNext-01585",
     // https://anglebug.com/6262
     "VUID-vkCmdClearAttachments-baseArrayLayer-00018",
-    // http://anglebug.com/6293
-    "VUID-VkFramebufferCreateInfo-flags-04535",
+    // http://anglebug.com/6355
+    "VUID-vkCmdDraw-blendEnable-04727",
 };
 
 // Suppress validation errors that are known
@@ -2251,8 +2251,6 @@ void RendererVk::initFeatures(DisplayVk *displayVk,
     // http://anglebug.com/2838
     ANGLE_FEATURE_CONDITION(&mFeatures, extraCopyBufferRegion, IsWindows() && isIntel);
 
-    ANGLE_FEATURE_CONDITION(&mFeatures, forceCPUPathForCubeMapCopy, false);
-
     // Work around incorrect NVIDIA point size range clamping.
     // http://anglebug.com/2970#c10
     // Clamp if driver version is:
@@ -2368,6 +2366,9 @@ void RendererVk::initFeatures(DisplayVk *displayVk,
     ANGLE_FEATURE_CONDITION(&mFeatures, supportsTransformFeedbackExtension,
                             mTransformFeedbackFeatures.transformFeedback == VK_TRUE);
 
+    ANGLE_FEATURE_CONDITION(&mFeatures, supportsGeometryStreamsCapability,
+                            mTransformFeedbackFeatures.geometryStreams == VK_TRUE);
+
     ANGLE_FEATURE_CONDITION(&mFeatures, supportsIndexTypeUint8,
                             mIndexTypeUint8Features.indexTypeUint8 == VK_TRUE);
 
@@ -2479,7 +2480,7 @@ void RendererVk::initFeatures(DisplayVk *displayVk,
     ANGLE_FEATURE_CONDITION(
         &mFeatures, supportsImageFormatList,
         (ExtensionFound(VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME, deviceExtensionNames)) &&
-            (isAMD || isARM));
+            !isSwiftShader);
 
     // Feature disabled due to driver bugs:
     //

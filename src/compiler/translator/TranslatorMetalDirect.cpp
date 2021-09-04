@@ -12,7 +12,6 @@
 #include "compiler/translator/ImmutableStringBuilder.h"
 #include "compiler/translator/OutputGLSLBase.h"
 #include "compiler/translator/StaticType.h"
-#include "compiler/translator/TranslatorMetalDirect/AddExplicitTypeCasts.h"
 #include "compiler/translator/TranslatorMetalDirect/AstHelpers.h"
 #include "compiler/translator/TranslatorMetalDirect/EmitMetal.h"
 #include "compiler/translator/TranslatorMetalDirect/FixTypeConstructors.h"
@@ -33,6 +32,7 @@
 #include "compiler/translator/TranslatorMetalDirect/ToposortStructs.h"
 #include "compiler/translator/TranslatorMetalDirect/TranslatorMetalUtils.h"
 #include "compiler/translator/TranslatorMetalDirect/WrapMain.h"
+#include "compiler/translator/tree_ops/ConvertUnsupportedConstructorsToFunctionCalls.h"
 #include "compiler/translator/tree_ops/InitializeVariables.h"
 #include "compiler/translator/tree_ops/MonomorphizeUnsupportedFunctions.h"
 #include "compiler/translator/tree_ops/NameNamelessUniformBuffers.h"
@@ -344,9 +344,11 @@ ANGLE_NO_DISCARD bool InsertFragCoordCorrection(TCompiler *compiler,
             fragRotation = driverUniforms->getFragRotationMatrixRef();
         }
     }
+
+    const TVariable *fragCoord = static_cast<const TVariable *>(
+        symbolTable->findBuiltIn(ImmutableString("gl_FragCoord"), compiler->getShaderVersion()));
     return RotateAndFlipBuiltinVariable(compiler, root, insertSequence, flipXY, symbolTable,
-                                        BuiltInVariable::gl_FragCoord(), kFlippedFragCoordName,
-                                        pivot, fragRotation);
+                                        fragCoord, kFlippedFragCoordName, pivot, fragRotation);
 }
 
 void DeclareRightBeforeMain(TIntermBlock &root, const TVariable &var)
@@ -561,10 +563,10 @@ ANGLE_NO_DISCARD bool TranslatorMetalDirect::insertRasterizationDiscardLogic(TIn
     // Create vec4(-3, -3, -3, 1):
     auto vec4Type             = new TType(EbtFloat, 4);
     TIntermSequence *vec4Args = new TIntermSequence();
-    vec4Args->push_back(CreateFloatNode(-3.0f));
-    vec4Args->push_back(CreateFloatNode(-3.0f));
-    vec4Args->push_back(CreateFloatNode(-3.0f));
-    vec4Args->push_back(CreateFloatNode(1.0f));
+    vec4Args->push_back(CreateFloatNode(-3.0f, EbpMedium));
+    vec4Args->push_back(CreateFloatNode(-3.0f, EbpMedium));
+    vec4Args->push_back(CreateFloatNode(-3.0f, EbpMedium));
+    vec4Args->push_back(CreateFloatNode(1.0f, EbpMedium));
     TIntermAggregate *constVarConstructor =
         TIntermAggregate::CreateConstructor(*vec4Type, vec4Args);
 
@@ -624,7 +626,7 @@ bool TranslatorMetalDirect::appendVertexShaderDepthCorrectionToMain(TIntermBlock
     TVector<int> swizzleOffsetZ = {2};
     TIntermSwizzle *positionZ   = new TIntermSwizzle(positionRef, swizzleOffsetZ);
 
-    TIntermConstantUnion *oneHalf = CreateFloatNode(0.5f);
+    TIntermConstantUnion *oneHalf = CreateFloatNode(0.5f, EbpMedium);
 
     TVector<int> swizzleOffsetW = {3};
     TIntermSwizzle *positionW   = new TIntermSwizzle(positionRef->deepCopy(), swizzleOffsetW);
@@ -1011,7 +1013,7 @@ bool TranslatorMetalDirect::translateImpl(TInfoSinkBase &sink,
             {
                 flipNegXY = driverUniforms->getNegFlipXYRef();
             }
-            TIntermConstantUnion *pivot = CreateFloatNode(0.5f);
+            TIntermConstantUnion *pivot = CreateFloatNode(0.5f, EbpMedium);
             TIntermTyped *fragRotation  = nullptr;
             if (usePreRotation)
             {
@@ -1157,12 +1159,12 @@ bool TranslatorMetalDirect::translateImpl(TInfoSinkBase &sink,
         return false;
     }
 
-    if (!ReduceInterfaceBlocks(*this, *root, idGen))
+    if (!ReduceInterfaceBlocks(*this, *root, idGen, &getSymbolTable()))
     {
         return false;
     }
 
-    if (!SeparateCompoundStructDeclarations(*this, idGen, *root))
+    if (!SeparateCompoundStructDeclarations(*this, idGen, *root, &getSymbolTable()))
     {
         return false;
     }
@@ -1181,7 +1183,7 @@ bool TranslatorMetalDirect::translateImpl(TInfoSinkBase &sink,
         return false;
     }
 
-    if (!AddExplicitTypeCasts(*this, *root, symbolEnv))
+    if (!ConvertUnsupportedConstructorsToFunctionCalls(*this, *root, symbolEnv))
     {
         return false;
     }
@@ -1258,6 +1260,8 @@ bool TranslatorMetalDirect::translate(TIntermBlock *root,
     // TODO: refactor the code in TranslatorMetalDirect to not issue raw function calls.
     // http://anglebug.com/6059#c2
     mValidateASTOptions.validateNoRawFunctionCalls = false;
+    // A validation error is generated in this backend due to bool uniforms.
+    mValidateASTOptions.validatePrecision = false;
 
     TInfoSinkBase &sink = getInfoSink().obj;
 

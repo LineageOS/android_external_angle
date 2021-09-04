@@ -374,7 +374,7 @@ Context::Context(egl::Display *display,
       mOverlay(mImplementation.get()),
       mIsExternal(GetIsExternal(attribs)),
       mSaveAndRestoreState(GetSaveAndRestoreState(attribs)),
-      mIsCurrent(false)
+      mIsDestroyed(false)
 {
     for (angle::SubjectIndex uboIndex = kUniformBuffer0SubjectIndex;
          uboIndex < kUniformBufferMaxSubjectIndex; ++uboIndex)
@@ -630,6 +630,10 @@ egl::Error Context::onDestroy(const egl::Display *display)
         return egl::NoError();
     }
 
+    // eglDestoryContext() must have been called for this Context and there must not be any Threads
+    // that still have it current.
+    ASSERT(mIsDestroyed == true && mRefCount == 0);
+
     // Dump frame capture if enabled.
     getShareGroup()->getFrameCaptureShared()->onDestroyContext(this);
 
@@ -638,10 +642,7 @@ egl::Error Context::onDestroy(const egl::Display *display)
         mGLES1Renderer->onDestroy(this, &mState);
     }
 
-    if (mIsCurrent)
-    {
-        ANGLE_TRY(unMakeCurrent(display));
-    }
+    ANGLE_TRY(unMakeCurrent(display));
 
     for (auto fence : mFenceNVMap)
     {
@@ -738,8 +739,6 @@ egl::Error Context::makeCurrent(egl::Display *display,
 
     if (!mHasBeenCurrent)
     {
-        ASSERT(!mIsCurrent);
-
         initializeDefaultResources();
         initRendererString();
         initVersionStrings();
@@ -759,10 +758,7 @@ egl::Error Context::makeCurrent(egl::Display *display,
         mHasBeenCurrent = true;
     }
 
-    if (mIsCurrent)
-    {
-        ANGLE_TRY(unsetDefaultFramebuffer());
-    }
+    ANGLE_TRY(unsetDefaultFramebuffer());
 
     getShareGroup()->getFrameCaptureShared()->onMakeCurrent(this, drawSurface);
 
@@ -782,16 +778,11 @@ egl::Error Context::makeCurrent(egl::Display *display,
         return angle::ResultToEGL(implResult);
     }
 
-    mIsCurrent = true;
-
     return egl::NoError();
 }
 
 egl::Error Context::unMakeCurrent(const egl::Display *display)
 {
-    ASSERT(mIsCurrent);
-    mIsCurrent = false;
-
     ANGLE_TRY(angle::ResultToEGL(mImplementation->onUnMakeCurrent(this)));
 
     ANGLE_TRY(unsetDefaultFramebuffer());
@@ -3803,8 +3794,8 @@ void Context::initCaps()
         mSupportedExtensions.compressedETC1RGB8TextureOES = false;
     }
 
-    // If we're capturing application calls for replay, don't expose any binary formats to prevent
-    // traces from trying to use cached results
+    // If we're capturing application calls for replay, apply some feature limits to increase
+    // portability of the trace.
     if (getShareGroup()->getFrameCaptureShared()->enabled() ||
         getFrontendFeatures().captureLimits.enabled)
     {
@@ -3814,8 +3805,13 @@ void Context::initCaps()
                        : "FrameCapture limits were forced")
                << std::endl;
 
-        INFO() << "Limiting binary format support count to zero";
-        mDisplay->overrideFrontendFeatures({"disable_program_binary"}, true);
+        if (!getFrontendFeatures().enableProgramBinaryForCapture.enabled)
+        {
+            // Some apps insist on being able to use glProgramBinary. For those, we'll allow the
+            // extension to remain on. Otherwise, force the extension off.
+            INFO() << "Disabling GL_OES_get_program_binary for trace portability";
+            mDisplay->overrideFrontendFeatures({"disable_program_binary"}, true);
+        }
 
         // Set to the most common limit per gpuinfo.org. Required for several platforms we test.
         constexpr GLint maxImageUnits = 8;
@@ -3829,6 +3825,16 @@ void Context::initCaps()
         ASSERT(uniformBufferOffsetAlignment % mState.mCaps.uniformBufferOffsetAlignment == 0);
         INFO() << "Setting uniform buffer offset alignment to " << uniformBufferOffsetAlignment;
         mState.mCaps.uniformBufferOffsetAlignment = uniformBufferOffsetAlignment;
+
+        // Also limit texture buffer offset alignment, if enabled
+        if (mState.mExtensions.textureBufferAny())
+        {
+            constexpr GLint textureBufferOffsetAlignment =
+                gl::limits::kMinTextureBufferOffsetAlignment;
+            ASSERT(textureBufferOffsetAlignment % mState.mCaps.textureBufferOffsetAlignment == 0);
+            INFO() << "Setting texture buffer offset alignment to " << textureBufferOffsetAlignment;
+            mState.mCaps.textureBufferOffsetAlignment = textureBufferOffsetAlignment;
+        }
 
         INFO() << "Disabling GL_EXT_map_buffer_range and GL_OES_mapbuffer during capture, which "
                   "are not supported on some native drivers";
@@ -9109,6 +9115,11 @@ void Context::dirtyAllState()
     mState.setAllDirtyBits();
     mState.setAllDirtyObjects();
     mState.gles1().setAllDirty();
+}
+
+void Context::finishImmutable() const
+{
+    ANGLE_CONTEXT_TRY(mImplementation->finish(this));
 }
 
 // ErrorSet implementation.

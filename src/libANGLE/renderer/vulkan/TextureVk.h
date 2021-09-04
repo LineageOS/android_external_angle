@@ -429,7 +429,7 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
                                         vk::ImageHelper *srcImage,
                                         vk::ImageHelper *dstImage);
     angle::Result initImageViews(ContextVk *contextVk,
-                                 const vk::Format &format,
+                                 const angle::Format &format,
                                  const bool sized,
                                  uint32_t levelCount,
                                  uint32_t layerCount);
@@ -479,7 +479,7 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
 
     angle::Result refreshImageViews(ContextVk *contextVk);
     bool shouldDecodeSRGB(ContextVk *contextVk, GLenum srgbDecode, bool texelFetchStaticUse) const;
-    void initImageUsageFlags(ContextVk *contextVk, const vk::Format &format);
+    void initImageUsageFlags(ContextVk *contextVk, angle::FormatID actualFormatID);
     void handleImmutableSamplerTransition(const vk::ImageHelper *previousImage,
                                           const vk::ImageHelper *nextImage);
 
