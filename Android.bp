@@ -2352,7 +2352,6 @@ cc_library_static {
         "-DANDROID",
         "-DANDROID_NDK_VERSION_ROLL=r22_1",
         "-DANGLE_ENABLE_VULKAN",
-        "-DANGLE_HAS_VULKAN_SYSTEM_INFO",
         "-DANGLE_USE_ABSEIL",
         "-DANGLE_USE_CUSTOM_VULKAN_CMD_BUFFERS=1",
         "-DCR_CLANG_REVISION=\"llvmorg-14-init-2175-g945cde8b-1\"",
