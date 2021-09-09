@@ -48,7 +48,7 @@ angle::Result RenderbufferVk::setStorageImpl(const gl::Context *context,
     ContextVk *contextVk            = vk::GetImpl(context);
     RendererVk *renderer            = contextVk->getRenderer();
     const vk::Format &format        = renderer->getFormat(internalformat);
-    angle::FormatID textureFormatID = format.actualImageFormatID;
+    angle::FormatID textureFormatID = format.getActualRenderableImageFormatID();
 
     if (!mOwnsImage)
     {
@@ -79,7 +79,7 @@ angle::Result RenderbufferVk::setStorageImpl(const gl::Context *context,
         mImageViews.init(renderer);
     }
 
-    const angle::Format &textureFormat = format.actualImageFormat();
+    const angle::Format &textureFormat = format.getActualRenderableImageFormat();
     const bool isDepthStencilFormat    = textureFormat.hasDepthOrStencilBits();
     ASSERT(textureFormat.redBits > 0 || isDepthStencilFormat);
 
@@ -105,9 +105,9 @@ angle::Result RenderbufferVk::setStorageImpl(const gl::Context *context,
 
     VkExtent3D extents = {static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1u};
     ANGLE_TRY(mImage->initExternal(contextVk, gl::TextureType::_2D, extents,
-                                   format.intendedFormatID, textureFormatID, imageSamples, usage,
-                                   vk::kVkImageCreateFlagsNone, vk::ImageLayout::Undefined, nullptr,
-                                   gl::LevelIndex(0), 1, 1, robustInit, nullptr, false));
+                                   format.getIntendedFormatID(), textureFormatID, imageSamples,
+                                   usage, vk::kVkImageCreateFlagsNone, vk::ImageLayout::Undefined,
+                                   nullptr, gl::LevelIndex(0), 1, 1, robustInit, nullptr, false));
 
     VkMemoryPropertyFlags flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
     ANGLE_TRY(mImage->initMemory(contextVk, false, renderer->getMemoryProperties(), flags));
@@ -171,7 +171,7 @@ angle::Result RenderbufferVk::setStorageEGLImageTarget(const gl::Context *contex
     mImageViews.init(renderer);
 
     const vk::Format &vkFormat = renderer->getFormat(image->getFormat().info->sizedInternalFormat);
-    const angle::Format &textureFormat = vkFormat.actualImageFormat();
+    const angle::Format &textureFormat = vkFormat.getActualRenderableImageFormat();
 
     VkImageAspectFlags aspect = vk::GetFormatAspectFlags(textureFormat);
 

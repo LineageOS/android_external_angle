@@ -3955,10 +3955,11 @@ angle::Result ImageHelper::init(Context *context,
                                 bool isRobustResourceInitEnabled,
                                 bool hasProtectedContent)
 {
-    return initExternal(context, textureType, extents, format.intendedFormatID,
-                        format.actualImageFormatID, samples, usage, kVkImageCreateFlagsNone,
-                        ImageLayout::Undefined, nullptr, firstLevel, mipLevels, layerCount,
-                        isRobustResourceInitEnabled, nullptr, hasProtectedContent);
+    return initExternal(context, textureType, extents, format.getIntendedFormatID(),
+                        format.getActualRenderableImageFormatID(), samples, usage,
+                        kVkImageCreateFlagsNone, ImageLayout::Undefined, nullptr, firstLevel,
+                        mipLevels, layerCount, isRobustResourceInitEnabled, nullptr,
+                        hasProtectedContent);
 }
 
 angle::Result ImageHelper::initMSAASwapchain(Context *context,
@@ -3974,10 +3975,11 @@ angle::Result ImageHelper::initMSAASwapchain(Context *context,
                                              bool isRobustResourceInitEnabled,
                                              bool hasProtectedContent)
 {
-    ANGLE_TRY(initExternal(context, textureType, extents, format.intendedFormatID,
-                           format.actualImageFormatID, samples, usage, kVkImageCreateFlagsNone,
-                           ImageLayout::Undefined, nullptr, firstLevel, mipLevels, layerCount,
-                           isRobustResourceInitEnabled, nullptr, hasProtectedContent));
+    ANGLE_TRY(initExternal(context, textureType, extents, format.getIntendedFormatID(),
+                           format.getActualRenderableImageFormatID(), samples, usage,
+                           kVkImageCreateFlagsNone, ImageLayout::Undefined, nullptr, firstLevel,
+                           mipLevels, layerCount, isRobustResourceInitEnabled, nullptr,
+                           hasProtectedContent));
     if (rotatedAspectRatio)
     {
         std::swap(mExtents.width, mExtents.height);
@@ -4530,8 +4532,8 @@ void ImageHelper::init2DWeakReference(Context *context,
 
     gl_vk::GetExtent(glExtents, &mExtents);
     mRotatedAspectRatio = rotatedAspectRatio;
-    mIntendedFormatID   = format.intendedFormatID;
-    mActualFormatID     = format.actualImageFormatID;
+    mIntendedFormatID   = format.getIntendedFormatID();
+    mActualFormatID     = format.getActualRenderableImageFormatID();
     mSamples            = std::max(samples, 1);
     mImageSerial        = context->getRenderer()->getResourceSerialFactory().generateImageSerial();
     mCurrentLayout      = ImageLayout::Undefined;
@@ -5394,11 +5396,12 @@ angle::Result ImageHelper::stageSubresourceUpdateImpl(ContextVk *contextVk,
                                                       GLenum type,
                                                       const uint8_t *pixels,
                                                       const Format &vkFormat,
+                                                      ImageAccess access,
                                                       const GLuint inputRowPitch,
                                                       const GLuint inputDepthPitch,
                                                       const GLuint inputSkipBytes)
 {
-    const angle::Format &storageFormat = vkFormat.actualImageFormat();
+    const angle::Format &storageFormat = vkFormat.getActualImageFormat(access);
 
     size_t outputRowPitch;
     size_t outputDepthPitch;
@@ -5407,7 +5410,7 @@ angle::Result ImageHelper::stageSubresourceUpdateImpl(ContextVk *contextVk,
     uint32_t bufferImageHeight;
     size_t allocationSize;
 
-    LoadImageFunctionInfo loadFunctionInfo = vkFormat.textureLoadFunctions(type);
+    LoadImageFunctionInfo loadFunctionInfo = vkFormat.getTextureLoadFunction(access, type);
     LoadImageFunction stencilLoadFunction  = nullptr;
 
     if (storageFormat.isBlock)
@@ -5784,7 +5787,8 @@ angle::Result ImageHelper::stageSubresourceUpdate(ContextVk *contextVk,
                                                   DynamicBuffer *stagingBufferOverride,
                                                   GLenum type,
                                                   const uint8_t *pixels,
-                                                  const Format &vkFormat)
+                                                  const Format &vkFormat,
+                                                  ImageAccess access)
 {
     GLuint inputRowPitch   = 0;
     GLuint inputDepthPitch = 0;
@@ -5793,7 +5797,7 @@ angle::Result ImageHelper::stageSubresourceUpdate(ContextVk *contextVk,
                                   &inputRowPitch, &inputDepthPitch, &inputSkipBytes));
 
     ANGLE_TRY(stageSubresourceUpdateImpl(contextVk, index, glExtents, offset, formatInfo, unpack,
-                                         stagingBufferOverride, type, pixels, vkFormat,
+                                         stagingBufferOverride, type, pixels, vkFormat, access,
                                          inputRowPitch, inputDepthPitch, inputSkipBytes));
 
     return angle::Result::Continue;
@@ -5847,6 +5851,7 @@ angle::Result ImageHelper::stageSubresourceUpdateFromFramebuffer(
     const gl::Offset &dstOffset,
     const gl::Extents &dstExtent,
     const gl::InternalFormat &formatInfo,
+    ImageAccess access,
     FramebufferVk *framebufferVk,
     DynamicBuffer *stagingBufferOverride)
 {
@@ -5872,8 +5877,8 @@ angle::Result ImageHelper::stageSubresourceUpdateFromFramebuffer(
     RendererVk *renderer = contextVk->getRenderer();
 
     const Format &vkFormat             = renderer->getFormat(formatInfo.sizedInternalFormat);
-    const angle::Format &storageFormat = vkFormat.actualImageFormat();
-    LoadImageFunctionInfo loadFunction = vkFormat.textureLoadFunctions(formatInfo.type);
+    const angle::Format &storageFormat = vkFormat.getActualImageFormat(access);
+    LoadImageFunctionInfo loadFunction = vkFormat.getTextureLoadFunction(access, formatInfo.type);
 
     size_t outputRowPitch   = storageFormat.pixelBytes * clippedRectangle.width;
     size_t outputDepthPitch = outputRowPitch * clippedRectangle.height;
@@ -6537,6 +6542,35 @@ bool ImageHelper::hasStagedUpdatesInLevels(gl::LevelIndex levelStart, gl::LevelI
         if (!levelUpdates->empty())
         {
             return true;
+        }
+    }
+    return false;
+}
+
+bool ImageHelper::hasStagedUpdatesWithMismatchedFormat(gl::LevelIndex levelStart,
+                                                       gl::LevelIndex levelEnd,
+                                                       angle::FormatID formatID) const
+{
+    for (gl::LevelIndex level = levelStart; level < levelEnd; ++level)
+    {
+        const std::vector<SubresourceUpdate> *levelUpdates = getLevelUpdates(level);
+        if (levelUpdates == nullptr)
+        {
+            continue;
+        }
+
+        for (const SubresourceUpdate &update : *levelUpdates)
+        {
+            if (update.updateSource == UpdateSource::Buffer &&
+                update.data.buffer.formatID != formatID)
+            {
+                return true;
+            }
+            if (update.updateSource == UpdateSource::Image &&
+                update.data.image.formatID != formatID)
+            {
+                return true;
+            }
         }
     }
     return false;
@@ -7966,7 +8000,7 @@ angle::Result BufferViewHelper::getView(ContextVk *contextVk,
 {
     ASSERT(format.valid());
 
-    VkFormat viewVkFormat = format.actualBufferVkFormat(false);
+    VkFormat viewVkFormat = format.getActualBufferVkFormat(false);
 
     auto iter = mViews.find(viewVkFormat);
     if (iter != mViews.end())
@@ -7978,7 +8012,7 @@ angle::Result BufferViewHelper::getView(ContextVk *contextVk,
     // If the size is not a multiple of pixelBytes, remove the extra bytes.  The last element cannot
     // be read anyway, and this is a requirement of Vulkan (for size to be a multiple of format
     // texel block size).
-    const angle::Format &bufferFormat = format.actualBufferFormat(false);
+    const angle::Format &bufferFormat = format.getActualBufferFormat(false);
     const GLuint pixelBytes           = bufferFormat.pixelBytes;
     VkDeviceSize size                 = mSize - mSize % pixelBytes;
 

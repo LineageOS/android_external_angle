@@ -1789,13 +1789,13 @@ angle::Result GraphicsPipelineDesc::initializePipeline(
         }
 
         // Get the corresponding VkFormat for the attrib's format.
-        angle::FormatID formatID         = static_cast<angle::FormatID>(packedAttrib.format);
-        const Format &format             = contextVk->getRenderer()->getFormat(formatID);
-        const angle::Format &angleFormat = format.intendedFormat();
-        VkFormat vkFormat                = format.actualBufferVkFormat(packedAttrib.compressed);
+        angle::FormatID formatID            = static_cast<angle::FormatID>(packedAttrib.format);
+        const Format &format                = contextVk->getRenderer()->getFormat(formatID);
+        const angle::Format &intendedFormat = format.getIntendedFormat();
+        VkFormat vkFormat = format.getActualBufferVkFormat(packedAttrib.compressed);
 
-        gl::ComponentType attribType =
-            GetVertexAttributeComponentType(angleFormat.isPureInt(), angleFormat.vertexAttribType);
+        gl::ComponentType attribType = GetVertexAttributeComponentType(
+            intendedFormat.isPureInt(), intendedFormat.vertexAttribType);
         gl::ComponentType programAttribType =
             gl::GetComponentTypeMask(programAttribsTypeMask, attribIndex);
 
@@ -1814,16 +1814,17 @@ angle::Result GraphicsPipelineDesc::initializePipeline(
             {
                 // When converting from an unsigned to a signed format or vice versa, attempt to
                 // match the bit width.
-                angle::FormatID convertedFormatID = gl::ConvertFormatSignedness(angleFormat);
+                angle::FormatID convertedFormatID = gl::ConvertFormatSignedness(intendedFormat);
                 const Format &convertedFormat =
                     contextVk->getRenderer()->getFormat(convertedFormatID);
-                ASSERT(angleFormat.channelCount == convertedFormat.intendedFormat().channelCount);
-                ASSERT(angleFormat.redBits == convertedFormat.intendedFormat().redBits);
-                ASSERT(angleFormat.greenBits == convertedFormat.intendedFormat().greenBits);
-                ASSERT(angleFormat.blueBits == convertedFormat.intendedFormat().blueBits);
-                ASSERT(angleFormat.alphaBits == convertedFormat.intendedFormat().alphaBits);
+                ASSERT(intendedFormat.channelCount ==
+                       convertedFormat.getIntendedFormat().channelCount);
+                ASSERT(intendedFormat.redBits == convertedFormat.getIntendedFormat().redBits);
+                ASSERT(intendedFormat.greenBits == convertedFormat.getIntendedFormat().greenBits);
+                ASSERT(intendedFormat.blueBits == convertedFormat.getIntendedFormat().blueBits);
+                ASSERT(intendedFormat.alphaBits == convertedFormat.getIntendedFormat().alphaBits);
 
-                vkFormat = convertedFormat.actualBufferVkFormat(packedAttrib.compressed);
+                vkFormat = convertedFormat.getActualBufferVkFormat(packedAttrib.compressed);
             }
 
             ASSERT(contextVk->getNativeExtensions().relaxedVertexAttributeTypeANGLE);
@@ -2028,7 +2029,7 @@ angle::Result GraphicsPipelineDesc::initializePipeline(
             {
                 ASSERT(!contextVk->getRenderer()
                             ->getFormat(mRenderPassDesc[colorIndexGL])
-                            .actualImageFormat()
+                            .getActualRenderableImageFormat()
                             .isInt());
                 state.blendEnable = VK_TRUE;
                 UnpackBlendAttachmentState(inputAndBlend.attachments[colorIndexGL], &state);
@@ -3090,9 +3091,9 @@ SamplerDesc::SamplerDesc(ContextVk *contextVk,
                          const gl::SamplerState &samplerState,
                          bool stencilMode,
                          uint64_t externalFormat,
-                         angle::FormatID formatID)
+                         angle::FormatID intendedFormatID)
 {
-    update(contextVk, samplerState, stencilMode, externalFormat, formatID);
+    update(contextVk, samplerState, stencilMode, externalFormat, intendedFormatID);
 }
 
 void SamplerDesc::reset()
@@ -3124,7 +3125,7 @@ void SamplerDesc::update(ContextVk *contextVk,
                          const gl::SamplerState &samplerState,
                          bool stencilMode,
                          uint64_t externalFormat,
-                         angle::FormatID formatID)
+                         angle::FormatID intendedFormatID)
 {
     const angle::FeaturesVk &featuresVk = contextVk->getFeatures();
     mMipLodBias                         = 0.0f;
@@ -3144,13 +3145,23 @@ void SamplerDesc::update(ContextVk *contextVk,
     mMaxLod        = samplerState.getMaxLod();
 
     // GL has no notion of external format, this must be provided from metadata from the image
-    const vk::Format &vkFormat = contextVk->getRenderer()->getFormat(formatID);
-    mIsExternalFormat          = (externalFormat != 0) ? 1 : 0;
-    mExternalOrVkFormat        = (externalFormat != 0)
-                              ? externalFormat
-                              : (vkFormat.intendedFormat().isYUV)
-                                    ? static_cast<uint64_t>(vkFormat.actualImageVkFormat())
-                                    : 0;
+    const vk::Format &vkFormat = contextVk->getRenderer()->getFormat(intendedFormatID);
+    if (externalFormat)
+    {
+        mIsExternalFormat   = 1;
+        mExternalOrVkFormat = externalFormat;
+    }
+    else
+    {
+        mIsExternalFormat   = 0;
+        mExternalOrVkFormat = 0;
+        if (vkFormat.getIntendedFormat().isYUV)
+        {
+            ASSERT(!vkFormat.hasRenderableImageFallbackFormat());
+            mExternalOrVkFormat =
+                ToUnderlying(vkFormat.getActualImageVkFormat(vk::ImageAccess::SampleOnly));
+        }
+    }
 
     bool compareEnable    = samplerState.getCompareMode() == GL_COMPARE_REF_TO_TEXTURE;
     VkCompareOp compareOp = gl_vk::GetCompareOp(samplerState.getCompareFunc());
@@ -3199,9 +3210,9 @@ void SamplerDesc::update(ContextVk *contextVk,
         (samplerState.getBorderColor().type == angle::ColorGeneric::Type::Float) ? 0 : 1;
 
     mBorderColor = samplerState.getBorderColor().colorF;
-    if (vkFormat.intendedFormatID != angle::FormatID::NONE)
+    if (vkFormat.getIntendedFormatID() != angle::FormatID::NONE)
     {
-        LoadTextureBorderFunctionInfo loadFunction = vkFormat.textureBorderLoadFunctions();
+        LoadTextureBorderFunctionInfo loadFunction = vkFormat.getTextureBorderLoadFunctions();
         loadFunction.loadFunction(mBorderColor);
     }
 
