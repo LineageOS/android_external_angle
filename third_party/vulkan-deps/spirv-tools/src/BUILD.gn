@@ -358,20 +358,28 @@ config("spvtools_public_config") {
   include_dirs = [ "include" ]
 }
 
+config("spvtools_include_gen_dirs") {
+  include_dirs = [ "$target_gen_dir" ]
+}
+
 config("spvtools_internal_config") {
   include_dirs = [
     ".",
-    "$target_gen_dir",
     "${spirv_headers}/include",
   ]
 
-  configs = [ ":spvtools_public_config" ]
+  configs = [
+    ":spvtools_public_config",
+    ":spvtools_include_gen_dirs",
+  ]
 
   cflags = []
   if (is_clang) {
     cflags += [
       "-Wno-implicit-fallthrough",
       "-Wno-newline-eof",
+      "-Wno-unreachable-code-break",
+      "-Wno-unreachable-code-return",
     ]
   } else if (!is_win) {
     # Work around a false-positive on a Skia GCC 10 builder.
@@ -389,6 +397,14 @@ source_set("spvtools_headers") {
   ]
 
   public_configs = [ ":spvtools_public_config" ]
+}
+
+group("spvtools_language_headers") {
+  public_deps = [
+    ":spvtools_language_header_cldebuginfo100",
+    ":spvtools_language_header_debuginfo",
+    ":spvtools_language_header_vkdebuginfo100",
+  ]
 }
 
 static_library("spvtools") {
@@ -592,10 +608,16 @@ static_library("spvtools_opt") {
     "source/opt/const_folding_rules.h",
     "source/opt/constants.cpp",
     "source/opt/constants.h",
+    "source/opt/control_dependence.cpp",
+    "source/opt/control_dependence.h",
+    "source/opt/convert_to_sampled_image_pass.cpp",
+    "source/opt/convert_to_sampled_image_pass.h",
     "source/opt/convert_to_half_pass.cpp",
     "source/opt/convert_to_half_pass.h",
     "source/opt/copy_prop_arrays.cpp",
     "source/opt/copy_prop_arrays.h",
+    "source/opt/dataflow.h",
+    "source/opt/dataflow.cpp",
     "source/opt/dead_branch_elim_pass.cpp",
     "source/opt/dead_branch_elim_pass.h",
     "source/opt/dead_insert_elim_pass.cpp",
@@ -772,12 +794,14 @@ static_library("spvtools_opt") {
 
   deps = [
     ":spvtools",
-    ":spvtools_language_header_cldebuginfo100",
     ":spvtools_language_header_debuginfo",
-    ":spvtools_language_header_vkdebuginfo100",
     ":spvtools_vendor_tables_spv-amd-shader-ballot",
   ]
-  public_deps = [ ":spvtools_headers" ]
+  public_deps = [
+    ":spvtools_headers",
+    ":spvtools_language_header_cldebuginfo100",
+    ":spvtools_language_header_vkdebuginfo100",
+  ]
 
   if (build_with_chromium) {
     configs -= [ "//build/config/compiler:chromium_code" ]
@@ -1062,6 +1086,8 @@ if (build_with_chromium) {
       "source/fuzz/fuzzer_pass_toggle_access_chain_instruction.h",
       "source/fuzz/fuzzer_pass_wrap_regions_in_selections.cpp",
       "source/fuzz/fuzzer_pass_wrap_regions_in_selections.h",
+      "source/fuzz/fuzzer_pass_wrap_vector_synonym.cpp",
+      "source/fuzz/fuzzer_pass_wrap_vector_synonym.h",
       "source/fuzz/fuzzer_util.cpp",
       "source/fuzz/fuzzer_util.h",
       "source/fuzz/id_use_descriptor.cpp",
@@ -1272,6 +1298,8 @@ if (build_with_chromium) {
       "source/fuzz/transformation_wrap_early_terminator_in_function.h",
       "source/fuzz/transformation_wrap_region_in_selection.cpp",
       "source/fuzz/transformation_wrap_region_in_selection.h",
+      "source/fuzz/transformation_wrap_vector_synonym.cpp",
+      "source/fuzz/transformation_wrap_vector_synonym.h",
       "source/fuzz/uniform_buffer_element_descriptor.cpp",
       "source/fuzz/uniform_buffer_element_descriptor.h",
     ]
