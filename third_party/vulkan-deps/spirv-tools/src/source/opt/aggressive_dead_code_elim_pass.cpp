@@ -440,6 +440,11 @@ bool AggressiveDCEPass::AggressiveDCE(Function* func) {
     if (liveInst->type_id() != 0) {
       AddToWorklist(get_def_use_mgr()->GetDef(liveInst->type_id()));
     }
+    BasicBlock* basic_block = context()->get_instr_block(liveInst);
+    if (basic_block != nullptr) {
+      AddToWorklist(basic_block->GetLabelInst());
+    }
+
     // If in a structured if or loop construct, add the controlling
     // conditional branch and its merge.
     BasicBlock* blk = context()->get_instr_block(liveInst);
@@ -474,14 +479,13 @@ bool AggressiveDCEPass::AggressiveDCE(Function* func) {
         ProcessLoad(func, varId);
       }
       // If DebugDeclare, process as load of variable
-    } else if (liveInst->GetOpenCL100DebugOpcode() ==
-               OpenCLDebugInfo100DebugDeclare) {
+    } else if (liveInst->GetCommonDebugOpcode() ==
+               CommonDebugInfoDebugDeclare) {
       uint32_t varId =
           liveInst->GetSingleWordOperand(kDebugDeclareOperandVariableIndex);
       ProcessLoad(func, varId);
       // If DebugValue with Deref, process as load of variable
-    } else if (liveInst->GetOpenCL100DebugOpcode() ==
-               OpenCLDebugInfo100DebugValue) {
+    } else if (liveInst->GetCommonDebugOpcode() == CommonDebugInfoDebugValue) {
       uint32_t varId = context()
                            ->get_debug_info_mgr()
                            ->GetVariableIdOfDebugValueUsedForDeclare(liveInst);
@@ -652,7 +656,7 @@ void AggressiveDCEPass::InitializeModuleScopeLiveInstructions() {
   // For each DebugInfo GlobalVariable keep all operands except the Variable.
   // Later, if the variable is dead, we will set the operand to DebugInfoNone.
   for (auto& dbg : get_module()->ext_inst_debuginfo()) {
-    if (dbg.GetOpenCL100DebugOpcode() != OpenCLDebugInfo100DebugGlobalVariable)
+    if (dbg.GetCommonDebugOpcode() != CommonDebugInfoDebugGlobalVariable)
       continue;
     dbg.ForEachInId([this](const uint32_t* iid) {
       Instruction* inInst = get_def_use_mgr()->GetDef(*iid);
@@ -691,7 +695,7 @@ Pass::Status AggressiveDCEPass::ProcessImpl() {
 
   // Process all entry point functions.
   ProcessFunction pfn = [this](Function* fp) { return AggressiveDCE(fp); };
-  modified |= context()->ProcessEntryPointCallTree(pfn);
+  modified |= context()->ProcessReachableCallTree(pfn);
 
   // If the decoration manager is kept live then the context will try to keep it
   // up to date.  ADCE deals with group decorations by changing the operands in
@@ -718,21 +722,20 @@ Pass::Status AggressiveDCEPass::ProcessImpl() {
 
   // Cleanup all CFG including all unreachable blocks.
   ProcessFunction cleanup = [this](Function* f) { return CFGCleanup(f); };
-  modified |= context()->ProcessEntryPointCallTree(cleanup);
+  modified |= context()->ProcessReachableCallTree(cleanup);
 
   return modified ? Status::SuccessWithChange : Status::SuccessWithoutChange;
 }
 
 bool AggressiveDCEPass::EliminateDeadFunctions() {
   // Identify live functions first. Those that are not live
-  // are dead. ADCE is disabled for non-shaders so we do not check for exported
-  // functions here.
+  // are dead.
   std::unordered_set<const Function*> live_function_set;
   ProcessFunction mark_live = [&live_function_set](Function* fp) {
     live_function_set.insert(fp);
     return false;
   };
-  context()->ProcessEntryPointCallTree(mark_live);
+  context()->ProcessReachableCallTree(mark_live);
 
   bool modified = false;
   for (auto funcIter = get_module()->begin();
@@ -877,8 +880,7 @@ bool AggressiveDCEPass::ProcessGlobalValues() {
     if (!IsDead(&dbg)) continue;
     // Save GlobalVariable if its variable is live, otherwise null out variable
     // index
-    if (dbg.GetOpenCL100DebugOpcode() ==
-        OpenCLDebugInfo100DebugGlobalVariable) {
+    if (dbg.GetCommonDebugOpcode() == CommonDebugInfoDebugGlobalVariable) {
       auto var_id = dbg.GetSingleWordOperand(kGlobalVariableVariableIndex);
       Instruction* var_inst = get_def_use_mgr()->GetDef(var_id);
       if (!IsDead(var_inst)) continue;

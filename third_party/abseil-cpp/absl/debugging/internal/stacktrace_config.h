@@ -37,6 +37,10 @@
   "absl/debugging/internal/stacktrace_generic-inl.inc"
 #endif
 
+#elif defined(__EMSCRIPTEN__)
+#define ABSL_STACKTRACE_INL_HEADER \
+  "absl/debugging/internal/stacktrace_emscripten-inl.inc"
+
 #elif defined(__linux__) && !defined(__ANDROID__)
 
 #if defined(NO_FRAME_POINTER) && \
@@ -61,6 +65,9 @@
 #elif defined(__aarch64__)
 #define ABSL_STACKTRACE_INL_HEADER \
   "absl/debugging/internal/stacktrace_aarch64-inl.inc"
+#elif defined(__riscv)
+#define ABSL_STACKTRACE_INL_HEADER \
+  "absl/debugging/internal/stacktrace_riscv-inl.inc"
 #elif defined(__has_include)
 #if __has_include(<execinfo.h>)
 // Note: When using glibc this may require -funwind-tables to function properly.
@@ -68,7 +75,6 @@
   "absl/debugging/internal/stacktrace_generic-inl.inc"
 #endif
 #endif
-
 #endif
 
 // Fallback to the empty implementation.
